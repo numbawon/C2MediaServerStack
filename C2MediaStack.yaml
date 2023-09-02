@@ -40,14 +40,14 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      - TZ=UTC
+      - TZ=${COMMON_TZ}
     networks:
       - traefik_nordvpn_network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.traefik.rule=Host(`traefik.example.com`)"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${COMMON_DOMAIN}`)"
       - "traefik.http.routers.traefik.entrypoints=web"
-      - "traefik.http.routers.traefik-secure.rule=Host(`traefik.example.com`)"
+      - "traefik.http.routers.traefik-secure.rule=Host(`traefik.${COMMON_DOMAIN}`)"
       - "traefik.http.routers.traefik-secure.entrypoints=websecure"
       - "traefik.http.routers.traefik-secure.tls=true"
       - "traefik.http.routers.traefik-secure.tls.certresolver=mytlsresolver"  # Use your TLS resolver
@@ -63,7 +63,7 @@ services:
       - traefik_nordvpn_network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.tls-resolver.rule=Host(`tls-resolver.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.tls-resolver.rule=Host(`tls-resolver.${COMMON_DOMAIN}`)"  # Replace with your domain
       - "traefik.http.routers.tls-resolver.entrypoints=web"
       - "traefik.http.routers.tls-resolver.tls=true"
       - "traefik.http.routers.tls-resolver.tls.certresolver=mytlsresolver"  # Use your TLS resolver
@@ -92,7 +92,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.pihole.entrypoints=websecure"
-      - "traefik.http.routers.pihole.rule=Host(`pihole.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.pihole.rule=Host(`pihole.${COMMON_DOMAIN}`)"  # Replace with your domain
       - "traefik.http.routers.pihole.tls=true"
       - "traefik.http.routers.pihole.tls.certresolver=mytlsresolver"
       - "traefik.http.services.pihole.loadbalancer.server.port=443"
@@ -113,7 +113,7 @@ services:
       - traefik_nordvpn_network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.portainer.rule=Host(`portainer.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.portainer.rule=Host(`portainer.${COMMON_DOMAIN}`)"  # Replace with your domain
       - "traefik.http.routers.portainer.entrypoints=websecure"
       - "traefik.http.routers.portainer.tls=true"
       - "traefik.http.routers.portainer.tls.certresolver=mytlsresolver"  # Use your TLS resolver
@@ -128,7 +128,7 @@ services:
     cap_add:
       - NET_ADMIN
     environment:
-      - TZ=Your/Timezone  # Set your timezone
+      - TZ=${COMMON_TZ}  # Set your timezone
       - TOKEN=<Your Token Here>     # Required
       - CONNECT=United_States
       - NORDVPN_PROTOCOL=NordLynx  # Set the protocol to NordLynx
@@ -176,8 +176,8 @@ services:
     image: plexinc/pms-docker:latest
     container_name: plex
     environment:
-      - PLEX_UID=<your_plex_uid>
-      - PLEX_GID=<your_plex_gid>
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
     volumes:
       - <path_to_plex_config>:/config
       - <path_to_media_files>:/data
@@ -187,7 +187,7 @@ services:
       - traefik_nordvpn_network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.plex.rule=Host(`plex.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.plex.rule=Host(`plex.${COMMON_DOMAIN}`)"  # Replace with your domain
       - "traefik.http.routers.plex.entrypoints=websecure"
       - "traefik.http.routers.plex.tls=true"
       - "traefik.http.routers.plex.tls.certresolver=mytlsresolver"  # Use your TLS resolver
@@ -199,8 +199,8 @@ services:
     image: linuxserver/bazarr
     container_name: bazarr
     environment:
-      - PUID=<your_puid>
-      - PGID=<your_pgid>
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
     volumes:
       - <path_to_bazarr_config>:/config
       - <path_to_media_files>:/media
@@ -208,7 +208,7 @@ services:
       - traefik_nordvpn_network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.bazarr.rule=Host(`bazarr.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.bazarr.rule=Host(`bazarr.${COMMON_DOMAIN}`)"  # Replace with your domain
       - "traefik.http.routers.bazarr.entrypoints=websecure"
       - "traefik.http.routers.bazarr.tls=true"
       - "traefik.http.routers.bazarr.tls.certresolver=mytlsresolver"  # Use your TLS resolver
@@ -220,8 +220,8 @@ services:
     image: linuxserver/sonarr
     container_name: sonarr
     environment:
-      - PUID=<sonarr_puid>
-      - PGID=<sonarr_pgid>
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
     volumes:
       - <path_to_sonarr_config>:/config
       - <path_to_media_files>:/tv
@@ -231,7 +231,7 @@ services:
       - traefik_nordvpn_network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.sonarr.rule=Host(`sonarr.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.sonarr.rule=Host(`sonarr.${COMMON_DOMAIN}`)"  # Replace with your domain
       - "traefik.http.routers.sonarr.entrypoints=websecure"
       - "traefik.http.routers.sonarr.tls=true"
       - "traefik.http.routers.sonarr.tls.certresolver=mytlsresolver"  # Use your TLS resolver
@@ -243,8 +243,8 @@ services:
     image: linuxserver/radarr
     container_name: radarr
     environment:
-      - PUID=<radarr_puid>
-      - PGID=<radarr_pgid>
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
     volumes:
       - <path_to_radarr_config>:/config
       - <path_to_media_files>:/movies
@@ -254,7 +254,7 @@ services:
       - traefik_nordvpn_network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.radarr.rule=Host(`radarr.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.radarr.rule=Host(`radarr.${COMMON_DOMAIN}`)"  # Replace with your domain
       - "traefik.http.routers.radarr.entrypoints=websecure"
       - "traefik.http.routers.radarr.tls=true"
       - "traefik.http.routers.radarr.tls.certresolver=mytlsresolver"  # Use your TLS resolver
@@ -266,8 +266,8 @@ services:
     image: linuxserver/lidarr
     container_name: lidarr
     environment:
-      - PUID=<your_puid>
-      - PGID=<your_pgid>
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
     volumes:
       - <path_to_lidarr_config>:/config
       - <path_to_music_library>:/music
@@ -277,7 +277,7 @@ services:
       - traefik_nordvpn_network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.lidarr.rule=Host(`lidarr.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.lidarr.rule=Host(`lidarr.${COMMON_DOMAIN}`)"  # Replace with your domain
       - "traefik.http.routers.lidarr.entrypoints=websecure"
       - "traefik.http.routers.lidarr.tls=true"
       - "traefik.http.routers.lidarr.tls.certresolver=mytlsresolver"  # Use your TLS resolver
@@ -289,16 +289,16 @@ services:
     image: linuxserver/overseerr:latest
     container_name: overserr
     environment:
-      - PUID=<your_puid>
-      - PGID=<your_pgid>
-      - TZ=Your/Timezone  # Set your timezone
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}  # Set your timezone
     volumes:
       - <path_to_overserr_config>:/config
     networks:
       - traefik_nordvpn_network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.overserr.rule=Host(`overserr.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.overserr.rule=Host(`overserr.${COMMON_DOMAIN}`)"  # Replace with your domain
       - "traefik.http.routers.overserr.entrypoints=websecure"
       - "traefik.http.routers.overserr.tls=true"
       - "traefik.http.routers.overserr.tls.certresolver=mytlsresolver"  # Use your TLS resolver
@@ -310,9 +310,9 @@ services:
     image: linuxserver/lazylibrarian
     container_name: lazylibrarian
     environment:
-      - PUID=<your_puid>
-      - PGID=<your_pgid>
-      - TZ=Your/Timezone  # Set your timezone
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}  # Set your timezone
     volumes:
       - <path_to_lazylibrarian_config>:/config
       - <path_to_ebook_library>:/books
@@ -322,7 +322,7 @@ services:
       - traefik_nordvpn_network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.lazylibrarian.rule=Host(`lazylibrarian.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.lazylibrarian.rule=Host(`lazylibrarian.${COMMON_DOMAIN}`)"  # Replace with your domain
       - "traefik.http.routers.lazylibrarian.entrypoints=websecure"
       - "traefik.http.routers.lazylibrarian.tls=true"
       - "traefik.http.routers.lazylibrarian.tls.certresolver=mytlsresolver"  # Use your TLS resolver
@@ -339,7 +339,7 @@ services:
       - traefik_nordvpn_network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.homer.rule=Host(`homer.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.homer.rule=Host(`homer.${COMMON_DOMAIN}`)"  # Replace with your domain
       - "traefik.http.routers.homer.entrypoints=websecure"
       - "traefik.http.routers.homer.tls=true"
       - "traefik.http.routers.homer.tls.certresolver=mytlsresolver"  # Use your TLS resolver
@@ -359,7 +359,7 @@ services:
       - traefik_nordvpn_network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.prometheus.rule=Host(`prometheus.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.${COMMON_DOMAIN}`)"  # Replace with your domain
       - "traefik.http.routers.prometheus.entrypoints=websecure"
       - "traefik.http.routers.prometheus.tls=true"
       - "traefik.http.routers.prometheus.tls.certresolver=mytlsresolver"  # Use your TLS resolver
@@ -381,7 +381,7 @@ services:
       - traefik_nordvpn_network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.grafana.rule=Host(`grafana.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.grafana.rule=Host(`grafana.${COMMON_DOMAIN}`)"  # Replace with your domain
       - "traefik.http.routers.grafana.entrypoints=websecure"
       - "traefik.http.routers.grafana.tls=true"
       - "traefik.http.routers.grafana.tls.certresolver=mytlsresolver"  # Use your TLS resolver
