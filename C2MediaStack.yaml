@@ -1,0 +1,243 @@
+version: "3.8"
+services:
+
+  # Plex Service
+  plex:
+    image: plexinc/pms-docker:latest
+    container_name: plex
+    environment:
+      - PLEX_UID=<your_plex_uid>
+      - PLEX_GID=<your_plex_gid>
+    volumes:
+      - <path_to_plex_config>:/config
+      - <path_to_media_files>:/data
+    ports:
+      - "32400:32400"
+    networks:
+      - traefik_nordvpn_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.plex.rule=Host(`plex.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.plex.entrypoints=websecure"
+      - "traefik.http.routers.plex.tls=true"
+      - "traefik.http.routers.plex.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+
+  # VPN Client Service https://github.com/bubuntux/nordvpn
+  vpn-client:
+    image: bubuntux/nordvpn
+    container_name: vpn-client
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - TZ=Your/Timezone  # Set your timezone
+      - TOKEN=<Your Token Here>     # Required
+      - CONNECT=United_States
+      - NORDVPN_PROTOCOL=NordLynx  # Set the protocol to NordLynx
+      - NETWORK=192.168.1.0/24  # So it can be accessed within the local network         
+    volumes:
+      - /config/nordvpn:/vpn
+    networks:
+      - traefik_nordvpn_network
+# The torrent service would be available at http://localhost:8080/ 
+# or anywhere inside of the local network http://192.168.1.xxx:8080
+
+  traefik:
+    image: traefik
+    container_name: traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - TZ=UTC
+    networks:
+      - traefik_nordvpn_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.example.com`)"
+      - "traefik.http.routers.traefik.entrypoints=web"
+      - "traefik.http.routers.traefik-secure.rule=Host(`traefik.example.com`)"
+      - "traefik.http.routers.traefik-secure.entrypoints=websecure"
+      - "traefik.http.routers.traefik-secure.tls=true"
+      - "traefik.http.routers.traefik-secure.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+      - "traefik.http.services.traefik-secure.loadbalancer.server.port=8080"
+
+  # TLS Certificate Resolver
+  tls-resolver:
+    image: traefik/whoami  # Use a simple container for TLS resolver
+    container_name: tls-resolver
+    networks:
+      - traefik_nordvpn_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.tls-resolver.rule=Host(`tls-resolver.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.tls-resolver.entrypoints=web"
+      - "traefik.http.routers.tls-resolver.tls=true"
+      - "traefik.http.routers.tls-resolver.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+
+  # Authentik Service
+  authentik:
+    image: authentik/authentik
+    container_name: authentik
+    environment:
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
+      - AUTHENTIK_DB=sqlite:////var/lib/authentik/authentik.db
+      - AUTHENTIK_REDIS=redis://authentik-redis:6379
+      - AUTHENTIK_REDIS_PREFIX=authentik
+      - AUTHENTIK_CLUSTER_NAME=main
+    secrets:
+      - db_password
+      - redis_password
+    volumes:
+      - authentik_data:/var/lib/authentik
+    ports:
+      - "8080:8080"
+    networks:
+      - traefik_nordvpn_network
+
+  authentik-redis:
+    image: redis:latest
+    container_name: authentik-redis
+    command: redis-server --requirepass <redis_password>
+    networks:
+      - traefik_nordvpn_network
+
+
+  # Docker Socket Proxy Service
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy
+    container_name: docker-socket-proxy
+    environment:
+      CONTAINERS: 1
+      SERVICES: 1
+      NETWORKS: 1
+      SOCKET: tcp://0.0.0.0:2375
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "2375:2375"
+    networks:
+      - traefik_nordvpn_network
+    expose:
+      - "2375"
+
+  pihole:
+    image: pihole/pihole
+    container_name: pihole
+    environment:
+      TZ: "Your/Timezone"  # Set your timezone
+      WEBPASSWORD: "YourPiholePassword"  # Set your Pi-hole web interface password
+    ports:
+      - "53:53/tcp"  # Expose port 53 for DNS (TCP)
+      - "53:53/udp"  # Expose port 53 for DNS (UDP)
+      - "67:67/udp"  # Expose port 67 for DHCP
+    volumes:
+      - pihole_config:/etc/pihole
+      - pihole_dnsmasq:/etc/dnsmasq.d
+    networks:
+      - traefik_nordvpn_network
+    dns:
+      - 127.0.0.1
+      - 1.1.1.1  # Replace with your preferred DNS server(s)
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pihole.entrypoints=websecure"
+      - "traefik.http.routers.pihole.rule=Host(`pihole.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.pihole.tls=true"
+      - "traefik.http.routers.pihole.tls.certresolver=mytlsresolver"
+      - "traefik.http.services.pihole.loadbalancer.server.port=443"
+
+  bazarr:
+    image: linuxserver/bazarr
+    container_name: bazarr
+    environment:
+      - PUID=<your_puid>
+      - PGID=<your_pgid>
+    volumes:
+      - <path_to_bazarr_config>:/config
+      - <path_to_media_files>:/media
+    networks:
+      - traefik_nordvpn_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bazarr.rule=Host(`bazarr.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.bazarr.entrypoints=websecure"
+      - "traefik.http.routers.bazarr.tls=true"
+      - "traefik.http.routers.bazarr.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+
+  # Sonarr service
+  sonarr:
+    # Replace with your Sonarr configuration
+
+  # Radarr service
+  radarr:
+    # Replace with your Radarr configuration
+
+  # Lidarr service
+  lidarr:
+    # Replace with your Lidarr configuration
+
+  # Overserr service
+  overserr:
+    image: hotio/overserr:latest
+    container_name: overserr
+    environment:
+      - PUID=<your_puid>
+      - PGID=<your_pgid>
+      - TZ=Your/Timezone  # Set your timezone
+    volumes:
+      - <path_to_overserr_config>:/config
+    networks:
+      - traefik_nordvpn_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.overserr.rule=Host(`overserr.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.overserr.entrypoints=websecure"
+      - "traefik.http.routers.overserr.tls=true"
+      - "traefik.http.routers.overserr.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+
+  # Lazy Librarian service
+  lazy-librarian:
+    # Replace with your Lazy Librarian configuration
+
+  # Home Bridge service
+  homebridge:
+    # Replace with your Home Bridge configuration
+
+  # Homer service
+  homer:
+    image: b3vis/homer:latest
+    container_name: homer
+    volumes:
+      - <path_to_homer_config>:/www-data/config
+    networks:
+      - traefik_nordvpn_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.homer.rule=Host(`homer.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.homer.entrypoints=websecure"
+      - "traefik.http.routers.homer.tls=true"
+      - "traefik.http.routers.homer.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+  
+
+networks:
+  traefik_nordvpn_network:
+    external: true
+
+secrets:
+  db_password:
+    external: true
+  redis_password:
+    external: true
+
+volumes:
+  authentik_data:
+  pihole_config:
+  pihole_dnsmasq:
