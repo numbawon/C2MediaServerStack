@@ -1,66 +1,30 @@
 version: "3.8"
 services:
 
-  # Portainer Service
-  # 
-  portainer:
-    image: portainer/portainer-ce
-    container_name: portainer
-    command: -H unix:///var/run/docker.sock
-    ports:
-      - "9000:9000"
+  # Docker Socket Proxy Service
+  # GitHub Repository: https://github.com/Tecnativa/docker-socket-proxy
+  # Docker Hub: https://hub.docker.com/r/traefik/whoami
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy
+    container_name: docker-socket-proxy
+    environment:
+      CONTAINERS: 1
+      SERVICES: 1
+      NETWORKS: 1
+      SOCKET: tcp://0.0.0.0:2375
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
-    networks:
-      - traefik_nordvpn_network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.portainer.rule=Host(`portainer.example.com`)"  # Replace with your domain
-      - "traefik.http.routers.portainer.entrypoints=websecure"
-      - "traefik.http.routers.portainer.tls=true"
-      - "traefik.http.routers.portainer.tls.certresolver=mytlsresolver"  # Use your TLS resolver
-      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
-
-  # Plex Service https://github.com/plexinc/pms-docker
-  plex:
-    image: plexinc/pms-docker:latest
-    container_name: plex
-    environment:
-      - PLEX_UID=<your_plex_uid>
-      - PLEX_GID=<your_plex_gid>
-    volumes:
-      - <path_to_plex_config>:/config
-      - <path_to_media_files>:/data
     ports:
-      - "32400:32400"
+      - "2375:2375"
     networks:
       - traefik_nordvpn_network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.plex.rule=Host(`plex.example.com`)"  # Replace with your domain
-      - "traefik.http.routers.plex.entrypoints=websecure"
-      - "traefik.http.routers.plex.tls=true"
-      - "traefik.http.routers.plex.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+    expose:
+      - "2375"
 
-  # VPN Client Service https://github.com/bubuntux/nordvpn
-  vpn-client:
-    image: bubuntux/nordvpn
-    container_name: vpn-client
-    cap_add:
-      - NET_ADMIN
-    environment:
-      - TZ=Your/Timezone  # Set your timezone
-      - TOKEN=<Your Token Here>     # Required
-      - CONNECT=United_States
-      - NORDVPN_PROTOCOL=NordLynx  # Set the protocol to NordLynx
-      - NETWORK=192.168.1.0/24  # So it can be accessed within the local network         
-    volumes:
-      - /config/nordvpn:/vpn
-    networks:
-      - traefik_nordvpn_network
 
-  # Traefik Service https://github.com/traefik/traefik
+  # Traefik Service     
+  # GitHub Repository: https://github.com/traefik/traefik
+  # Docker Hub: https://hub.docker.com/_/traefik
   traefik:
     image: traefik
     container_name: traefik
@@ -90,6 +54,8 @@ services:
       - "traefik.http.services.traefik-secure.loadbalancer.server.port=8080"
 
   # TLS Certificate Resolver
+  # GitHub Repository: https://github.com/traefik/whoami
+  # Docker Hub: https://hub.docker.com/r/traefik/whoami
   tls-resolver:
     image: traefik/whoami  # Use a simple container for TLS resolver
     container_name: tls-resolver
@@ -102,53 +68,9 @@ services:
       - "traefik.http.routers.tls-resolver.tls=true"
       - "traefik.http.routers.tls-resolver.tls.certresolver=mytlsresolver"  # Use your TLS resolver
 
-  # Authentik Service https://github.com/goauthentik/authentik
-  authentik:
-    image: authentik/authentik
-    container_name: authentik
-    environment:
-      - DOCKER_HOST=tcp://docker-socket-proxy:2375
-      - AUTHENTIK_DB=sqlite:////var/lib/authentik/authentik.db
-      - AUTHENTIK_REDIS=redis://authentik-redis:6379
-      - AUTHENTIK_REDIS_PREFIX=authentik
-      - AUTHENTIK_CLUSTER_NAME=main
-    secrets:
-      - db_password
-      - redis_password
-    volumes:
-      - authentik_data:/var/lib/authentik
-    ports:
-      - "8080:8080"
-    networks:
-      - traefik_nordvpn_network
-
-  authentik-redis:
-    image: redis:latest
-    container_name: authentik-redis
-    command: redis-server --requirepass <redis_password>
-    networks:
-      - traefik_nordvpn_network
-
-
-  # Docker Socket Proxy Service
-  docker-socket-proxy:
-    image: tecnativa/docker-socket-proxy
-    container_name: docker-socket-proxy
-    environment:
-      CONTAINERS: 1
-      SERVICES: 1
-      NETWORKS: 1
-      SOCKET: tcp://0.0.0.0:2375
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    ports:
-      - "2375:2375"
-    networks:
-      - traefik_nordvpn_network
-    expose:
-      - "2375"
-
   # PiHole Service
+  # GitHub Repository: https://github.com/pi-hole/docker-pi-hole
+  # Docker Hub: https://hub.docker.com/r/pihole/pihole
   pihole:
     image: pihole/pihole
     container_name: pihole
@@ -175,7 +97,104 @@ services:
       - "traefik.http.routers.pihole.tls.certresolver=mytlsresolver"
       - "traefik.http.services.pihole.loadbalancer.server.port=443"
 
+  # Portainer Service
+  # GitHub Repository: https://github.com/portainer/portainer
+  # Docker Hub: https://hub.docker.com/r/portainer/portainer-ce 
+  portainer:
+    image: portainer/portainer-ce
+    container_name: portainer
+    command: -H unix:///var/run/docker.sock
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - traefik_nordvpn_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.portainer.entrypoints=websecure"
+      - "traefik.http.routers.portainer.tls=true"
+      - "traefik.http.routers.portainer.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+  
+  # VPN Client Service 
+  # GitHub Repository: https://github.com/bubuntux/nordvpn
+  # Docker Hub: https://hub.docker.com/r/bubuntux/nordvpn/
+  vpn-client:
+    image: bubuntux/nordvpn
+    container_name: vpn-client
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - TZ=Your/Timezone  # Set your timezone
+      - TOKEN=<Your Token Here>     # Required
+      - CONNECT=United_States
+      - NORDVPN_PROTOCOL=NordLynx  # Set the protocol to NordLynx
+      - NETWORK=192.168.1.0/24  # So it can be accessed within the local network         
+    volumes:
+      - /config/nordvpn:/vpn
+    networks:
+      - traefik_nordvpn_network
+
+  # Authentik Service 
+  # GitHub Repository: https://github.com/goauthentik/authentik
+  # Docker Hub: https://hub.docker.com/r/goauthentik/authentik
+  authentik:
+    image: authentik/authentik
+    container_name: authentik
+    environment:
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
+      - AUTHENTIK_DB=sqlite:////var/lib/authentik/authentik.db
+      - AUTHENTIK_REDIS=redis://authentik-redis:6379
+      - AUTHENTIK_REDIS_PREFIX=authentik
+      - AUTHENTIK_CLUSTER_NAME=main
+    secrets:
+      - db_password
+      - redis_password
+    volumes:
+      - authentik_data:/var/lib/authentik
+    ports:
+      - "8080:8080"
+    networks:
+      - traefik_nordvpn_network
+
+  # GitHub Repository: https://github.com/docker-library/redis  https://github.com/docker-library/redis
+  # Docker Hub: https://hub.docker.com/_/redis
+  authentik-redis:
+    image: redis:latest
+    container_name: authentik-redis
+    command: redis-server --requirepass <redis_password>
+    networks:
+      - traefik_nordvpn_network
+
+  # Plex Service
+  # GitHub Repository: https://github.com/plexinc/pms-docker
+  # Docker Hub: https://hub.docker.com/r/plexinc/pms-docker
+  plex:
+    image: plexinc/pms-docker:latest
+    container_name: plex
+    environment:
+      - PLEX_UID=<your_plex_uid>
+      - PLEX_GID=<your_plex_gid>
+    volumes:
+      - <path_to_plex_config>:/config
+      - <path_to_media_files>:/data
+    ports:
+      - "32400:32400"
+    networks:
+      - traefik_nordvpn_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.plex.rule=Host(`plex.example.com`)"  # Replace with your domain
+      - "traefik.http.routers.plex.entrypoints=websecure"
+      - "traefik.http.routers.plex.tls=true"
+      - "traefik.http.routers.plex.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+
   # Bazarr Service
+  # GitHub Repository: https://github.com/morpheus65535/bazarr  https://github.com/linuxserver/docker-bazarr
+  # Docker Hub: https://hub.docker.com/r/linuxserver/bazarr
   bazarr:
     image: linuxserver/bazarr
     container_name: bazarr
@@ -195,6 +214,8 @@ services:
       - "traefik.http.routers.bazarr.tls.certresolver=mytlsresolver"  # Use your TLS resolver
 
   # Sonarr service
+  # GitHub Repository: https://github.com/Sonarr/Sonarr   https://github.com/Sonarr/Sonarr
+  # Docker Hub: https://hub.docker.com/r/linuxserver/sonarr
   sonarr:
     image: linuxserver/sonarr
     container_name: sonarr
@@ -216,6 +237,8 @@ services:
       - "traefik.http.routers.sonarr.tls.certresolver=mytlsresolver"  # Use your TLS resolver
 
   # Radarr service
+  # GitHub Repository: https://github.com/Radarr/Radarr   https://github.com/linuxserver/docker-radarr
+  # Docker Hub: https://hub.docker.com/r/linuxserver/radarr
   radarr:
     image: linuxserver/radarr
     container_name: radarr
@@ -237,6 +260,8 @@ services:
       - "traefik.http.routers.radarr.tls.certresolver=mytlsresolver"  # Use your TLS resolver
 
   # Lidarr service
+  # GitHub Repository: https://github.com/Lidarr/Lidarr  https://github.com/linuxserver/docker-lidarr
+  # Docker Hub: https://hub.docker.com/r/linuxserver/lidarr
   lidarr:
     image: linuxserver/lidarr
     container_name: lidarr
@@ -258,8 +283,10 @@ services:
       - "traefik.http.routers.lidarr.tls.certresolver=mytlsresolver"  # Use your TLS resolver
 
   # Overserr service
+  # GitHub Repository: https://github.com/sct/overseerr  https://github.com/linuxserver/docker-overseerr
+  # Docker Hub: https://github.com/linuxserver/docker-overseerr
   overserr:
-    image: hotio/overserr:latest
+    image: linuxserver/overseerr:latest
     container_name: overserr
     environment:
       - PUID=<your_puid>
@@ -276,7 +303,9 @@ services:
       - "traefik.http.routers.overserr.tls=true"
       - "traefik.http.routers.overserr.tls.certresolver=mytlsresolver"  # Use your TLS resolver
 
-  # Lazy Librarian service https://github.com/DobyTang/LazyLibrarian
+  # Lazy Librarian service 
+  # GitHub Repository: https://gitlab.com/LazyLibrarian/LazyLibrarian   https://github.com/linuxserver/docker-lazylibrarian
+  # Docker Hub: https://hub.docker.com/r/linuxserver/lazylibrarian
   lazylibrarian:
     image: linuxserver/lazylibrarian
     container_name: lazylibrarian
@@ -298,14 +327,11 @@ services:
       - "traefik.http.routers.lazylibrarian.tls=true"
       - "traefik.http.routers.lazylibrarian.tls.certresolver=mytlsresolver"  # Use your TLS resolver
 
-
-  # Home Bridge service
-  homebridge:
-    # Replace with your Home Bridge configuration
-
   # Homer service
+  # GitHub Repository:  https://github.com/bastienwirtz/homer
+  # Docker Hub: https://hub.docker.com/r/b4bz/homer
   homer:
-    image: b3vis/homer:latest
+    image: b4bz/homer:latest
     container_name: homer
     volumes:
       - <path_to_homer_config>:/www-data/config
@@ -318,7 +344,10 @@ services:
       - "traefik.http.routers.homer.tls=true"
       - "traefik.http.routers.homer.tls.certresolver=mytlsresolver"  # Use your TLS resolver
 
-  # Prometheus Service https://github.com/prometheus/prometheus
+  # Prometheus Service 
+  # GitHub Repository: https://github.com/prometheus/prometheus
+  # Docker Hub: https://hub.docker.com/r/prom/prometheus
+
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -337,7 +366,9 @@ services:
     # ports:
     #   - "9090:9090"
 
-  # Grafana Service https://github.com/grafana/grafana
+  # Grafana Service 
+  # GitHub Repository: https://github.com/grafana/grafana
+  # Docker Hub: https://hub.docker.com/r/grafana/grafana
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
@@ -357,8 +388,6 @@ services:
     # ports:
     #   - "3000:3000"
 
-
-
 networks:
   traefik_nordvpn_network:
     external: true
@@ -372,4 +401,3 @@ secrets:
 volumes:
   authentik_data:
   pihole_config:
-  pihole_dnsmasq:
