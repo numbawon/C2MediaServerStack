@@ -80,7 +80,7 @@ services:
     ports:
       - "53:53/tcp"  # Expose port 53 for DNS (TCP)
       - "53:53/udp"  # Expose port 53 for DNS (UDP)
-      - "67:67/udp"  # Expose port 67 for DHCP
+      # - "67:67/udp"  # Expose port 67 for DHCP
     volumes:
       - pihole_config:/etc/pihole
       - pihole_dnsmasq:/etc/dnsmasq.d
@@ -225,8 +225,8 @@ services:
     volumes:
       - <path_to_sonarr_config>:/config
       - <path_to_media_files>:/tv
-    # ports:
-    #   - "8989:8989"
+    ports:
+      - "8989:8989"
     networks:
       - traefik_nordvpn_network
     labels:
@@ -248,8 +248,8 @@ services:
     volumes:
       - <path_to_radarr_config>:/config
       - <path_to_media_files>:/movies
-    # ports:
-    #   - "7878:7878"
+    ports:
+      - "7878:7878"
     networks:
       - traefik_nordvpn_network
     labels:
@@ -271,8 +271,8 @@ services:
     volumes:
       - <path_to_lidarr_config>:/config
       - <path_to_music_library>:/music
-    # ports:
-    #   - "8686:8686"
+    ports:
+      - "8686:8686"
     networks:
       - traefik_nordvpn_network
     labels:
@@ -316,8 +316,8 @@ services:
     volumes:
       - <path_to_lazylibrarian_config>:/config
       - <path_to_ebook_library>:/books
-    # ports:
-    #   - "5299:5299"
+    ports:
+      - "5299:5299"
     networks:
       - traefik_nordvpn_network
     labels:
@@ -363,8 +363,8 @@ services:
       - "traefik.http.routers.prometheus.entrypoints=websecure"
       - "traefik.http.routers.prometheus.tls=true"
       - "traefik.http.routers.prometheus.tls.certresolver=mytlsresolver"  # Use your TLS resolver
-    # ports:
-    #   - "9090:9090"
+    ports:
+      - "9090:9090"
 
   # Grafana Service 
   # GitHub Repository: https://github.com/grafana/grafana
@@ -385,8 +385,8 @@ services:
       - "traefik.http.routers.grafana.entrypoints=websecure"
       - "traefik.http.routers.grafana.tls=true"
       - "traefik.http.routers.grafana.tls.certresolver=mytlsresolver"  # Use your TLS resolver
-    # ports:
-    #   - "3000:3000"
+    ports:
+      - "3000:3000"
 
 networks:
   traefik_nordvpn_network:
