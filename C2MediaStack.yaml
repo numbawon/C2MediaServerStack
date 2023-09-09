@@ -1,4 +1,4 @@
-version: "3.8"
+version: 3.8
 services:
 
   # Docker Socket Proxy Service
@@ -15,11 +15,11 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      - "2375:2375"
+      - 2375:2375
     networks:
       - traefik_nordvpn_network
     expose:
-      - "2375"
+      - 2375
 
 
   # Traefik Service     
@@ -29,29 +29,32 @@ services:
     image: traefik
     container_name: traefik
     command:
-      - "--api.insecure=true"
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.websecure.address=:443"
+      - --api.insecure=true
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.letsencrypt.acme.email=admin@example.com
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      - "80:80"
-      - "443:443"
+      - 80:80
+      - 443:443
     environment:
       - TZ=${COMMON_TZ}
     networks:
       - traefik_nordvpn_network
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.traefik.rule=Host(`traefik.${COMMON_DOMAIN}`)"
-      - "traefik.http.routers.traefik.entrypoints=web"
-      - "traefik.http.routers.traefik-secure.rule=Host(`traefik.${COMMON_DOMAIN}`)"
-      - "traefik.http.routers.traefik-secure.entrypoints=websecure"
-      - "traefik.http.routers.traefik-secure.tls=true"
-      - "traefik.http.routers.traefik-secure.tls.certresolver=mytlsresolver"  # Use your TLS resolver
-      - "traefik.http.services.traefik-secure.loadbalancer.server.port=8080"
+      - traefik.enable=true
+      - traefik.http.routers.traefik.rule=Host(`traefik.${COMMON_DOMAIN}`)
+      - traefik.http.routers.traefik.entrypoints=web
+      - traefik.http.routers.traefik-secure.rule=Host(`traefik.${COMMON_DOMAIN}`)
+      - traefik.http.routers.traefik-secure.entrypoints=websecure
+      - traefik.http.routers.traefik-secure.tls=true
+      - traefik.http.routers.traefik-secure.tls.certresolver=mytlsresolver  # Use your TLS resolver
+      - traefik.http.services.traefik-secure.loadbalancer.server.port=8080
 
   # TLS Certificate Resolver
   # GitHub Repository: https://github.com/traefik/whoami
@@ -62,11 +65,11 @@ services:
     networks:
       - traefik_nordvpn_network
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.tls-resolver.rule=Host(`tls-resolver.${COMMON_DOMAIN}`)"  # Replace with your domain
-      - "traefik.http.routers.tls-resolver.entrypoints=web"
-      - "traefik.http.routers.tls-resolver.tls=true"
-      - "traefik.http.routers.tls-resolver.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+      - traefik.enable=true
+      - traefik.http.routers.tls-resolver.rule=Host(`tls-resolver.${COMMON_DOMAIN}`)  # Replace with your domain
+      - traefik.http.routers.tls-resolver.entrypoints=web
+      - traefik.http.routers.tls-resolver.tls=true
+      - traefik.http.routers.tls-resolver.tls.certresolver=mytlsresolver  # Use your TLS resolver
 
   # PiHole Service
   # GitHub Repository: https://github.com/pi-hole/docker-pi-hole
@@ -75,12 +78,12 @@ services:
     image: pihole/pihole
     container_name: pihole
     environment:
-      TZ: "Your/Timezone"  # Set your timezone
-      WEBPASSWORD: "YourPiholePassword"  # Set your Pi-hole web interface password
+      TZ: Your/Timezone  # Set your timezone
+      WEBPASSWORD: YourPiholePassword  # Set your Pi-hole web interface password
     ports:
-      - "53:53/tcp"  # Expose port 53 for DNS (TCP)
-      - "53:53/udp"  # Expose port 53 for DNS (UDP)
-      # - "67:67/udp"  # Expose port 67 for DHCP
+      - 53:53/tcp  # Expose port 53 for DNS (TCP)
+      - 53:53/udp  # Expose port 53 for DNS (UDP)
+      # - 67:67/udp  # Expose port 67 for DHCP
     volumes:
       - pihole_config:/etc/pihole
       - pihole_dnsmasq:/etc/dnsmasq.d
@@ -90,12 +93,12 @@ services:
       - 127.0.0.1
       - 1.1.1.1  # Replace with your preferred DNS server(s)
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.pihole.entrypoints=websecure"
-      - "traefik.http.routers.pihole.rule=Host(`pihole.${COMMON_DOMAIN}`)"  # Replace with your domain
-      - "traefik.http.routers.pihole.tls=true"
-      - "traefik.http.routers.pihole.tls.certresolver=mytlsresolver"
-      - "traefik.http.services.pihole.loadbalancer.server.port=443"
+      - traefik.enable=true
+      - traefik.http.routers.pihole.entrypoints=websecure
+      - traefik.http.routers.pihole.rule=Host(`pihole.${COMMON_DOMAIN}`)  # Replace with your domain
+      - traefik.http.routers.pihole.tls=true
+      - traefik.http.routers.pihole.tls.certresolver=mytlsresolver
+      - traefik.http.services.pihole.loadbalancer.server.port=443
 
   # Portainer Service
   # GitHub Repository: https://github.com/portainer/portainer
@@ -105,19 +108,19 @@ services:
     container_name: portainer
     command: -H unix:///var/run/docker.sock
     ports:
-      - "9000:9000"
+      - 9000:9000
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
     networks:
       - traefik_nordvpn_network
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.portainer.rule=Host(`portainer.${COMMON_DOMAIN}`)"  # Replace with your domain
-      - "traefik.http.routers.portainer.entrypoints=websecure"
-      - "traefik.http.routers.portainer.tls=true"
-      - "traefik.http.routers.portainer.tls.certresolver=mytlsresolver"  # Use your TLS resolver
-      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+      - traefik.enable=true
+      - traefik.http.routers.portainer.rule=Host(`portainer.${COMMON_DOMAIN}`)  # Replace with your domain
+      - traefik.http.routers.portainer.entrypoints=websecure
+      - traefik.http.routers.portainer.tls=true
+      - traefik.http.routers.portainer.tls.certresolver=mytlsresolver  # Use your TLS resolver
+      - traefik.http.services.portainer.loadbalancer.server.port=9000
   
   # VPN Client Service 
   # GitHub Repository: https://github.com/bubuntux/nordvpn
@@ -150,13 +153,21 @@ services:
       - AUTHENTIK_REDIS=redis://authentik-redis:6379
       - AUTHENTIK_REDIS_PREFIX=authentik
       - AUTHENTIK_CLUSTER_NAME=main
+      - OIDC_ISSUER=https://accounts.google.com
+      - OIDC_CLIENT_ID=client-id
+      - OIDC_CLIENT_SECRET=client-secret
+      - OIDC_REDIRECT_URI=https://auth.${COMMON_DOMAIN}/auth/complete/google-oauth2/
+      - OIDC_SCOPE=openid email profile
+      - OIDC_EMAIL_CLAIM=email
+      - OIDC_USERNAME_CLAIM=email
+      - OIDC_GROUPS_CLAIM=groups
     secrets:
       - db_password
       - redis_password
     volumes:
       - authentik_data:/var/lib/authentik
     ports:
-      - "8080:8080"
+      - 8080:8080
     networks:
       - traefik_nordvpn_network
 
@@ -182,15 +193,15 @@ services:
       - <path_to_plex_config>:/config
       - <path_to_media_files>:/data
     ports:
-      - "32400:32400"
+      - 32400:32400
     networks:
       - traefik_nordvpn_network
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.plex.rule=Host(`plex.${COMMON_DOMAIN}`)"  # Replace with your domain
-      - "traefik.http.routers.plex.entrypoints=websecure"
-      - "traefik.http.routers.plex.tls=true"
-      - "traefik.http.routers.plex.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+      - traefik.enable=true
+      - traefik.http.routers.plex.rule=Host(`plex.${COMMON_DOMAIN}`)  # Replace with your domain
+      - traefik.http.routers.plex.entrypoints=websecure
+      - traefik.http.routers.plex.tls=true
+      - traefik.http.routers.plex.tls.certresolver=mytlsresolver  # Use your TLS resolver
 
   # Bazarr Service
   # GitHub Repository: https://github.com/morpheus65535/bazarr  https://github.com/linuxserver/docker-bazarr
@@ -207,11 +218,11 @@ services:
     networks:
       - traefik_nordvpn_network
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.bazarr.rule=Host(`bazarr.${COMMON_DOMAIN}`)"  # Replace with your domain
-      - "traefik.http.routers.bazarr.entrypoints=websecure"
-      - "traefik.http.routers.bazarr.tls=true"
-      - "traefik.http.routers.bazarr.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+      - traefik.enable=true
+      - traefik.http.routers.bazarr.rule=Host(`bazarr.${COMMON_DOMAIN}`)  # Replace with your domain
+      - traefik.http.routers.bazarr.entrypoints=websecure
+      - traefik.http.routers.bazarr.tls=true
+      - traefik.http.routers.bazarr.tls.certresolver=mytlsresolver  # Use your TLS resolver
 
   # Sonarr service
   # GitHub Repository: https://github.com/Sonarr/Sonarr   https://github.com/Sonarr/Sonarr
@@ -226,15 +237,15 @@ services:
       - <path_to_sonarr_config>:/config
       - <path_to_media_files>:/tv
     ports:
-      - "8989:8989"
+      - 8989:8989
     networks:
       - traefik_nordvpn_network
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.sonarr.rule=Host(`sonarr.${COMMON_DOMAIN}`)"  # Replace with your domain
-      - "traefik.http.routers.sonarr.entrypoints=websecure"
-      - "traefik.http.routers.sonarr.tls=true"
-      - "traefik.http.routers.sonarr.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+      - traefik.enable=true
+      - traefik.http.routers.sonarr.rule=Host(`sonarr.${COMMON_DOMAIN}`)  # Replace with your domain
+      - traefik.http.routers.sonarr.entrypoints=websecure
+      - traefik.http.routers.sonarr.tls=true
+      - traefik.http.routers.sonarr.tls.certresolver=mytlsresolver  # Use your TLS resolver
 
   # Radarr service
   # GitHub Repository: https://github.com/Radarr/Radarr   https://github.com/linuxserver/docker-radarr
@@ -249,15 +260,15 @@ services:
       - <path_to_radarr_config>:/config
       - <path_to_media_files>:/movies
     ports:
-      - "7878:7878"
+      - 7878:7878
     networks:
       - traefik_nordvpn_network
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.radarr.rule=Host(`radarr.${COMMON_DOMAIN}`)"  # Replace with your domain
-      - "traefik.http.routers.radarr.entrypoints=websecure"
-      - "traefik.http.routers.radarr.tls=true"
-      - "traefik.http.routers.radarr.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+      - traefik.enable=true
+      - traefik.http.routers.radarr.rule=Host(`radarr.${COMMON_DOMAIN}`)  # Replace with your domain
+      - traefik.http.routers.radarr.entrypoints=websecure
+      - traefik.http.routers.radarr.tls=true
+      - traefik.http.routers.radarr.tls.certresolver=mytlsresolver  # Use your TLS resolver
 
   # Lidarr service
   # GitHub Repository: https://github.com/Lidarr/Lidarr  https://github.com/linuxserver/docker-lidarr
@@ -272,15 +283,15 @@ services:
       - <path_to_lidarr_config>:/config
       - <path_to_music_library>:/music
     ports:
-      - "8686:8686"
+      - 8686:8686
     networks:
       - traefik_nordvpn_network
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.lidarr.rule=Host(`lidarr.${COMMON_DOMAIN}`)"  # Replace with your domain
-      - "traefik.http.routers.lidarr.entrypoints=websecure"
-      - "traefik.http.routers.lidarr.tls=true"
-      - "traefik.http.routers.lidarr.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+      - traefik.enable=true
+      - traefik.http.routers.lidarr.rule=Host(`lidarr.${COMMON_DOMAIN}`)  # Replace with your domain
+      - traefik.http.routers.lidarr.entrypoints=websecure
+      - traefik.http.routers.lidarr.tls=true
+      - traefik.http.routers.lidarr.tls.certresolver=mytlsresolver  # Use your TLS resolver
 
   # Overserr service
   # GitHub Repository: https://github.com/sct/overseerr  https://github.com/linuxserver/docker-overseerr
@@ -297,11 +308,11 @@ services:
     networks:
       - traefik_nordvpn_network
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.overserr.rule=Host(`overserr.${COMMON_DOMAIN}`)"  # Replace with your domain
-      - "traefik.http.routers.overserr.entrypoints=websecure"
-      - "traefik.http.routers.overserr.tls=true"
-      - "traefik.http.routers.overserr.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+      - traefik.enable=true
+      - traefik.http.routers.overserr.rule=Host(`overserr.${COMMON_DOMAIN}`)  # Replace with your domain
+      - traefik.http.routers.overserr.entrypoints=websecure
+      - traefik.http.routers.overserr.tls=true
+      - traefik.http.routers.overserr.tls.certresolver=mytlsresolver  # Use your TLS resolver
 
   # Lazy Librarian service 
   # GitHub Repository: https://gitlab.com/LazyLibrarian/LazyLibrarian   https://github.com/linuxserver/docker-lazylibrarian
@@ -317,15 +328,15 @@ services:
       - <path_to_lazylibrarian_config>:/config
       - <path_to_ebook_library>:/books
     ports:
-      - "5299:5299"
+      - 5299:5299
     networks:
       - traefik_nordvpn_network
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.lazylibrarian.rule=Host(`lazylibrarian.${COMMON_DOMAIN}`)"  # Replace with your domain
-      - "traefik.http.routers.lazylibrarian.entrypoints=websecure"
-      - "traefik.http.routers.lazylibrarian.tls=true"
-      - "traefik.http.routers.lazylibrarian.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+      - traefik.enable=true
+      - traefik.http.routers.lazylibrarian.rule=Host(`lazylibrarian.${COMMON_DOMAIN}`)  # Replace with your domain
+      - traefik.http.routers.lazylibrarian.entrypoints=websecure
+      - traefik.http.routers.lazylibrarian.tls=true
+      - traefik.http.routers.lazylibrarian.tls.certresolver=mytlsresolver  # Use your TLS resolver
 
   # Homer service
   # GitHub Repository:  https://github.com/bastienwirtz/homer
@@ -338,11 +349,11 @@ services:
     networks:
       - traefik_nordvpn_network
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.homer.rule=Host(`homer.${COMMON_DOMAIN}`)"  # Replace with your domain
-      - "traefik.http.routers.homer.entrypoints=websecure"
-      - "traefik.http.routers.homer.tls=true"
-      - "traefik.http.routers.homer.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+      - traefik.enable=true
+      - traefik.http.routers.homer.rule=Host(`homer.${COMMON_DOMAIN}`)  # Replace with your domain
+      - traefik.http.routers.homer.entrypoints=websecure
+      - traefik.http.routers.homer.tls=true
+      - traefik.http.routers.homer.tls.certresolver=mytlsresolver  # Use your TLS resolver
 
   # Prometheus Service 
   # GitHub Repository: https://github.com/prometheus/prometheus
@@ -358,13 +369,13 @@ services:
     networks:
       - traefik_nordvpn_network
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.prometheus.rule=Host(`prometheus.${COMMON_DOMAIN}`)"  # Replace with your domain
-      - "traefik.http.routers.prometheus.entrypoints=websecure"
-      - "traefik.http.routers.prometheus.tls=true"
-      - "traefik.http.routers.prometheus.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+      - traefik.enable=true
+      - traefik.http.routers.prometheus.rule=Host(`prometheus.${COMMON_DOMAIN}`)  # Replace with your domain
+      - traefik.http.routers.prometheus.entrypoints=websecure
+      - traefik.http.routers.prometheus.tls=true
+      - traefik.http.routers.prometheus.tls.certresolver=mytlsresolver  # Use your TLS resolver
     ports:
-      - "9090:9090"
+      - 9090:9090
 
   # Grafana Service 
   # GitHub Repository: https://github.com/grafana/grafana
@@ -380,13 +391,13 @@ services:
     networks:
       - traefik_nordvpn_network
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.grafana.rule=Host(`grafana.${COMMON_DOMAIN}`)"  # Replace with your domain
-      - "traefik.http.routers.grafana.entrypoints=websecure"
-      - "traefik.http.routers.grafana.tls=true"
-      - "traefik.http.routers.grafana.tls.certresolver=mytlsresolver"  # Use your TLS resolver
+      - traefik.enable=true
+      - traefik.http.routers.grafana.rule=Host(`grafana.${COMMON_DOMAIN}`)  # Replace with your domain
+      - traefik.http.routers.grafana.entrypoints=websecure
+      - traefik.http.routers.grafana.tls=true
+      - traefik.http.routers.grafana.tls.certresolver=mytlsresolver  # Use your TLS resolver
     ports:
-      - "3000:3000"
+      - 3000:3000
 
 networks:
   traefik_nordvpn_network:
