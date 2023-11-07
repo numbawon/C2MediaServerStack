@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the names of your secrets
-secrets=("db_password" "api_key" "other_secret")
+secrets=("postgress_password" "redis_password")
 
 # Generate a random password for each secret and create the secrets
 for secret in "${secrets[@]}"; do
