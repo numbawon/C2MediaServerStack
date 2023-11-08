@@ -21,7 +21,6 @@ services:
     expose:
       - 2375
 
-
   # Traefik Service     
   # GitHub Repository: https://github.com/traefik/traefik
   # Docker Hub: https://hub.docker.com/_/traefik
