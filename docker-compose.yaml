@@ -43,18 +43,22 @@ services:
       - 80:80
       - 443:443
     environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
       - TZ=${COMMON_TZ}
     networks:
       - traefik_nordvpn_network
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.traefik.rule=Host(`traefik.${COMMON_DOMAIN}`)
-      - traefik.http.routers.traefik.entrypoints=web
-      - traefik.http.routers.traefik-secure.rule=Host(`traefik.${COMMON_DOMAIN}`)
-      - traefik.http.routers.traefik-secure.entrypoints=websecure
-      - traefik.http.routers.traefik-secure.tls=true
-      - traefik.http.routers.traefik-secure.tls.certresolver=tls-resolver
-      - traefik.http.services.traefik-secure.loadbalancer.server.port=8080
+      - "traefik.enable=true"
+      - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.traefik.entrypoints=web"
+      - "traefik.http.routers.traefik.middlewares=redirect-to-https@docker"
+      - "traefik.http.routers.traefik-secured.rule=Host(`traefik.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.traefik-secured.entrypoints=websecure"
+      - "traefik.http.routers.traefik-secured.tls=true"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.traefik.tls.certresolver=tls-resolver"
 
   # TLS Certificate Resolver
   # GitHub Repository: https://github.com/traefik/whoami
@@ -62,6 +66,10 @@ services:
   tls-resolver:
     image: traefik/whoami  # Use a simple container for TLS resolver
     container_name: tls-resolver
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
     networks:
       - traefik_nordvpn_network
     labels:
@@ -78,8 +86,10 @@ services:
     image: pihole/pihole
     container_name: pihole
     environment:
-      TZ: ${COMMON_TZ}
-      WEBPASSWORD: YourPiholePassword  # Set your Pi-hole web interface password
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+      - WEBPASSWORD= YourPiholePassword  # Set your Pi-hole web interface password
     ports:
       - 53:53/tcp  # Expose port 53 for DNS (TCP)
       - 53:53/udp  # Expose port 53 for DNS (UDP)
@@ -93,12 +103,16 @@ services:
       - 127.0.0.1
       - 1.1.1.1  # Replace with your preferred DNS server(s)
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.pihole.entrypoints=websecure
-      - traefik.http.routers.pihole.rule=Host(`pihole.${COMMON_DOMAIN}`)
-      - traefik.http.routers.pihole.tls=true
-      - traefik.http.routers.pihole.tls.certresolver=tls-resolver
-      - traefik.http.services.pihole.loadbalancer.server.port=443
+      - "traefik.enable=true"
+      - "traefik.http.services.pihole.loadbalancer.server.port=443"
+      - "traefik.http.routers.pihole.rule=Host(`pihole.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.pihole.entrypoints=web"
+      - "traefik.http.routers.pihole.middlewares=redirect-to-https@docker"
+      - "traefik.http.routers.pihole-secured.rule=Host(`pihole.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.pihole-secured.entrypoints=websecure"
+      - "traefik.http.routers.pihole-secured.tls=true"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.pihole.tls.certresolver=tls-resolver"
 
   # Portainer Service
   # GitHub Repository: https://github.com/portainer/portainer
@@ -106,21 +120,26 @@ services:
   portainer:
     image: portainer/portainer-ce
     container_name: portainer
-    command: -H unix:///var/run/docker.sock
-    ports:
-      - 9000:9000
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
     networks:
       - traefik_nordvpn_network
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.portainer.rule=Host(`portainer.${COMMON_DOMAIN}`)
-      - traefik.http.routers.portainer.entrypoints=websecure
-      - traefik.http.routers.portainer.tls=true
-      - traefik.http.routers.portainer.tls.certresolver=tls-resolver
-      - traefik.http.services.portainer.loadbalancer.server.port=9000
+      - "traefik.enable=true"
+      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.portainer.entrypoints=web"
+      - "traefik.http.routers.portainer.middlewares=redirect-to-https@docker"
+      - "traefik.http.routers.portainer-secured.rule=Host(`portainer.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.portainer-secured.entrypoints=websecure"
+      - "traefik.http.routers.portainer-secured.tls=true"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.portainer.tls.certresolver=tls-resolver"
   
   # VPN Client Service 
   # GitHub Repository: https://github.com/bubuntux/nordvpn
@@ -131,7 +150,9 @@ services:
     cap_add:
       - NET_ADMIN
     environment:
-      - TZ=${COMMON_TZ} 
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
       - TOKEN=${NORD_TOKEN} 
       - CONNECT=United_States
       - NORDVPN_PROTOCOL=NordLynx  # Set the protocol to NordLynx
@@ -148,8 +169,11 @@ services:
     image: authentik/authentik
     container_name: authentik
     environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
-      - AUTHENTIK_DB=sqlite:////var/lib/authentik/authentik.db
+      - AUTHENTIK_DB=postgresql://postgres:postgres_password@postgres/authentik
       - AUTHENTIK_REDIS=redis://authentik-redis:6379
       - AUTHENTIK_REDIS_PREFIX=authentik
       - AUTHENTIK_CLUSTER_NAME=main
@@ -166,17 +190,49 @@ services:
       - redis_password
     volumes:
       - authentik_data:/var/lib/authentik
-    ports:
-      - 8080:8080
     networks:
       - traefik_nordvpn_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.authentik.loadbalancer.server.port=9000"
+      - "traefik.http.routers.authentik.rule=Host(`authentik.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.authentik.entrypoints=web"
+      - "traefik.http.routers.authentik.middlewares=redirect-to-https@docker"
+      - "traefik.http.routers.authentik-secured.rule=Host(`authentik.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.authentik-secured.entrypoints=websecure"
+      - "traefik.http.routers.authentik-secured.tls=true"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.authentik.tls.certresolver=tls-resolver"
 
+  worker:
+    image: authentik/authentik
+    command: worker
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
+      - AUTHENTIK_DB=postgresql://postgres:postgres_password@postgres/authentik
+      - AUTHENTIK_REDIS=redis://authentik-redis:6379
+      - AUTHENTIK_REDIS_PREFIX=authentik
+      - AUTHENTIK_CLUSTER_NAME=main
+    secrets:
+      - postgres_password
+      - redis_password
+    volumes:
+      - authentik_data:/var/lib/authentik
+    networks:
+      - traefik_nordvpn_network
+  
   postgres:
     image: postgres:latest
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
-      POSTGRES_DB: authentik
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD_FILE="/run/secrets/postgres_password"
+      - POSTGRES_DB=authentik
     volumes:
       - postgres_data:/var/lib/postgresql/data
     secrets:
@@ -189,6 +245,10 @@ services:
   redis:
     image: redis:latest
     container_name: redis
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
     command: redis-server --requirepass <redis_password>
     networks:
       - traefik_nordvpn_network
@@ -202,6 +262,7 @@ services:
     environment:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
     volumes:
       - <path_to_plex_config>:/config
       - <path_to_media_files>:/data
@@ -210,11 +271,68 @@ services:
     networks:
       - traefik_nordvpn_network
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.plex.rule=Host(`plex.${COMMON_DOMAIN}`)
-      - traefik.http.routers.plex.entrypoints=websecure
-      - traefik.http.routers.plex.tls=true
-      - traefik.http.routers.plex.tls.certresolver=tls-resolver
+      - "traefik.enable=true"
+      - "traefik.http.services.plex.loadbalancer.server.port=32400"
+      - "traefik.http.routers.plex.rule=Host(`plex.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.plex.entrypoints=web"
+      - "traefik.http.routers.plex.middlewares=redirect-to-https@docker"
+      - "traefik.http.routers.plex-secured.rule=Host(`plex.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.plex-secured.entrypoints=websecure"
+      - "traefik.http.routers.plex-secured.tls=true"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.plex.tls.certresolver=tls-resolver"
+
+  # qBittorrent Services
+  # GitHub Repository: https://github.com/qbittorrent/qBittorrent
+  # Docker Hub: 
+  qbittorrent:
+    image: qbittorrentofficial/qbittorrent-nox
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+      - WEBUI_PORT=8080
+    volumes:
+      - /path/to/qbittorrent/config:/config
+      - /path/to/downloads:/downloads
+    networks:
+      - traefik_nordvpn_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.qbittorrent.loadbalancer.server.port=8080"
+      - "traefik.http.routers.qbittorrent.rule=Host(`qbittorrent.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.qbittorrent.entrypoints=web"
+      - "traefik.http.routers.qbittorrent.middlewares=redirect-to-https@docker"
+      - "traefik.http.routers.qbittorrent-secured.rule=Host(`qbittorrent.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.qbittorrent-secured.entrypoints=websecure"
+      - "traefik.http.routers.qbittorrent-secured.tls=true"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.qbittorrent.tls.certresolver=tls-resolver"
+  
+  flood:
+    image: jesec/flood
+    command: --port 3001 --allowedpath /data
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+      - HOME=/config
+    volumes:
+      - /path/to/flood/config:/config
+      - /path/to/downloads:/downloads
+    networks:
+      - traefik_nordvpn_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.flood.loadbalancer.server.port=3000"
+      - "traefik.http.routers.flood.rule=Host(`flood.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.flood.entrypoints=web"
+      - "traefik.http.routers.flood.middlewares=redirect-to-https@docker"
+      - "traefik.http.routers.flood-secured.rule=Host(`flood.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.flood-secured.entrypoints=websecure"
+      - "traefik.http.routers.flood-secured.tls=true"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.flood.tls.certresolver=tls-resolver"
 
   # Bazarr Service
   # GitHub Repository: https://github.com/morpheus65535/bazarr  https://github.com/linuxserver/docker-bazarr
@@ -225,17 +343,23 @@ services:
     environment:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
     volumes:
       - <path_to_bazarr_config>:/config
       - <path_to_media_files>:/media
     networks:
       - traefik_nordvpn_network
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.bazarr.rule=Host(`bazarr.${COMMON_DOMAIN}`)
-      - traefik.http.routers.bazarr.entrypoints=websecure
-      - traefik.http.routers.bazarr.tls=true
-      - traefik.http.routers.bazarr.tls.certresolver=tls-resolver
+      - "traefik.enable=true"
+      - "traefik.http.services.bazarr.loadbalancer.server.port=6767"
+      - "traefik.http.routers.bazarr.rule=Host(`bazarr.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.bazarr.entrypoints=web"
+      - "traefik.http.routers.bazarr.middlewares=redirect-to-https@docker"
+      - "traefik.http.routers.bazarr-secured.rule=Host(`bazarr.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.bazarr-secured.entrypoints=websecure"
+      - "traefik.http.routers.bazarr-secured.tls=true"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.bazarr.tls.certresolver=tls-resolver"
 
   # Sonarr service
   # GitHub Repository: https://github.com/Sonarr/Sonarr   https://github.com/Sonarr/Sonarr
@@ -246,19 +370,23 @@ services:
     environment:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
     volumes:
       - <path_to_sonarr_config>:/config
       - <path_to_media_files>:/tv
-    ports:
-      - 8989:8989
     networks:
       - traefik_nordvpn_network
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.sonarr.rule=Host(`sonarr.${COMMON_DOMAIN}`)
-      - traefik.http.routers.sonarr.entrypoints=websecure
-      - traefik.http.routers.sonarr.tls=true
-      - traefik.http.routers.sonarr.tls.certresolver=tls-resolver
+      - "traefik.enable=true"
+      - "traefik.http.services.sonarr.loadbalancer.server.port=8989"
+      - "traefik.http.routers.sonarr.rule=Host(`sonarr.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.sonarr.entrypoints=web"
+      - "traefik.http.routers.sonarr.middlewares=redirect-to-https@docker"
+      - "traefik.http.routers.sonarr-secured.rule=Host(`sonarr.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.sonarr-secured.entrypoints=websecure"
+      - "traefik.http.routers.sonarr-secured.tls=true"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.sonarr.tls.certresolver=tls-resolver"
 
   # Radarr service
   # GitHub Repository: https://github.com/Radarr/Radarr   https://github.com/linuxserver/docker-radarr
@@ -269,6 +397,7 @@ services:
     environment:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
     volumes:
       - <path_to_radarr_config>:/config
       - <path_to_media_files>:/movies
@@ -277,11 +406,16 @@ services:
     networks:
       - traefik_nordvpn_network
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.radarr.rule=Host(`radarr.${COMMON_DOMAIN}`)
-      - traefik.http.routers.radarr.entrypoints=websecure
-      - traefik.http.routers.radarr.tls=true
-      - traefik.http.routers.radarr.tls.certresolver=tls-resolver
+      - "traefik.enable=true"
+      - "traefik.http.services.radarr.loadbalancer.server.port=7878"
+      - "traefik.http.routers.radarr.rule=Host(`radarr.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.radarr.entrypoints=web"
+      - "traefik.http.routers.radarr.middlewares=redirect-to-https@docker"
+      - "traefik.http.routers.radarr-secured.rule=Host(`radarr.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.radarr-secured.entrypoints=websecure"
+      - "traefik.http.routers.radarr-secured.tls=true"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.radarr.tls.certresolver=tls-resolver"
 
   # Lidarr service
   # GitHub Repository: https://github.com/Lidarr/Lidarr  https://github.com/linuxserver/docker-lidarr
@@ -292,6 +426,7 @@ services:
     environment:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
     volumes:
       - <path_to_lidarr_config>:/config
       - <path_to_music_library>:/music
@@ -300,11 +435,16 @@ services:
     networks:
       - traefik_nordvpn_network
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.lidarr.rule=Host(`lidarr.${COMMON_DOMAIN}`)
-      - traefik.http.routers.lidarr.entrypoints=websecure
-      - traefik.http.routers.lidarr.tls=true
-      - traefik.http.routers.lidarr.tls.certresolver=tls-resolver
+      - "traefik.enable=true"
+      - "traefik.http.services.lidarr.loadbalancer.server.port=8686"
+      - "traefik.http.routers.lidarr.rule=Host(`lidarr.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.lidarr.entrypoints=web"
+      - "traefik.http.routers.lidarr.middlewares=redirect-to-https@docker"
+      - "traefik.http.routers.lidarr-secured.rule=Host(`lidarr.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.lidarr-secured.entrypoints=websecure"
+      - "traefik.http.routers.lidarr-secured.tls=true"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.lidarr.tls.certresolver=tls-resolver"
 
   # Overserr service
   # GitHub Repository: https://github.com/sct/overseerr  https://github.com/linuxserver/docker-overseerr
@@ -321,11 +461,16 @@ services:
     networks:
       - traefik_nordvpn_network
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.overserr.rule=Host(`overserr.${COMMON_DOMAIN}`)
-      - traefik.http.routers.overserr.entrypoints=websecure
-      - traefik.http.routers.overserr.tls=true
-      - traefik.http.routers.overserr.tls.certresolver=tls-resolver
+      - "traefik.enable=true"
+      - "traefik.http.services.overseer.loadbalancer.server.port=5955"
+      - "traefik.http.routers.overseer.rule=Host(`overseer.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.overseer.entrypoints=web"
+      - "traefik.http.routers.overseer.middlewares=redirect-to-https@docker"
+      - "traefik.http.routers.overseer-secured.rule=Host(`overseer.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.overseer-secured.entrypoints=websecure"
+      - "traefik.http.routers.overseer-secured.tls=true"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.overseer.tls.certresolver=tls-resolver"
 
   # Lazy Librarian service 
   # GitHub Repository: https://gitlab.com/LazyLibrarian/LazyLibrarian   https://github.com/linuxserver/docker-lazylibrarian
@@ -336,7 +481,7 @@ services:
     environment:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
-      - TZ=${COMMON_TZ} 
+      - TZ=${COMMON_TZ}
     volumes:
       - <path_to_lazylibrarian_config>:/config
       - <path_to_ebook_library>:/books
@@ -345,11 +490,16 @@ services:
     networks:
       - traefik_nordvpn_network
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.lazylibrarian.rule=Host(`lazylibrarian.${COMMON_DOMAIN}`)
-      - traefik.http.routers.lazylibrarian.entrypoints=websecure
-      - traefik.http.routers.lazylibrarian.tls=true
-      - traefik.http.routers.lazylibrarian.tls.certresolver=tls-resolver
+      - "traefik.enable=true"
+      - "traefik.http.services.lazylibrarian.loadbalancer.server.port=5299"
+      - "traefik.http.routers.lazylibrarian.rule=Host(`lazylibrarian.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.lazylibrarian.entrypoints=web"
+      - "traefik.http.routers.lazylibrarian.middlewares=redirect-to-https@docker"
+      - "traefik.http.routers.lazylibrarian-secured.rule=Host(`lazylibrarian.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.lazylibrarian-secured.entrypoints=websecure"
+      - "traefik.http.routers.lazylibrarian-secured.tls=true"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.lazylibrarian.tls.certresolver=tls-resolver"
 
   # Homer service
   # GitHub Repository:  https://github.com/bastienwirtz/homer
@@ -357,16 +507,26 @@ services:
   homer:
     image: b4bz/homer:latest
     container_name: homer
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
     volumes:
       - <path_to_homer_config>:/www-data/config
     networks:
       - traefik_nordvpn_network
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.homer.rule=Host(`homer.${COMMON_DOMAIN}`)
-      - traefik.http.routers.homer.entrypoints=websecure
-      - traefik.http.routers.homer.tls=true
-      - traefik.http.routers.homer.tls.certresolver=tls-resolver
+      - "traefik.enable=true"
+      - "traefik.http.services.homer.loadbalancer.server.port=8080"
+      - "traefik.http.routers.homer.rule=Host(`homer.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.homer.entrypoints=web"
+      - "traefik.http.routers.homer.middlewares=redirect-to-https@docker"
+      - "traefik.http.routers.homer-secured.rule=Host(`homer.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.homer-secured.entrypoints=websecure"
+      - "traefik.http.routers.homer-secured.tls=true"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.homer.tls.certresolver=tls-resolver"
+
 
   # Prometheus Service 
   # GitHub Repository: https://github.com/prometheus/prometheus
@@ -382,13 +542,16 @@ services:
     networks:
       - traefik_nordvpn_network
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.prometheus.rule=Host(`prometheus.${COMMON_DOMAIN}`)
-      - traefik.http.routers.prometheus.entrypoints=websecure
-      - traefik.http.routers.prometheus.tls=true
-      - traefik.http.routers.prometheus.tls.certresolver=tls-resolver
-    ports:
-      - 9090:9090
+      - "traefik.enable=true"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.prometheus.entrypoints=web"
+      - "traefik.http.routers.prometheus.middlewares=redirect-to-https@docker"
+      - "traefik.http.routers.prometheus-secured.rule=Host(`prometheus.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.prometheus-secured.entrypoints=websecure"
+      - "traefik.http.routers.prometheus-secured.tls=true"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.prometheus.tls.certresolver=tls-resolver"
 
   # Grafana Service 
   # GitHub Repository: https://github.com/grafana/grafana
@@ -404,13 +567,16 @@ services:
     networks:
       - traefik_nordvpn_network
     labels:
-      - traefik.enable=true
-      - traefik.http.routers.grafana.rule=Host(`grafana.${COMMON_DOMAIN}`)
-      - traefik.http.routers.grafana.entrypoints=websecure
-      - traefik.http.routers.grafana.tls=true
-      - traefik.http.routers.grafana.tls.certresolver=tls-resolver
-    ports:
-      - 3000:3000
+      - "traefik.enable=true"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.grafana.entrypoints=web"
+      - "traefik.http.routers.grafana.middlewares=redirect-to-https@docker"
+      - "traefik.http.routers.grafana-secured.rule=Host(`grafana.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.grafana-secured.entrypoints=websecure"
+      - "traefik.http.routers.grafana-secured.tls=true"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.grafana.tls.certresolver=tls-resolver"
 
 networks:
   traefik_nordvpn_network:
