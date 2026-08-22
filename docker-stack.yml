@@ -86,6 +86,7 @@ services:
       SERVICES: 1
       NETWORKS: 1
       TASKS: 1
+      NODES: 1
       # Portainer needs write access to manage stacks/containers; keep this
       # scoped to POST only (no full unrestricted socket access).
       POST: 1
@@ -103,7 +104,7 @@ services:
   # Tunnel below; no host ports published at all.
   # ---------------------------------------------------------------------
   traefik:
-    image: traefik:v3.1
+    image: traefik:v3.6
     command:
       # Traefik v3 split the docker provider in two; swarmMode=true on the
       # classic docker provider was removed. Use the dedicated swarm provider.
@@ -116,6 +117,12 @@ services:
       - --entrypoints.web.address=:80
       - --api.dashboard=true
       - --log.level=INFO
+    environment:
+      # Traefik v3.1's swarm provider client defaults to a hardcoded old
+      # Docker API version (1.24) and doesn't negotiate up; this host's
+      # Engine rejects anything below 1.40. Pin an explicit version well
+      # within both bounds instead of relying on negotiation.
+      - DOCKER_API_VERSION=1.44
     volumes:
       - ./traefik/dynamic.yml:/etc/traefik/dynamic/dynamic.yml:ro
     networks:
@@ -140,11 +147,13 @@ services:
   # ---------------------------------------------------------------------
   cloudflared:
     image: cloudflare/cloudflared:latest
-    command: tunnel run
+    command: tunnel --config /etc/cloudflared/config.yml run
     environment:
       - TUNNEL_TOKEN_FILE=/run/secrets/cloudflare_tunnel_token
     secrets:
       - cloudflare_tunnel_token
+    volumes:
+      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
     networks:
       - edge
     deploy:
