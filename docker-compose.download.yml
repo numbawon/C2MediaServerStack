@@ -1,0 +1,59 @@
+# Standalone (non-swarm) compose — deployed with:
+#   docker compose -f docker-compose.download.yml up -d
+#
+# Lives outside the Swarm stack because `network_mode: service:vpn-client`
+# (forcing qBittorrent's traffic through the VPN container) is a plain-
+# compose-only feature; Swarm has no equivalent. See docker-stack.yml header.
+#
+# Traefik labels are NOT used here — Traefik's docker provider is running in
+# swarmMode and only watches swarm services, so it would never see these
+# containers. Routing to qbittorrent instead comes from a static entry in
+# traefik/dynamic.yml pointing at vpn-client:8080 (qBittorrent has no network
+# of its own; it shares vpn-client's).
+
+services:
+  vpn-client:
+    image: bubuntux/nordvpn:latest
+    container_name: vpn-client
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - TOKEN_FILE=/run/secrets/nordvpn_token
+      - CONNECT=United_States
+      - TECHNOLOGY=NordLynx
+      - NETWORK=192.168.1.0/24   # keep in sync with your actual LAN CIDR
+    secrets:
+      - nordvpn_token
+    ports:
+      - "8080:8080"   # qBittorrent WebUI, exposed via vpn-client's netns
+    networks:
+      - edge
+    restart: unless-stopped
+
+  qbittorrent:
+    image: linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    network_mode: "service:vpn-client"
+    depends_on:
+      - vpn-client
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+      - WEBUI_PORT=8080
+    volumes:
+      - qbittorrent_config:/config
+      - ${COMMON_DOWNLOADS}:/downloads
+      - ${COMMON_COMPLETED}:/completed
+    restart: unless-stopped
+
+networks:
+  edge:
+    external: true   # the attachable overlay network created by the swarm stack
+
+volumes:
+  qbittorrent_config:
+
+secrets:
+  nordvpn_token:
+    file: ./secrets/nordvpn_token.txt

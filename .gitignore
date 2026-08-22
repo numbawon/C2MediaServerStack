@@ -1,0 +1,12 @@
+# Real config — only .env.example is committed
+.env
+
+# Local file-based secrets for the standalone compose stacks
+secrets/
+
+# Backup output, restic cache
+backups/
+.restic-cache/
+
+# Editor/OS cruft
+.DS_Store
