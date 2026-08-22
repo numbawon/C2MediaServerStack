@@ -17,15 +17,16 @@ services:
     container_name: vpn-client
     cap_add:
       - NET_ADMIN
+      - NET_RAW
     environment:
-      - TOKEN_FILE=/run/secrets/nordvpn_token
+      - TOKENFILE=/run/secrets/nordvpn_token
       - CONNECT=United_States
       - TECHNOLOGY=NordLynx
-      - NETWORK=192.168.1.0/24   # keep in sync with your actual LAN CIDR
+      - NETWORK=192.168.50.0/24
     secrets:
       - nordvpn_token
-    ports:
-      - "8080:8080"   # qBittorrent WebUI, exposed via vpn-client's netns
+    volumes:
+      - ./vpn-init:/custom-cont-init.d:ro
     networks:
       - edge
     restart: unless-stopped
