@@ -1,0 +1,445 @@
+# Deployed with: docker stack deploy -c docker-stack.yml mediastack
+#
+# This is the SWARM-managed portion of the stack. Two things live OUTSIDE this
+# file, as plain (non-swarm) `docker compose` stacks, because Docker Swarm
+# cannot do what they need:
+#   - docker-compose.download.yml  (qBittorrent + NordVPN)
+#       Swarm has no equivalent of `network_mode: service:x` (sharing another
+#       container's network namespace), which is how qBittorrent's traffic is
+#       forced through the VPN container. Only plain compose supports that.
+#   - docker-compose.plex.yml      (Plex, GPU transcode)
+#       Swarm stack files silently ignore the `devices:` key and don't
+#       support NVIDIA GPU reservation the way plain `docker compose` does.
+#
+# Both of those attach to the `edge` overlay network below (created with
+# --attachable) so Traefik, which lives in this swarm stack, can still route
+# to them by service name.
+
+networks:
+  # Created once by scripts/bootstrap.sh (`docker network create --driver
+  # overlay --attachable edge`) rather than inline here, so the standalone
+  # download/plex compose stacks and this stack file all reference the exact
+  # same pre-existing network without Swarm trying to reconcile ownership of
+  # it on every `docker stack deploy`.
+  edge:
+    external: true
+  internal:
+    driver: overlay
+
+volumes:
+  # Explicit `name:` on every volume so it doesn't get the `<stack-name>_`
+  # prefix Swarm adds by default — keeps scripts/backup-local.sh's volume
+  # list stable regardless of what you name the stack at deploy time.
+  authentik_data:
+    name: authentik_data
+  pihole_config:
+    name: pihole_config
+  pihole_dnsmasq:
+    name: pihole_dnsmasq
+  portainer_data:
+    name: portainer_data
+  postgres_data:
+    name: postgres_data
+  prometheus_data:
+    name: prometheus_data
+  grafana_data:
+    name: grafana_data
+  sonarr_config:
+    name: sonarr_config
+  radarr_config:
+    name: radarr_config
+  lidarr_config:
+    name: lidarr_config
+  bazarr_config:
+    name: bazarr_config
+  overseerr_config:
+    name: overseerr_config
+  lazylibrarian_config:
+    name: lazylibrarian_config
+  homer_config:
+    name: homer_config
+
+secrets:
+  postgres_password:
+    external: true
+  redis_password:
+    external: true
+  authentik_secret_key:
+    external: true
+  pihole_webpassword:
+    external: true
+  grafana_admin_password:
+    external: true
+  cloudflare_tunnel_token:
+    external: true
+
+services:
+
+  # ---------------------------------------------------------------------
+  # Docker socket proxy — the ONLY thing in this stack that touches the
+  # real docker.sock. Never publish this on a host port.
+  # ---------------------------------------------------------------------
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    environment:
+      CONTAINERS: 1
+      SERVICES: 1
+      NETWORKS: 1
+      TASKS: 1
+      # Portainer needs write access to manage stacks/containers; keep this
+      # scoped to POST only (no full unrestricted socket access).
+      POST: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - internal
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+
+  # ---------------------------------------------------------------------
+  # Traefik — reads the Docker API via the proxy above, never the raw
+  # socket. No dashboard insecure-mode. Only ingress is the Cloudflare
+  # Tunnel below; no host ports published at all.
+  # ---------------------------------------------------------------------
+  traefik:
+    image: traefik:v3.1
+    command:
+      - --providers.docker=true
+      - --providers.docker.swarmMode=true
+      - --providers.docker.endpoint=tcp://docker-socket-proxy:2375
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=edge
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      - --entrypoints.web.address=:80
+      - --api.dashboard=true
+      - --log.level=INFO
+    volumes:
+      - ./traefik/dynamic.yml:/etc/traefik/dynamic/dynamic.yml:ro
+    networks:
+      - edge
+      - internal
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.traefik.rule=Host(`traefik.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.traefik.entrypoints=web"
+        - "traefik.http.routers.traefik.service=api@internal"
+        - "traefik.http.routers.traefik.middlewares=authentik@file"
+        - "traefik.http.services.traefik-dummy.loadbalancer.server.port=8080"
+
+  # ---------------------------------------------------------------------
+  # Cloudflare Tunnel — only ingress path. Outbound-only connection to
+  # Cloudflare edge, no inbound ports opened on the router at all.
+  # Tunnel + DNS routes are created once via `cloudflared tunnel create`
+  # and `cloudflared tunnel route dns` (see README) before this deploys.
+  # ---------------------------------------------------------------------
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN_FILE=/run/secrets/cloudflare_tunnel_token
+    secrets:
+      - cloudflare_tunnel_token
+    networks:
+      - edge
+    deploy:
+      replicas: 1
+
+  # ---------------------------------------------------------------------
+  # Authentik — SSO / forward-auth gate for everything else.
+  # First-boot: create admin user, then create a "Proxy Provider" (forward
+  # auth, single application / all apps) + Outpost in the Authentik UI.
+  # This cannot be scripted via env vars — see README.
+  # ---------------------------------------------------------------------
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2024.10
+    command: server
+    environment:
+      - AUTHENTIK_SECRET_KEY_FILE=/run/secrets/authentik_secret_key
+      - AUTHENTIK_POSTGRESQL__HOST=postgres
+      - AUTHENTIK_POSTGRESQL__USER=authentik
+      - AUTHENTIK_POSTGRESQL__NAME=authentik
+      - AUTHENTIK_POSTGRESQL__PASSWORD_FILE=/run/secrets/postgres_password
+      - AUTHENTIK_REDIS__HOST=redis
+    secrets:
+      - authentik_secret_key
+      - postgres_password
+    volumes:
+      - authentik_data:/media
+    networks:
+      - edge
+      - internal
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.authentik.rule=Host(`auth.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.authentik.entrypoints=web"
+        - "traefik.http.services.authentik.loadbalancer.server.port=9000"
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2024.10
+    command: worker
+    environment:
+      - AUTHENTIK_SECRET_KEY_FILE=/run/secrets/authentik_secret_key
+      - AUTHENTIK_POSTGRESQL__HOST=postgres
+      - AUTHENTIK_POSTGRESQL__USER=authentik
+      - AUTHENTIK_POSTGRESQL__NAME=authentik
+      - AUTHENTIK_POSTGRESQL__PASSWORD_FILE=/run/secrets/postgres_password
+      - AUTHENTIK_REDIS__HOST=redis
+    secrets:
+      - authentik_secret_key
+      - postgres_password
+    volumes:
+      - authentik_data:/media
+    networks:
+      - internal
+
+  postgres:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=authentik
+      - POSTGRES_DB=authentik
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  redis:
+    image: redis:7-alpine
+    command: >
+      sh -c 'redis-server --requirepass "$$(cat /run/secrets/redis_password)"'
+    secrets:
+      - redis_password
+    networks:
+      - internal
+
+  # ---------------------------------------------------------------------
+  # Pi-hole — note: port 53 will conflict with systemd-resolved on this
+  # Arch host if it's listening on 0.0.0.0:53. Check/disable that stub
+  # listener before deploying (see README).
+  # ---------------------------------------------------------------------
+  pihole:
+    image: pihole/pihole:latest
+    environment:
+      - TZ=${COMMON_TZ}
+      - FTLCONF_webserver_api_password_file=/run/secrets/pihole_webpassword
+    secrets:
+      - pihole_webpassword
+    ports:
+      - target: 53
+        published: 53
+        protocol: tcp
+        mode: host
+      - target: 53
+        published: 53
+        protocol: udp
+        mode: host
+    volumes:
+      - pihole_config:/etc/pihole
+      - pihole_dnsmasq:/etc/dnsmasq.d
+    networks:
+      - edge
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.pihole.rule=Host(`pihole.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.pihole.entrypoints=web"
+        - "traefik.http.routers.pihole.middlewares=authentik@file"
+        - "traefik.http.services.pihole.loadbalancer.server.port=80"
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    command: -H tcp://docker-socket-proxy:2375
+    volumes:
+      - portainer_data:/data
+    networks:
+      - edge
+      - internal
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.portainer.rule=Host(`portainer.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.portainer.entrypoints=web"
+        - "traefik.http.routers.portainer.middlewares=authentik@file"
+        - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+
+  sonarr:
+    image: linuxserver/sonarr:latest
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+    volumes:
+      - sonarr_config:/config
+      - ${COMMON_MEDIA}/TV:/tv
+      - ${COMMON_DOWNLOADS}:/downloads
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.sonarr.rule=Host(`sonarr.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.sonarr.entrypoints=web"
+        - "traefik.http.routers.sonarr.middlewares=authentik@file"
+        - "traefik.http.services.sonarr.loadbalancer.server.port=8989"
+
+  radarr:
+    image: linuxserver/radarr:latest
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+    volumes:
+      - radarr_config:/config
+      - ${COMMON_MEDIA}/Movies:/movies
+      - ${COMMON_DOWNLOADS}:/downloads
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.radarr.rule=Host(`radarr.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.radarr.entrypoints=web"
+        - "traefik.http.routers.radarr.middlewares=authentik@file"
+        - "traefik.http.services.radarr.loadbalancer.server.port=7878"
+
+  lidarr:
+    image: linuxserver/lidarr:latest
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+    volumes:
+      - lidarr_config:/config
+      - ${COMMON_MEDIA}/Music:/music
+      - ${COMMON_DOWNLOADS}:/downloads
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.lidarr.rule=Host(`lidarr.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.lidarr.entrypoints=web"
+        - "traefik.http.routers.lidarr.middlewares=authentik@file"
+        - "traefik.http.services.lidarr.loadbalancer.server.port=8686"
+
+  bazarr:
+    image: linuxserver/bazarr:latest
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+    volumes:
+      - bazarr_config:/config
+      - ${COMMON_MEDIA}/Movies:/movies
+      - ${COMMON_MEDIA}/TV:/tv
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.bazarr.rule=Host(`bazarr.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.bazarr.entrypoints=web"
+        - "traefik.http.routers.bazarr.middlewares=authentik@file"
+        - "traefik.http.services.bazarr.loadbalancer.server.port=6767"
+
+  overseerr:
+    image: linuxserver/overseerr:latest
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+    volumes:
+      - overseerr_config:/config
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.overseerr.rule=Host(`overseerr.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.overseerr.entrypoints=web"
+        - "traefik.http.routers.overseerr.middlewares=authentik@file"
+        - "traefik.http.services.overseerr.loadbalancer.server.port=5055"
+
+  lazylibrarian:
+    image: linuxserver/lazylibrarian:latest
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+    volumes:
+      - lazylibrarian_config:/config
+      - ${COMMON_MEDIA}/EBooks:/books
+      - ${COMMON_DOWNLOADS}:/downloads
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.lazylibrarian.rule=Host(`lazylibrarian.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.lazylibrarian.entrypoints=web"
+        - "traefik.http.routers.lazylibrarian.middlewares=authentik@file"
+        - "traefik.http.services.lazylibrarian.loadbalancer.server.port=5299"
+
+  homer:
+    image: b4bz/homer:latest
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+    volumes:
+      - homer_config:/www/assets
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.homer.rule=Host(`${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.homer.entrypoints=web"
+        - "traefik.http.routers.homer.middlewares=authentik@file"
+        - "traefik.http.services.homer.loadbalancer.server.port=8080"
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - prometheus_data:/prometheus
+    networks:
+      - edge
+      - internal
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.prometheus.rule=Host(`prometheus.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.prometheus.entrypoints=web"
+        - "traefik.http.routers.prometheus.middlewares=authentik@file"
+        - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/grafana_admin_password
+    secrets:
+      - grafana_admin_password
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.grafana.rule=Host(`grafana.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.grafana.entrypoints=web"
+        - "traefik.http.routers.grafana.middlewares=authentik@file"
+        - "traefik.http.services.grafana.loadbalancer.server.port=3000"

@@ -1,0 +1,60 @@
+# Traefik file-provider dynamic config. Loaded via --providers.file.directory
+# in docker-stack.yml. Supports Go templating (env function) same as Traefik's
+# other dynamic config files.
+#
+# Two things live here instead of as Docker labels:
+#   1. The `authentik` forwardAuth middleware every other service's Swarm
+#      labels reference as `authentik@file`.
+#   2. Static routers/services for qbittorrent and plex — both run as
+#      standalone (non-swarm) containers, which Traefik's swarmMode docker
+#      provider can't auto-discover via labels. They're reachable by name
+#      because they're joined to the same `edge` overlay network.
+
+http:
+  middlewares:
+    authentik:
+      forwardAuth:
+        address: "http://authentik-server:9000/outpost.goauthentik.io/auth/traefik"
+        trustForwardHeader: true
+        authResponseHeaders:
+          - X-authentik-username
+          - X-authentik-groups
+          - X-authentik-email
+          - X-authentik-name
+          - X-authentik-uid
+          - X-authentik-jwt
+          - X-authentik-meta-jwks
+          - X-authentik-meta-outpost
+          - X-authentik-meta-provider
+          - X-authentik-meta-app
+          - X-authentik-meta-version
+
+  routers:
+    qbittorrent:
+      rule: 'Host(`qbittorrent.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+      middlewares:
+        - authentik
+      service: qbittorrent
+
+    # Plex is deliberately NOT behind the authentik middleware: Plex's own
+    # mobile/TV/cast apps authenticate via Plex's own OAuth flow and can't
+    # complete a browser-redirect SSO challenge. Plex's own account system
+    # is the auth gate here instead.
+    plex:
+      rule: 'Host(`plex.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+      service: plex
+
+  services:
+    qbittorrent:
+      loadBalancer:
+        servers:
+          - url: "http://vpn-client:8080"
+
+    plex:
+      loadBalancer:
+        servers:
+          - url: "http://plex:32400"

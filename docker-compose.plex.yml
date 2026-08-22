@@ -1,0 +1,47 @@
+# Standalone (non-swarm) compose — deployed with:
+#   docker compose -f docker-compose.plex.yml up -d
+#
+# Lives outside the Swarm stack because `docker stack deploy` ignores the
+# `devices:` key and doesn't support NVIDIA GPU reservation the way plain
+# `docker compose` does. See docker-stack.yml header.
+#
+# Routing: attached to the `edge` overlay network by name so Traefik (in the
+# swarm stack) can reach it via a static entry in traefik/dynamic.yml
+# (Traefik's swarmMode docker provider won't auto-discover this container's
+# labels, same reason as docker-compose.download.yml).
+
+services:
+  plex:
+    image: plexinc/pms-docker:latest
+    container_name: plex
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+      - PLEX_CLAIM_FILE=/run/secrets/plex_claim
+    secrets:
+      - plex_claim
+    volumes:
+      - plex_config:/config
+      - ${COMMON_MEDIA}:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - edge
+    restart: unless-stopped
+
+networks:
+  edge:
+    external: true
+
+volumes:
+  plex_config:
+
+secrets:
+  plex_claim:
+    file: ./secrets/plex_claim.txt
