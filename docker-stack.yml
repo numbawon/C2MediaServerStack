@@ -105,11 +105,12 @@ services:
   traefik:
     image: traefik:v3.1
     command:
-      - --providers.docker=true
-      - --providers.docker.swarmMode=true
-      - --providers.docker.endpoint=tcp://docker-socket-proxy:2375
-      - --providers.docker.exposedbydefault=false
-      - --providers.docker.network=edge
+      # Traefik v3 split the docker provider in two; swarmMode=true on the
+      # classic docker provider was removed. Use the dedicated swarm provider.
+      - --providers.swarm=true
+      - --providers.swarm.endpoint=tcp://docker-socket-proxy:2375
+      - --providers.swarm.exposedbydefault=false
+      - --providers.swarm.network=edge
       - --providers.file.directory=/etc/traefik/dynamic
       - --providers.file.watch=true
       - --entrypoints.web.address=:80
@@ -159,15 +160,17 @@ services:
     image: ghcr.io/goauthentik/server:2024.10
     command: server
     environment:
-      - AUTHENTIK_SECRET_KEY_FILE=/run/secrets/authentik_secret_key
+      - AUTHENTIK_SECRET_KEY=file:///run/secrets/authentik_secret_key
       - AUTHENTIK_POSTGRESQL__HOST=postgres
       - AUTHENTIK_POSTGRESQL__USER=authentik
       - AUTHENTIK_POSTGRESQL__NAME=authentik
-      - AUTHENTIK_POSTGRESQL__PASSWORD_FILE=/run/secrets/postgres_password
+      - AUTHENTIK_POSTGRESQL__PASSWORD=file:///run/secrets/postgres_password
       - AUTHENTIK_REDIS__HOST=redis
+      - AUTHENTIK_REDIS__PASSWORD=file:///run/secrets/redis_password
     secrets:
       - authentik_secret_key
       - postgres_password
+      - redis_password
     volumes:
       - authentik_data:/media
     networks:
@@ -184,15 +187,17 @@ services:
     image: ghcr.io/goauthentik/server:2024.10
     command: worker
     environment:
-      - AUTHENTIK_SECRET_KEY_FILE=/run/secrets/authentik_secret_key
+      - AUTHENTIK_SECRET_KEY=file:///run/secrets/authentik_secret_key
       - AUTHENTIK_POSTGRESQL__HOST=postgres
       - AUTHENTIK_POSTGRESQL__USER=authentik
       - AUTHENTIK_POSTGRESQL__NAME=authentik
-      - AUTHENTIK_POSTGRESQL__PASSWORD_FILE=/run/secrets/postgres_password
+      - AUTHENTIK_POSTGRESQL__PASSWORD=file:///run/secrets/postgres_password
       - AUTHENTIK_REDIS__HOST=redis
+      - AUTHENTIK_REDIS__PASSWORD=file:///run/secrets/redis_password
     secrets:
       - authentik_secret_key
       - postgres_password
+      - redis_password
     volumes:
       - authentik_data:/media
     networks:
