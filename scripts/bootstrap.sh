@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-if ! docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null | grep -q active; then
+if [ "$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null)" != "active" ]; then
   echo "Initializing Swarm..."
   docker swarm init
 else

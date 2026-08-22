@@ -11,7 +11,7 @@
 # Nothing here echoes a real secret value to stdout or a log.
 set -euo pipefail
 
-if ! docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null | grep -q active; then
+if [ "$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null)" != "active" ]; then
   echo "This node is not in an active Swarm. Run 'docker swarm init' first." >&2
   exit 1
 fi
