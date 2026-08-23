@@ -12,6 +12,18 @@
 
 http:
   middlewares:
+    # cloudflared doesn't set X-Forwarded-Proto when forwarding an HTTPS
+    # client request to this HTTP backend (known cloudflared gap), so
+    # every app behind Traefik would otherwise see the request as plain
+    # HTTP even though the real client used HTTPS — breaks CSRF/cookie
+    # secure-scheme checks (bit Authentik's provider-save CSRF check).
+    # Attached at the entrypoint level in docker-stack.yml so it applies
+    # to every router without needing to touch each one individually.
+    force-forwarded-proto:
+      headers:
+        customRequestHeaders:
+          X-Forwarded-Proto: "https"
+
     authentik:
       forwardAuth:
         address: "http://authentik-server:9000/outpost.goauthentik.io/auth/traefik"
