@@ -430,6 +430,8 @@ services:
       - TZ=${COMMON_TZ}
     volumes:
       - homer_config:/www/assets
+      - ./homer/config.yml:/www/assets/config.yml:ro
+      - ./homer/cyberpunk.css:/www/assets/cyberpunk.css:ro
     networks:
       - edge
     deploy:
