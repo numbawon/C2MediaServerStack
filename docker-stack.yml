@@ -435,7 +435,7 @@ services:
     deploy:
       labels:
         - "traefik.enable=true"
-        - "traefik.http.routers.homer.rule=Host(`${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.homer.rule=Host(`homer.${COMMON_DOMAIN}`)"
         - "traefik.http.routers.homer.entrypoints=web"
         - "traefik.http.routers.homer.middlewares=authentik@file"
         - "traefik.http.services.homer.loadbalancer.server.port=8080"
