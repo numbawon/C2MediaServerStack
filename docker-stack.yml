@@ -66,8 +66,6 @@ secrets:
     external: true
   authentik_secret_key:
     external: true
-  pihole_webpassword:
-    external: true
   grafana_admin_password:
     external: true
   cloudflare_tunnel_token:
@@ -259,9 +257,13 @@ services:
     image: pihole/pihole:latest
     environment:
       - TZ=${COMMON_TZ}
-      - FTLCONF_webserver_api_password_file=/run/secrets/pihole_webpassword
-    secrets:
-      - pihole_webpassword
+      # Explicit empty string, not FTLCONF_webserver_api_password_file — the
+      # web UI sits behind Traefik's authentik@file middleware already, so a
+      # second Pi-hole-native login is redundant. FTL re-reads this env var
+      # on every boot and rewrites pwhash in pihole.toml to match, so this
+      # actively clears any password set previously (including one Pi-hole
+      # auto-generated on first boot before this was added).
+      - FTLCONF_webserver_api_password=
     ports:
       - target: 53
         published: 53
