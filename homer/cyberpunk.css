@@ -1,0 +1,76 @@
+/* Cyberpunk theme extras layered on top of Homer's color config */
+
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@500;700&display=swap');
+
+body {
+  font-family: 'Share Tech Mono', monospace;
+  background:
+    linear-gradient(rgba(0, 255, 255, 0.03) 1px, transparent 1px) 0 0 / 100% 3px,
+    radial-gradient(ellipse at top, rgba(255, 0, 255, 0.08), transparent 60%),
+    radial-gradient(ellipse at bottom, rgba(0, 255, 255, 0.08), transparent 60%),
+    #0a0a12;
+  background-attachment: fixed;
+}
+
+.title, h1.title {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 4px #00ffff,
+    0 0 12px #00ffff,
+    0 0 24px rgba(255, 0, 255, 0.6);
+}
+
+.subtitle {
+  color: #8a8ab0 !important;
+  letter-spacing: 0.1em;
+}
+
+.group-title {
+  font-family: 'Orbitron', sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #ff00ff !important;
+  text-shadow: 0 0 6px rgba(255, 0, 255, 0.8);
+  border-bottom: 1px solid rgba(255, 0, 255, 0.25);
+  padding-bottom: 0.3em;
+}
+
+.card {
+  background: linear-gradient(160deg, #12121e 0%, #0d0d17 100%) !important;
+  border: 1px solid rgba(0, 255, 255, 0.25) !important;
+  box-shadow: 0 0 12px rgba(0, 255, 255, 0.08), inset 0 0 20px rgba(255, 0, 255, 0.03) !important;
+  transition: all 0.2s ease-in-out;
+}
+
+.card:hover {
+  border-color: rgba(255, 0, 255, 0.6) !important;
+  box-shadow: 0 0 20px rgba(255, 0, 255, 0.35), 0 0 40px rgba(0, 255, 255, 0.15) !important;
+  transform: translateY(-2px);
+}
+
+.card .card-title, .card .title {
+  color: #e6f7ff !important;
+  font-weight: 600;
+}
+
+.card .tag, .card .subtitle {
+  color: #00ffff !important;
+  opacity: 0.8;
+}
+
+a {
+  color: #00ffff;
+}
+
+a:hover {
+  color: #ff00ff;
+  text-shadow: 0 0 8px rgba(255, 0, 255, 0.8);
+}
+
+::selection {
+  background: #ff00ff;
+  color: #0a0a12;
+}
