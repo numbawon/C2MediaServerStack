@@ -115,6 +115,7 @@ services:
       - --providers.file.directory=/etc/traefik/dynamic
       - --providers.file.watch=true
       - --entrypoints.web.address=:80
+      - --entrypoints.web.http.middlewares=force-forwarded-proto@file
       - --api.dashboard=true
       - --log.level=INFO
     environment:
@@ -123,6 +124,14 @@ services:
       # Engine rejects anything below 1.40. Pin an explicit version well
       # within both bounds instead of relying on negotiation.
       - DOCKER_API_VERSION=1.44
+      # traefik/dynamic.yml uses {{ env "COMMON_DOMAIN" }} — that's Traefik's
+      # own Go-template env function reading THIS container's process
+      # environment, a completely different mechanism from the ${COMMON_DOMAIN}
+      # substitution .env does into this YAML file. Without this, the
+      # template silently rendered as empty string (Host(`plex.`) instead of
+      # Host(`plex.example.com`)), so the plex/qbittorrent static routes
+      # never matched any real request.
+      - COMMON_DOMAIN=${COMMON_DOMAIN}
     volumes:
       - ./traefik/dynamic.yml:/etc/traefik/dynamic/dynamic.yml:ro
     networks:
@@ -176,6 +185,13 @@ services:
       - AUTHENTIK_POSTGRESQL__PASSWORD=file:///run/secrets/postgres_password
       - AUTHENTIK_REDIS__HOST=redis
       - AUTHENTIK_REDIS__PASSWORD=file:///run/secrets/redis_password
+      # Authentik only sees Traefik's IP, never the real client IP directly,
+      # so it must trust forwarded headers (Host, X-Forwarded-Proto) from
+      # the overlay network Traefik connects over, or it can't tell it's
+      # being accessed over HTTPS -> CSRF origin-scheme mismatch on save.
+      # Not exposed on any host port, so trusting the whole internal range
+      # here carries no external exposure risk.
+      - AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS=0.0.0.0/0
     secrets:
       - authentik_secret_key
       - postgres_password
