@@ -42,7 +42,10 @@ networks:
     external: true
 
 volumes:
+  # Explicit name so it isn't prefixed by the compose project name — see
+  # docker-compose.download.yml's qbittorrent_config comment for why.
   plex_config:
+    name: plex_config
 
 secrets:
   plex_claim:

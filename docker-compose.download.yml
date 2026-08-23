@@ -53,7 +53,12 @@ networks:
     external: true   # the attachable overlay network created by the swarm stack
 
 volumes:
+  # Explicit name so it isn't prefixed by the compose project name (which
+  # defaults to the directory name) — keeps scripts/backup-local.sh and
+  # backup-offsite.sh's volume list stable regardless of what directory
+  # this repo happens to live in.
   qbittorrent_config:
+    name: qbittorrent_config
 
 secrets:
   nordvpn_token:
