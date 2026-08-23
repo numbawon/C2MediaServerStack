@@ -48,7 +48,6 @@ echo "== Auto-generated secrets (random, no input needed) =="
 create_swarm_secret postgres_password        "$(random_password)"
 create_swarm_secret redis_password           "$(random_password)"
 create_swarm_secret grafana_admin_password   "$(random_password)"
-create_swarm_secret pihole_webpassword       "$(random_password)"
 create_swarm_secret authentik_secret_key     "$(random_password 60)"
 
 echo
@@ -71,5 +70,5 @@ unset plex_claim
 
 echo
 echo "Done. Swarm secrets: postgres_password, redis_password, grafana_admin_password,"
-echo "pihole_webpassword, authentik_secret_key, cloudflare_tunnel_token."
+echo "authentik_secret_key, cloudflare_tunnel_token."
 echo "Local files: secrets/nordvpn_token.txt, secrets/plex_claim.txt"
