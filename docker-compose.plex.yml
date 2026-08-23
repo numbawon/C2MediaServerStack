@@ -21,6 +21,8 @@ services:
       - PLEX_CLAIM_FILE=/run/secrets/plex_claim
     secrets:
       - plex_claim
+    ports:
+      - "32400:32400"   # direct LAN access — Plex clients/DLNA prefer this over the tunnel, and it's needed to reach Settings to whitelist the public hostname
     volumes:
       - plex_config:/config
       - ${COMMON_MEDIA}:/data
