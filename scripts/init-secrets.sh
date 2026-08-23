@@ -36,7 +36,12 @@ write_local_secret() {
 }
 
 random_password() {
-  openssl rand -base64 24
+  # openssl's base64 encoder wraps output at 64 chars; command substitution
+  # only strips a *trailing* newline, not one embedded mid-string, so a
+  # value long enough to wrap silently gets a newline baked into it. Strip
+  # all newlines explicitly rather than relying on the byte count staying
+  # under the wrap threshold.
+  openssl rand -base64 "${1:-24}" | tr -d '\n'
 }
 
 echo "== Auto-generated secrets (random, no input needed) =="
@@ -44,7 +49,7 @@ create_swarm_secret postgres_password        "$(random_password)"
 create_swarm_secret redis_password           "$(random_password)"
 create_swarm_secret grafana_admin_password   "$(random_password)"
 create_swarm_secret pihole_webpassword       "$(random_password)"
-create_swarm_secret authentik_secret_key     "$(openssl rand -base64 60)"
+create_swarm_secret authentik_secret_key     "$(random_password 60)"
 
 echo
 echo "== Secrets that need a real value from you =="
