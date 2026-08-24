@@ -11,6 +11,12 @@
 # traefik/dynamic.yml pointing at vpn-client:8080 (qBittorrent has no network
 # of its own; it shares vpn-client's).
 
+# Explicit project name so this and docker-compose.plex.yml don't both fall
+# back to the directory name and flag each other's containers as "orphans"
+# on every deploy (harmless today, but --remove-orphans would nuke the
+# other stack).
+name: mediastack-download
+
 services:
   vpn-client:
     image: bubuntux/nordvpn:latest
