@@ -115,28 +115,34 @@ volumes and downloads to it.
   B2_ACCOUNT_KEY=<Backblaze application key>
   ```
 
-Run both on a schedule with systemd timers:
+Both run on a schedule via the unit files in `systemd/` (local nightly at
+02:00, off-site at 03:30):
 
-```ini
-# /etc/systemd/system/mediastack-backup-local.service
-[Service]
-Type=oneshot
-WorkingDirectory=/path/to/C2MediaServerStack
-ExecStart=/path/to/C2MediaServerStack/scripts/backup-local.sh
-
-# /etc/systemd/system/mediastack-backup-local.timer
-[Timer]
-OnCalendar=daily
-Persistent=true
-[Install]
-WantedBy=timers.target
+```bash
+sudo cp systemd/mediastack-backup-local.{service,timer} \
+        systemd/mediastack-backup-offsite.{service,timer} \
+        /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now mediastack-backup-local.timer mediastack-backup-offsite.timer
 ```
-
-Duplicate for `mediastack-backup-offsite.{service,timer}` pointing at
-`backup-offsite.sh`, then `sudo systemctl enable --now mediastack-backup-local.timer mediastack-backup-offsite.timer`.
 
 Media itself (`/mnt/Storage/Media`) is intentionally not covered by either
 backup — too large, and not ephemeral container state.
+
+### Recovering after a host reboot
+
+`docker-stack.yml` (Swarm) reconciles itself automatically once the daemon
+comes back. The two standalone compose files don't — in particular,
+`qbittorrent`'s `network_mode: service:vpn-client` doesn't reliably survive
+a full daemon restart, so it can come back `Exited` even though `vpn-client`
+itself started fine. `systemd/mediastack-recovery.service` re-applies both
+standalone compose files (idempotent) once at boot to catch this:
+
+```bash
+sudo cp systemd/mediastack-recovery.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now mediastack-recovery.service
+```
 
 ## Verification checklist
 

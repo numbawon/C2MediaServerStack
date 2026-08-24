@@ -1,0 +1,9 @@
+[Unit]
+Description=mediastack local config backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/youruser/C2MediaServerStack
+ExecStart=/home/youruser/C2MediaServerStack/scripts/backup-local.sh
