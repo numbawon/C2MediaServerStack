@@ -16,7 +16,7 @@ mkdir -p "$OUT"
 VOLUMES=(
   authentik_data pihole_config pihole_dnsmasq portainer_data postgres_data
   prometheus_data grafana_data sonarr_config radarr_config lidarr_config
-  bazarr_config overseerr_config lazylibrarian_config homer_config
+  bazarr_config overseerr_config lazylibrarian_config
   qbittorrent_config plex_config
 )
 

@@ -56,8 +56,6 @@ volumes:
     name: overseerr_config
   lazylibrarian_config:
     name: lazylibrarian_config
-  homer_config:
-    name: homer_config
 
 secrets:
   postgres_password:
@@ -166,7 +164,7 @@ services:
       # never matched any real request.
       - COMMON_DOMAIN=${COMMON_DOMAIN}
     volumes:
-      - ./traefik/dynamic.yml:/etc/traefik/dynamic/dynamic.yml:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
     networks:
       - edge
       - internal
@@ -198,7 +196,7 @@ services:
     secrets:
       - cloudflare_tunnel_token
     volumes:
-      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - ./cloudflared:/etc/cloudflared:ro
     networks:
       - edge
     deploy:
@@ -481,9 +479,10 @@ services:
       - PGID=${COMMON_PGID}
       - TZ=${COMMON_TZ}
     volumes:
-      - homer_config:/www/assets
-      - ./homer/config.yml:/www/assets/config.yml:ro
-      - ./homer/cyberpunk.css:/www/assets/cyberpunk.css:ro
+      # Whole directory, not individual files -- Homer writes nothing here
+      # at runtime (pure static config/assets), so no named volume needed
+      # either.
+      - ./homer:/www/assets:ro
     networks:
       - edge
     deploy:
@@ -536,7 +535,7 @@ services:
     image: prom/prometheus:latest
     volumes:
       - prometheus_data:/prometheus
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus:/etc/prometheus:ro
     networks:
       - edge
       - internal
