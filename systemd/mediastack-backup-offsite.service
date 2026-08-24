@@ -1,0 +1,10 @@
+[Unit]
+Description=mediastack off-site config backup (restic -> B2)
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/youruser/C2MediaServerStack
+ExecStart=/home/youruser/C2MediaServerStack/scripts/backup-offsite.sh

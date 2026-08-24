@@ -10,6 +10,8 @@
 # (Traefik's swarmMode docker provider won't auto-discover this container's
 # labels, same reason as docker-compose.download.yml).
 
+name: mediastack-plex
+
 services:
   plex:
     image: plexinc/pms-docker:latest
