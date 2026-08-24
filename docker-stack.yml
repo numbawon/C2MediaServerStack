@@ -85,8 +85,13 @@ services:
       NETWORKS: 1
       TASKS: 1
       NODES: 1
-      # Portainer needs write access to manage stacks/containers; keep this
-      # scoped to POST only (no full unrestricted socket access).
+      # Watchtower needs both of these: IMAGES for local image info,
+      # DISTRIBUTION to check registries for a newer digest (that's the
+      # actual "is there an update" check -- IMAGES alone 403s on it).
+      IMAGES: 1
+      DISTRIBUTION: 1
+      # Portainer/Watchtower need write access to manage stacks/containers;
+      # keep this scoped to POST only (no full unrestricted socket access).
       POST: 1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -95,6 +100,35 @@ services:
     deploy:
       placement:
         constraints: [node.role == manager]
+      labels:
+        # Never let Watchtower touch the one thing with real docker.sock
+        # access.
+        - "com.centurylinklabs.watchtower.enable=false"
+
+  # ---------------------------------------------------------------------
+  # Watchtower — auto-updates everything on :latest. Opt-out via label,
+  # not opt-in: anything NOT explicitly labeled disabled gets updated.
+  # Talks to the socket proxy, never the raw socket, same as everything
+  # else here. Starts in monitor-only mode (logs what it WOULD do, applies
+  # nothing) since Watchtower's exact interaction with Swarm-managed
+  # services vs plain containers isn't something I could fully verify
+  # from docs -- flip WATCHTOWER_MONITOR_ONLY to false once it's been
+  # watched behaving correctly for a bit.
+  # ---------------------------------------------------------------------
+  watchtower:
+    image: nickfedor/watchtower:latest
+    environment:
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_SCHEDULE=0 0 4 * * *
+      - WATCHTOWER_MONITOR_ONLY=true
+    networks:
+      - internal
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        - "com.centurylinklabs.watchtower.enable=false"
 
   # ---------------------------------------------------------------------
   # Traefik — reads the Docker API via the proxy above, never the raw
@@ -102,7 +136,7 @@ services:
   # Tunnel below; no host ports published at all.
   # ---------------------------------------------------------------------
   traefik:
-    image: traefik:v3.6
+    image: traefik:v3.7
     command:
       # Traefik v3 split the docker provider in two; swarmMode=true on the
       # classic docker provider was removed. Use the dedicated swarm provider.
@@ -146,6 +180,9 @@ services:
         - "traefik.http.routers.traefik.service=api@internal"
         - "traefik.http.routers.traefik.middlewares=authentik@file"
         - "traefik.http.services.traefik-dummy.loadbalancer.server.port=8080"
+        # Pinned to v3.7 deliberately -- see the go/no-go process for
+        # pinned services. Watchtower must never touch this one.
+        - "com.centurylinklabs.watchtower.enable=false"
 
   # ---------------------------------------------------------------------
   # Cloudflare Tunnel — only ingress path. Outbound-only connection to
@@ -174,7 +211,7 @@ services:
   # This cannot be scripted via env vars — see README.
   # ---------------------------------------------------------------------
   authentik-server:
-    image: ghcr.io/goauthentik/server:2024.10
+    image: ghcr.io/goauthentik/server:2026.8
     command: server
     environment:
       - AUTHENTIK_SECRET_KEY=file:///run/secrets/authentik_secret_key
@@ -206,9 +243,10 @@ services:
         - "traefik.http.routers.authentik.rule=Host(`auth.${COMMON_DOMAIN}`)"
         - "traefik.http.routers.authentik.entrypoints=web"
         - "traefik.http.services.authentik.loadbalancer.server.port=9000"
+        - "com.centurylinklabs.watchtower.enable=false"
 
   authentik-worker:
-    image: ghcr.io/goauthentik/server:2024.10
+    image: ghcr.io/goauthentik/server:2026.8
     command: worker
     environment:
       - AUTHENTIK_SECRET_KEY=file:///run/secrets/authentik_secret_key
@@ -226,6 +264,9 @@ services:
       - authentik_data:/media
     networks:
       - internal
+    deploy:
+      labels:
+        - "com.centurylinklabs.watchtower.enable=false"
 
   postgres:
     image: postgres:16
@@ -239,6 +280,11 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - internal
+    deploy:
+      labels:
+        # Major-version jumps can break the on-disk data format -- pinned
+        # to :16 (patches float), same reasoning as Traefik/Authentik.
+        - "com.centurylinklabs.watchtower.enable=false"
 
   redis:
     image: redis:7-alpine
@@ -248,6 +294,9 @@ services:
       - redis_password
     networks:
       - internal
+    deploy:
+      labels:
+        - "com.centurylinklabs.watchtower.enable=false"
 
   # ---------------------------------------------------------------------
   # Pi-hole — note: port 53 will conflict with systemd-resolved on this
