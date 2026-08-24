@@ -16,7 +16,7 @@ mkdir -p "$OUT"
 VOLUMES=(
   authentik_data pihole_config pihole_dnsmasq portainer_data postgres_data
   prometheus_data grafana_data sonarr_config radarr_config lidarr_config
-  bazarr_config overseerr_config lazylibrarian_config
+  bazarr_config seerr_config lazylibrarian_config
   qbittorrent_config plex_config
 )
 
@@ -26,11 +26,22 @@ for vol in "${VOLUMES[@]}"; do
     continue
   fi
   echo "backing up volume: $vol"
+  # Alpine's built-in tar is BusyBox tar, which has no tolerance for a file
+  # vanishing mid-archive -- a live app's SQLite WAL/SHM sidecar files get
+  # deleted out from under it on a normal checkpoint, which isn't
+  # corruption, just a benign race, but BusyBox tar treats it as fatal and
+  # (with set -e) that killed the whole backup run partway through the
+  # volume list. GNU tar (via --ignore-failed-read) demotes that specific
+  # race to exit code 1 ("some files differ") instead of a hard error, but
+  # set -e still treats any nonzero exit as fatal -- so exit 1 specifically
+  # has to be tolerated here, while anything else (exit 2, a real error)
+  # still aborts the run.
   docker run --rm \
     -v "${vol}:/volume:ro" \
     -v "${OUT}:/backup" \
     alpine \
-    tar czf "/backup/${vol}.tar.gz" -C /volume .
+    sh -c "apk add --no-cache tar >/dev/null 2>&1 && tar --ignore-failed-read -czf /backup/${vol}.tar.gz -C /volume ." \
+    || { rc=$?; [ "$rc" -eq 1 ] || exit "$rc"; }
 done
 
 docker secret ls --format '{{.Name}}' > "$OUT/swarm-secret-names.txt" 2>/dev/null || true
