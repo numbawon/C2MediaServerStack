@@ -42,6 +42,21 @@ http:
           - X-authentik-meta-version
 
   routers:
+    # ttyd (web terminal) runs on the HOST via systemd, not in this stack --
+    # same reasoning as plex/qbittorrent below: Traefik's swarmMode docker
+    # provider can't discover it, so it gets a static entry too. Reached via
+    # extra_hosts' host.docker.internal on the traefik service. Gated by its
+    # own single-application Authentik provider (Admins group only) rather
+    # than the domain-level one -- see the pihole/portainer/traefik-dashboard
+    # setup for the same pattern.
+    terminal:
+      rule: 'Host(`terminal.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+      middlewares:
+        - authentik
+      service: terminal
+
     qbittorrent:
       rule: 'Host(`qbittorrent.{{ env "COMMON_DOMAIN" }}`)'
       entryPoints:
@@ -61,6 +76,11 @@ http:
       service: plex
 
   services:
+    terminal:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:7681"
+
     qbittorrent:
       loadBalancer:
         servers:

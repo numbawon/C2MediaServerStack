@@ -1,0 +1,13 @@
+[Unit]
+Description=Emergency SSH tunnel (independent of the Docker stack)
+After=network-online.target sshd.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/cloudflared --config /home/youruser/C2MediaServerStack/cloudflared/emergency-config.yml tunnel run
+Restart=on-failure
+RestartSec=5
+User=youruser
+
+[Install]
+WantedBy=multi-user.target
