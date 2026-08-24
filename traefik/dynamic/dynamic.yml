@@ -24,10 +24,24 @@ http:
         customRequestHeaders:
           X-Forwarded-Proto: "https"
 
+    # overseerr.<domain> still has a live DNS record pointing at this tunnel
+    # (cloudflared's CLI has no "delete DNS route" command, and there's no
+    # Cloudflare API token in this repo to do it directly) -- redirecting
+    # here instead of leaving it to 404 once the overseerr service is gone.
+    overseerr-to-seerr:
+      redirectRegex:
+        regex: "^https?://overseerr\\.(.*)"
+        replacement: "https://seerr.${1}"
+        permanent: true
+
     authentik:
       forwardAuth:
         address: "http://authentik-server:9000/outpost.goauthentik.io/auth/traefik"
         trustForwardHeader: true
+        # Auth check responses are just redirects/headers -- caps the body
+        # Traefik will read from the outpost, silencing the unlimited-size
+        # DoS warning logged on every router using this middleware.
+        maxResponseBodySize: 2097152
         authResponseHeaders:
           - X-authentik-username
           - X-authentik-groups
@@ -75,6 +89,18 @@ http:
         - web
       service: plex
 
+    overseerr-to-seerr:
+      rule: 'Host(`overseerr.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+      middlewares:
+        - overseerr-to-seerr
+      # Never actually reached -- the redirectRegex middleware above returns
+      # the 301 itself, but Traefik still requires every router to name a
+      # valid service. Pointing at the real seerr service keeps this file
+      # self-contained instead of reaching across to the Swarm provider.
+      service: seerr-redirect-target
+
   services:
     # Direct docker_gwbridge IP, not host.docker.internal -- Docker's
     # "host-gateway" extra_hosts value resolves to the plain docker0 bridge
@@ -96,3 +122,8 @@ http:
       loadBalancer:
         servers:
           - url: "http://plex:32400"
+
+    seerr-redirect-target:
+      loadBalancer:
+        servers:
+          - url: "http://seerr:5055"
