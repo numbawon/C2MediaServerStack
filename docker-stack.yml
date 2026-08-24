@@ -115,6 +115,7 @@ services:
       - --entrypoints.web.address=:80
       - --entrypoints.web.http.middlewares=force-forwarded-proto@file
       - --api.dashboard=true
+      - --metrics.prometheus=true
       - --log.level=INFO
     environment:
       # Traefik v3.1's swarm provider client defaults to a hardcoded old
@@ -444,10 +445,49 @@ services:
         - "traefik.http.routers.homer.middlewares=authentik@file"
         - "traefik.http.services.homer.loadbalancer.server.port=8080"
 
+  # ---------------------------------------------------------------------
+  # Metrics sources for Prometheus -- neither is meant to be browsed, no
+  # Traefik labels, internal network only.
+  # ---------------------------------------------------------------------
+  node-exporter:
+    image: prom/node-exporter:latest
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    networks:
+      - internal
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+
+  # Deliberate exception to "only docker-socket-proxy touches docker.sock" --
+  # cAdvisor's per-container metrics need it directly, no way around that.
+  # Kept read-only and internal-network-only to limit the blast radius.
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - internal
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+
   prometheus:
     image: prom/prometheus:latest
     volumes:
       - prometheus_data:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     networks:
       - edge
       - internal
@@ -468,6 +508,7 @@ services:
       - grafana_admin_password
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
     networks:
       - edge
     deploy:
