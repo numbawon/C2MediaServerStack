@@ -76,10 +76,16 @@ http:
       service: plex
 
   services:
+    # Direct docker_gwbridge IP, not host.docker.internal -- Docker's
+    # "host-gateway" extra_hosts value resolves to the plain docker0 bridge
+    # (172.17.0.1), which Traefik's overlay-only container isn't even
+    # attached to. The real reachable gateway here is docker_gwbridge's,
+    # confirmed via `ip route` inside the traefik container. ttyd on the
+    # host binds specifically to this IP (see systemd/ttyd.service).
     terminal:
       loadBalancer:
         servers:
-          - url: "http://host.docker.internal:7681"
+          - url: "http://172.20.0.1:7681"
 
     qbittorrent:
       loadBalancer:
