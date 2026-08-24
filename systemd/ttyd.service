@@ -23,10 +23,15 @@ After=network.target docker.service
 # silently dropped) -- without this every session would just watch the
 # login prompt time itself out after 60s, unable to type anything.
 #
-# -t fontFamily=...: client-side xterm.js option, only takes effect on a
-# device that already has the font installed -- falls back to the
-# browser's default monospace otherwise (e.g. on a phone).
-ExecStart=/usr/bin/ttyd --writable -t 'fontFamily=CaskaydiaCove Nerd Font' --interface 172.20.0.1 --port 7681 login
+# No custom -t fontFamily=... -- a previous version pinned
+# 'CaskaydiaCove Nerd Font'. On a client without that font installed,
+# xterm.js's cell-metrics measurement degenerated to a 0-size grid: the
+# terminal still accepted keystrokes (raw WS input keeps flowing) but
+# rendered nothing at all, i.e. a blank screen. Confirmed by removing the
+# flag and reproducing a working prompt. Leave this on the browser default
+# monospace font unless a font that's guaranteed present on every client
+# device gets pinned instead.
+ExecStart=/usr/bin/ttyd --writable --interface 172.20.0.1 --port 7681 login
 Restart=on-failure
 RestartSec=5
 
