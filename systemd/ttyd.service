@@ -26,7 +26,7 @@ After=network.target docker.service
 # -t fontFamily=...: client-side xterm.js option, only takes effect on a
 # device that already has the font installed -- falls back to the
 # browser's default monospace otherwise (e.g. on a phone).
-ExecStart=/usr/bin/ttyd --writable -t fontFamily='CaskaydiaCove Nerd Font' --interface 172.20.0.1 --port 7681 login
+ExecStart=/usr/bin/ttyd --writable -t 'fontFamily=CaskaydiaCove Nerd Font' --interface 172.20.0.1 --port 7681 login
 Restart=on-failure
 RestartSec=5
 
