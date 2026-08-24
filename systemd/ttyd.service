@@ -1,0 +1,15 @@
+[Unit]
+Description=ttyd web terminal (loopback only, reached via Traefik)
+After=network.target
+
+[Service]
+# --interface 127.0.0.1: never reachable except through the reverse proxy.
+# `login` (not bash/sh) means every session is a real PAM login -- username
+# and password required even though Authentik already gated the request
+# upstream. Two independent locks, not one.
+ExecStart=/usr/bin/ttyd --interface 127.0.0.1 --port 7681 login
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
