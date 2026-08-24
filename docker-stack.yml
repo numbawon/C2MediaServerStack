@@ -52,8 +52,8 @@ volumes:
     name: lidarr_config
   bazarr_config:
     name: bazarr_config
-  overseerr_config:
-    name: overseerr_config
+  seerr_config:
+    name: seerr_config
   lazylibrarian_config:
     name: lazylibrarian_config
 
@@ -83,6 +83,13 @@ services:
       NETWORKS: 1
       TASKS: 1
       NODES: 1
+      # Portainer's dashboard snapshot needs both of these (was 403ing on
+      # "unable to snapshot volumes" / "unable to snapshot engine
+      # information" without them) -- both are read-only info, no exec/write.
+      # NB: the /info endpoint is gated by INFO, not SYSTEM -- SYSTEM is a
+      # separate, broader flag this proxy also exposes.
+      VOLUMES: 1
+      INFO: 1
       # Watchtower needs both of these: IMAGES for local image info,
       # DISTRIBUTION to check registries for a newer digest (that's the
       # actual "is there an update" check -- IMAGES alone 403s on it).
@@ -434,23 +441,27 @@ services:
         - "traefik.http.routers.bazarr.middlewares=authentik@file"
         - "traefik.http.services.bazarr.loadbalancer.server.port=6767"
 
-  overseerr:
-    image: linuxserver/overseerr:latest
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    # No PUID/PGID -- unlike the LinuxServer images, this runs as the
+    # baked-in `node` user (UID 1000), which happens to already match
+    # COMMON_PUID/COMMON_PGID on this host.
+    # init: true -- runs the container's PID 1 as a real init (tini) so
+    # signals/zombie reaping work correctly; the image expects this.
+    init: true
     environment:
-      - PUID=${COMMON_PUID}
-      - PGID=${COMMON_PGID}
       - TZ=${COMMON_TZ}
     volumes:
-      - overseerr_config:/config
+      - seerr_config:/app/config
     networks:
       - edge
     deploy:
       labels:
         - "traefik.enable=true"
-        - "traefik.http.routers.overseerr.rule=Host(`overseerr.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.overseerr.entrypoints=web"
-        - "traefik.http.routers.overseerr.middlewares=authentik@file"
-        - "traefik.http.services.overseerr.loadbalancer.server.port=5055"
+        - "traefik.http.routers.seerr.rule=Host(`seerr.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.seerr.entrypoints=web"
+        - "traefik.http.routers.seerr.middlewares=authentik@file"
+        - "traefik.http.services.seerr.loadbalancer.server.port=5055"
 
   lazylibrarian:
     image: linuxserver/lazylibrarian:latest
@@ -552,13 +563,34 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/grafana_admin_password
+      # Trusts the X-authentik-* headers Traefik's authentik forwardAuth
+      # middleware already injects on every request that reaches this
+      # container -- no separate Authentik OAuth2 provider/app needed.
+      - GF_AUTH_PROXY_ENABLED=true
+      - GF_AUTH_PROXY_HEADER_NAME=X-authentik-username
+      - GF_AUTH_PROXY_HEADER_PROPERTY=username
+      - GF_AUTH_PROXY_HEADERS=Email:X-authentik-email Name:X-authentik-name
+      - GF_AUTH_PROXY_AUTO_SIGN_UP=true
+      - GF_AUTH_PROXY_SYNC_TTL=60
+      # Belt-and-suspenders: only trust the proxy headers from the
+      # `internal` overlay subnet grafana now lives on (see `networks:`
+      # below) -- redundant with that network move today, but keeps the
+      # header trust from silently reopening if grafana ever gets
+      # rejoined to `edge` later.
+      - GF_AUTH_PROXY_WHITELIST=10.0.2.0/24
+      - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
     secrets:
       - grafana_admin_password
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     networks:
-      - edge
+      # `internal`, not `edge` -- the *arr apps and everything else that's
+      # edge-only could otherwise reach grafana:3000 directly and forge
+      # the X-authentik-username header the auth-proxy setting above
+      # trusts. Prometheus (grafana's only datasource) and traefik are
+      # both already on `internal` too, so nothing else needs to change.
+      - internal
     deploy:
       labels:
         - "traefik.enable=true"
