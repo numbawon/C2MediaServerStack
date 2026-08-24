@@ -1,13 +1,28 @@
 [Unit]
-Description=ttyd web terminal (loopback only, reached via Traefik)
-After=network.target
+Description=ttyd web terminal (docker_gwbridge only, reached via Traefik)
+After=network.target docker.service
 
 [Service]
-# --interface 127.0.0.1: never reachable except through the reverse proxy.
+# --interface 172.20.0.1: the docker_gwbridge gateway IP, not loopback.
+# Binding to 127.0.0.1 looks more locked-down but is actually unreachable
+# from Traefik's own container -- a socket bound to loopback only accepts
+# connections whose destination is literally 127.0.0.1, and Traefik dialing
+# in from its own network namespace can never satisfy that. Binding to this
+# specific docker-internal IP instead keeps the same real-world property
+# (nothing on the LAN/WAN can reach it -- only traffic from inside Docker's
+# bridge can) while actually being reachable by Traefik. Same reasoning as
+# the docker_gwbridge subnet hardcode in docker-compose.download.yml's
+# NordVPN NETWORK var -- stable for a single-node host, revisit if this
+# host ever changes its Docker network layout.
+#
 # `login` (not bash/sh) means every session is a real PAM login -- username
 # and password required even though Authentik already gated the request
 # upstream. Two independent locks, not one.
-ExecStart=/usr/bin/ttyd --interface 127.0.0.1 --port 7681 login
+#
+# -W/--writable: ttyd is read-only by default (output only, keystrokes
+# silently dropped) -- without this every session would just watch the
+# login prompt time itself out after 60s, unable to type anything.
+ExecStart=/usr/bin/ttyd --writable --interface 172.20.0.1 --port 7681 login
 Restart=on-failure
 RestartSec=5
 
