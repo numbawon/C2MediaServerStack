@@ -135,6 +135,11 @@ services:
     networks:
       - edge
       - internal
+    extra_hosts:
+      # Lets Traefik reach ttyd, which runs on the HOST (not in Docker) so
+      # the web terminal keeps working even if this whole stack is what's
+      # broken. See traefik/dynamic.yml's terminal router.
+      - "host.docker.internal:host-gateway"
     deploy:
       placement:
         constraints: [node.role == manager]
