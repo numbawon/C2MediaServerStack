@@ -309,6 +309,7 @@ services:
   # ---------------------------------------------------------------------
   pihole:
     image: pihole/pihole:latest
+    hostname: pihole
     environment:
       - TZ=${COMMON_TZ}
       # Explicit empty string, not FTLCONF_webserver_api_password_file — the
