@@ -1,0 +1,59 @@
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+query_range:
+  results_cache:
+    cache:
+      embedded_cache:
+        enabled: true
+        max_size_mb: 100
+
+limits_config:
+  # Defaults (4MB/s) 429 immediately on deploy -- promtail backfills every
+  # existing container's full log history in one initial burst since
+  # positions.yaml starts empty. Raised enough to absorb that burst on a
+  # home-stack container count without being reckless.
+  ingestion_rate_mb: 16
+  ingestion_burst_size_mb: 32
+  per_stream_rate_limit: 8MB
+  per_stream_rate_limit_burst: 16MB
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+# pattern_ingester (experimental auto-detected log-pattern metrics) left
+# disabled -- its internal gRPC pattern-tee stream has its own 4MB message
+# cap, separate from limits_config above, and overflowed on the same
+# initial backfill burst. Not needed for plain searchable logs, which is
+# all this stack actually wants from Loki.
+
+frontend:
+  encoding: protobuf
+
+# No ruler/alertmanager configured in this stack -- not used, left out
+# rather than pointing at a nonexistent localhost:9093.
+
+analytics:
+  reporting_enabled: false

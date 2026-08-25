@@ -44,8 +44,8 @@ chmod +x scripts/*.sh
 cloudflared tunnel login
 cloudflared tunnel create mediastack
 # For each hostname you're routing (traefik, auth, pihole, portainer, sonarr,
-# radarr, lidarr, bazarr, overseerr, lazylibrarian, grafana, prometheus,
-# plex, qbittorrent, and the bare domain for homer):
+# radarr, lidarr, bazarr, seerr, lazylibrarian, prowlarr, tautulli, grafana,
+# prometheus, plex, qbittorrent, and the bare domain for homer):
 cloudflared tunnel route dns mediastack <sub>.example.com
 # Grab the tunnel token for init-secrets.sh next: Cloudflare Zero Trust
 # dashboard -> Networks -> Tunnels -> mediastack -> Configure -> copy token

@@ -44,18 +44,18 @@ volumes:
     name: prometheus_data
   grafana_data:
     name: grafana_data
-  sonarr_config:
-    name: sonarr_config
-  radarr_config:
-    name: radarr_config
   lidarr_config:
     name: lidarr_config
   bazarr_config:
     name: bazarr_config
   seerr_config:
     name: seerr_config
-  lazylibrarian_config:
-    name: lazylibrarian_config
+  prowlarr_config:
+    name: prowlarr_config
+  tautulli_config:
+    name: tautulli_config
+  loki_data:
+    name: loki_data
 
 secrets:
   postgres_password:
@@ -363,46 +363,6 @@ services:
         - "traefik.http.routers.portainer.middlewares=authentik@file"
         - "traefik.http.services.portainer.loadbalancer.server.port=9000"
 
-  sonarr:
-    image: linuxserver/sonarr:latest
-    environment:
-      - PUID=${COMMON_PUID}
-      - PGID=${COMMON_PGID}
-      - TZ=${COMMON_TZ}
-    volumes:
-      - sonarr_config:/config
-      - ${COMMON_MEDIA}/TV:/tv
-      - ${COMMON_DOWNLOADS}:/downloads
-    networks:
-      - edge
-    deploy:
-      labels:
-        - "traefik.enable=true"
-        - "traefik.http.routers.sonarr.rule=Host(`sonarr.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.sonarr.entrypoints=web"
-        - "traefik.http.routers.sonarr.middlewares=authentik@file"
-        - "traefik.http.services.sonarr.loadbalancer.server.port=8989"
-
-  radarr:
-    image: linuxserver/radarr:latest
-    environment:
-      - PUID=${COMMON_PUID}
-      - PGID=${COMMON_PGID}
-      - TZ=${COMMON_TZ}
-    volumes:
-      - radarr_config:/config
-      - ${COMMON_MEDIA}/Movies:/movies
-      - ${COMMON_DOWNLOADS}:/downloads
-    networks:
-      - edge
-    deploy:
-      labels:
-        - "traefik.enable=true"
-        - "traefik.http.routers.radarr.rule=Host(`radarr.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.radarr.entrypoints=web"
-        - "traefik.http.routers.radarr.middlewares=authentik@file"
-        - "traefik.http.services.radarr.loadbalancer.server.port=7878"
-
   lidarr:
     image: linuxserver/lidarr:latest
     environment:
@@ -465,25 +425,44 @@ services:
         - "traefik.http.routers.seerr.middlewares=authentik@file"
         - "traefik.http.services.seerr.loadbalancer.server.port=5055"
 
-  lazylibrarian:
-    image: linuxserver/lazylibrarian:latest
+  prowlarr:
+    image: linuxserver/prowlarr:latest
     environment:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
       - TZ=${COMMON_TZ}
     volumes:
-      - lazylibrarian_config:/config
-      - ${COMMON_MEDIA}/EBooks:/books
-      - ${COMMON_DOWNLOADS}:/downloads
+      - prowlarr_config:/config
     networks:
       - edge
     deploy:
       labels:
         - "traefik.enable=true"
-        - "traefik.http.routers.lazylibrarian.rule=Host(`lazylibrarian.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.lazylibrarian.entrypoints=web"
-        - "traefik.http.routers.lazylibrarian.middlewares=authentik@file"
-        - "traefik.http.services.lazylibrarian.loadbalancer.server.port=5299"
+        - "traefik.http.routers.prowlarr.rule=Host(`prowlarr.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.prowlarr.entrypoints=web"
+        - "traefik.http.routers.prowlarr.middlewares=authentik@file"
+        - "traefik.http.services.prowlarr.loadbalancer.server.port=9696"
+
+  # Reads Plex's own watch/library stats via Plex's API + a token generated
+  # through Tautulli's own first-boot wizard (Plex account sign-in) -- can't
+  # be scripted, same as every other app's first-boot in this stack.
+  tautulli:
+    image: linuxserver/tautulli:latest
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+    volumes:
+      - tautulli_config:/config
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.tautulli.rule=Host(`tautulli.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.tautulli.entrypoints=web"
+        - "traefik.http.routers.tautulli.middlewares=authentik@file"
+        - "traefik.http.services.tautulli.loadbalancer.server.port=8181"
 
   homer:
     image: b4bz/homer:latest
@@ -600,3 +579,36 @@ services:
         - "traefik.http.routers.grafana.entrypoints=web"
         - "traefik.http.routers.grafana.middlewares=authentik@file"
         - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+  # ---------------------------------------------------------------------
+  # Loki + Promtail — log aggregation alongside the Prometheus/Grafana
+  # metrics stack. No Traefik route: only Grafana talks to Loki, over
+  # `internal`, same trust boundary as the Prometheus datasource.
+  # ---------------------------------------------------------------------
+  loki:
+    image: grafana/loki:latest
+    # Directory mount, not single-file -- same reasoning as promtail below.
+    # Custom config over the image's baked-in default: default ingestion
+    # rate limit (4MB/s) 429s immediately when promtail backfills every
+    # container's full log history in one burst on first deploy.
+    command: -config.file=/etc/loki/loki-config.yaml
+    volumes:
+      - ./loki:/etc/loki:ro
+      - loki_data:/loki
+    networks:
+      - internal
+
+  # Discovers and tails every container's logs through the socket proxy's
+  # existing CONTAINERS permission (already granted above for Portainer/
+  # Watchtower) instead of bind-mounting /var/lib/docker/containers or the
+  # raw socket -- same "never touch docker.sock directly" rule as
+  # everything else here, cAdvisor being the one deliberate exception.
+  promtail:
+    image: grafana/promtail:latest
+    # Directory mount, not a single-file one -- see the repo-wide fix for
+    # why (single-file bind mounts go stale on host-side edits/recreates).
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./promtail:/etc/promtail:ro
+    networks:
+      - internal

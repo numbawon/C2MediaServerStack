@@ -79,6 +79,33 @@ http:
         - authentik
       service: qbittorrent
 
+    # sonarr/radarr/lazylibrarian moved out of the Swarm stack to exit
+    # through the VPN like qbittorrent -- same reason they need static
+    # entries here now instead of Swarm label auto-discovery.
+    sonarr:
+      rule: 'Host(`sonarr.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+      middlewares:
+        - authentik
+      service: sonarr
+
+    radarr:
+      rule: 'Host(`radarr.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+      middlewares:
+        - authentik
+      service: radarr
+
+    lazylibrarian:
+      rule: 'Host(`lazylibrarian.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+      middlewares:
+        - authentik
+      service: lazylibrarian
+
     # Plex is deliberately NOT behind the authentik middleware: Plex's own
     # mobile/TV/cast apps authenticate via Plex's own OAuth flow and can't
     # complete a browser-redirect SSO challenge. Plex's own account system
@@ -117,6 +144,21 @@ http:
       loadBalancer:
         servers:
           - url: "http://vpn-client:8080"
+
+    sonarr:
+      loadBalancer:
+        servers:
+          - url: "http://vpn-client:8989"
+
+    radarr:
+      loadBalancer:
+        servers:
+          - url: "http://vpn-client:7878"
+
+    lazylibrarian:
+      loadBalancer:
+        servers:
+          - url: "http://vpn-client:5299"
 
     plex:
       loadBalancer:

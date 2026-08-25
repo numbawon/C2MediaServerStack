@@ -54,6 +54,62 @@ services:
       - ${COMMON_COMPLETED}:/completed
     restart: unless-stopped
 
+  # Moved out of the Swarm stack so their indexer-search traffic (not just
+  # qBittorrent's actual downloads) exits through the VPN too. Same
+  # network_mode:service:vpn-client sharing as qbittorrent above -- these
+  # have no independent network identity of their own now, reachable
+  # internally only as vpn-client:<port>, same as qbittorrent already is.
+  # Traefik's static route in traefik/dynamic.yml reflects that; any other
+  # app that talks to these directly (Seerr, Bazarr, Prowlarr) needs to use
+  # vpn-client:<port>, not sonarr:8989/radarr:7878/lazylibrarian:5299.
+  sonarr:
+    image: linuxserver/sonarr:latest
+    container_name: sonarr
+    network_mode: "service:vpn-client"
+    depends_on:
+      - vpn-client
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+    volumes:
+      - sonarr_config:/config
+      - ${COMMON_MEDIA}/TV:/tv
+      - ${COMMON_DOWNLOADS}:/downloads
+    restart: unless-stopped
+
+  radarr:
+    image: linuxserver/radarr:latest
+    container_name: radarr
+    network_mode: "service:vpn-client"
+    depends_on:
+      - vpn-client
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+    volumes:
+      - radarr_config:/config
+      - ${COMMON_MEDIA}/Movies:/movies
+      - ${COMMON_DOWNLOADS}:/downloads
+    restart: unless-stopped
+
+  lazylibrarian:
+    image: linuxserver/lazylibrarian:latest
+    container_name: lazylibrarian
+    network_mode: "service:vpn-client"
+    depends_on:
+      - vpn-client
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+    volumes:
+      - lazylibrarian_config:/config
+      - ${COMMON_MEDIA}/EBooks:/books
+      - ${COMMON_DOWNLOADS}:/downloads
+    restart: unless-stopped
+
 networks:
   edge:
     external: true   # the attachable overlay network created by the swarm stack
@@ -65,6 +121,12 @@ volumes:
   # this repo happens to live in.
   qbittorrent_config:
     name: qbittorrent_config
+  sonarr_config:
+    name: sonarr_config
+  radarr_config:
+    name: radarr_config
+  lazylibrarian_config:
+    name: lazylibrarian_config
 
 secrets:
   nordvpn_token:
