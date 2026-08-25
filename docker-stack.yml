@@ -114,11 +114,10 @@ services:
   # Watchtower — auto-updates everything on :latest. Opt-out via label,
   # not opt-in: anything NOT explicitly labeled disabled gets updated.
   # Talks to the socket proxy, never the raw socket, same as everything
-  # else here. Starts in monitor-only mode (logs what it WOULD do, applies
-  # nothing) since Watchtower's exact interaction with Swarm-managed
-  # services vs plain containers isn't something I could fully verify
-  # from docs -- flip WATCHTOWER_MONITOR_ONLY to false once it's been
-  # watched behaving correctly for a bit.
+  # else here. Ran monitor-only through its first real scheduled run
+  # (2026-08-25 04:00 UTC) -- scanned 24 containers, correctly skipped
+  # everything labeled disabled, found one legitimate candidate
+  # (qbittorrent), zero failures. Live updates from here on.
   # ---------------------------------------------------------------------
   watchtower:
     image: nickfedor/watchtower:latest
@@ -126,7 +125,7 @@ services:
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_SCHEDULE=0 0 4 * * *
-      - WATCHTOWER_MONITOR_ONLY=true
+      - WATCHTOWER_MONITOR_ONLY=false
     networks:
       - internal
     deploy:
