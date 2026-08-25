@@ -54,6 +54,8 @@ volumes:
     name: prowlarr_config
   tautulli_config:
     name: tautulli_config
+  navidrome_config:
+    name: navidrome_config
   loki_data:
     name: loki_data
 
@@ -464,6 +466,43 @@ services:
         - "traefik.http.routers.tautulli.entrypoints=web"
         - "traefik.http.routers.tautulli.middlewares=authentik@file"
         - "traefik.http.services.tautulli.loadbalancer.server.port=8181"
+
+  # ---------------------------------------------------------------------
+  # Navidrome — Subsonic-API music streaming. `internal`, not `edge`, same
+  # trust move already made for grafana: ND_EXTAUTH_TRUSTEDSOURCES only
+  # accepts the X-authentik-username header from that subnet, so nothing
+  # but Traefik can forge it. Two routers below split the one hostname:
+  # the browser UI goes through the authentik forwardAuth gate like every
+  # other admin app; /rest/* (the actual Subsonic API path phone apps use)
+  # skips it entirely, same reasoning as Plex -- a phone app can't
+  # complete a browser SSO redirect, so it authenticates with its own
+  # password (set once, per person, in Navidrome's own account settings)
+  # instead.
+  # ---------------------------------------------------------------------
+  navidrome:
+    # Official image, not a LinuxServer one -- Navidrome ignores PUID/PGID
+    # entirely (that's an LSIO-only convention); it wants the container's
+    # actual user set instead, which is what `user:` below does.
+    image: deluan/navidrome:latest
+    user: "${COMMON_PUID}:${COMMON_PGID}"
+    environment:
+      - TZ=${COMMON_TZ}
+      - ND_EXTAUTH_USERHEADER=X-authentik-username
+      - ND_EXTAUTH_TRUSTEDSOURCES=10.0.2.0/24
+    volumes:
+      - navidrome_config:/data
+      - ${COMMON_MEDIA}/Music:/music:ro
+    networks:
+      - internal
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.navidrome.rule=Host(`navidrome.${COMMON_DOMAIN}`) && !PathPrefix(`/rest`)"
+        - "traefik.http.routers.navidrome.entrypoints=web"
+        - "traefik.http.routers.navidrome.middlewares=authentik@file"
+        - "traefik.http.routers.navidrome-api.rule=Host(`navidrome.${COMMON_DOMAIN}`) && PathPrefix(`/rest`)"
+        - "traefik.http.routers.navidrome-api.entrypoints=web"
+        - "traefik.http.services.navidrome.loadbalancer.server.port=4533"
 
   homer:
     image: b4bz/homer:latest
