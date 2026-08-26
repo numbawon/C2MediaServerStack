@@ -111,6 +111,24 @@
       </fieldset>
     </div>
   </details>
+
+  <details id="bazarr-section">
+    <summary>Bazarr</summary>
+    <div class="body">
+      <fieldset>
+        <legend>Login</legend>
+        <div id="bazarr-auth"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Sonarr connection</legend>
+        <div id="bazarr-sonarr"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Radarr connection</legend>
+        <div id="bazarr-radarr"></div>
+      </fieldset>
+    </div>
+  </details>
 </main>
 
 <script>
@@ -346,9 +364,100 @@ async function renderIndexers() {
   } catch (e) { addForm.appendChild(el("div", {class:"msg err", text: e.message})); }
 }
 
+// ---- Bazarr: its own login + Sonarr/Radarr connections -----------------
+// Bazarr has no self-describing schema like the servarr/Prowlarr family --
+// just a flat {section: {key: value}} object -- so the field metadata
+// (label/type) is hand-declared here, mirroring BAZARR_FIELDS in app.py.
+const BAZARR_SECTIONS = {
+  auth: {
+    containerId: "bazarr-auth",
+    fields: [
+      {name:"type", label:"Authentication Type", type:"select", options:[["",  "None"],["basic","Basic"],["form","Form"]]},
+      {name:"username", label:"Username", type:"text"},
+      {name:"password", label:"Password", type:"password"},
+    ],
+  },
+  sonarr: {
+    containerId: "bazarr-sonarr",
+    fields: [
+      {name:"ip", label:"Host", type:"text"},
+      {name:"port", label:"Port", type:"text"},
+      {name:"base_url", label:"Base URL", type:"text"},
+      {name:"apikey", label:"API Key", type:"password"},
+      {name:"ssl", label:"Use SSL", type:"checkbox"},
+    ],
+  },
+  radarr: {
+    containerId: "bazarr-radarr",
+    fields: [
+      {name:"ip", label:"Host", type:"text"},
+      {name:"port", label:"Port", type:"text"},
+      {name:"base_url", label:"Base URL", type:"text"},
+      {name:"apikey", label:"API Key", type:"password"},
+      {name:"ssl", label:"Use SSL", type:"checkbox"},
+    ],
+  },
+};
+
+async function loadBazarr() {
+  const section = $("#bazarr-section");
+  section.addEventListener("toggle", async function once() {
+    if (!section.open) return;
+    section.removeEventListener("toggle", once);
+    try {
+      const current = await api("/api/bazarr/settings");
+      for (const [sectionName, meta] of Object.entries(BAZARR_SECTIONS)) {
+        const container = $(`#${meta.containerId}`);
+        const inputs = {};
+        meta.fields.forEach(f => {
+          const wrap = el("div");
+          wrap.appendChild(el("label", {text: f.label}));
+          let input;
+          const value = (current[sectionName] || {})[f.name];
+          if (f.type === "select") {
+            input = el("select");
+            f.options.forEach(([v,l]) => {
+              const o = el("option", {value:v, text:l});
+              if (v === value) o.selected = true;
+              input.appendChild(o);
+            });
+          } else if (f.type === "checkbox") {
+            input = el("input", {type:"checkbox"});
+            input.checked = !!value;
+          } else if (f.type === "password") {
+            input = el("input", {type:"password", placeholder:"unchanged"});
+          } else {
+            input = el("input", {type:"text"});
+            if (value !== undefined && value !== null) input.value = value;
+          }
+          wrap.appendChild(input);
+          container.appendChild(wrap);
+          inputs[f.name] = {input, type: f.type};
+        });
+        const btn = el("button", {class:"secondary", text:"Save"});
+        container.appendChild(btn);
+        btn.onclick = async () => {
+          const payload = {};
+          Object.entries(inputs).forEach(([name, {input, type}]) => {
+            payload[name] = type === "checkbox" ? input.checked : input.value;
+          });
+          try {
+            await api("/api/bazarr/settings", {method:"POST", headers:{"Content-Type":"application/json"},
+              body: JSON.stringify({[sectionName]: payload})});
+            msg(container, "Saved.", true);
+          } catch (e) { msg(container, e.message, false); }
+        };
+      }
+    } catch (e) {
+      $("#bazarr-auth").appendChild(el("div", {class:"msg err", text: e.message}));
+    }
+  });
+}
+
 loadStatus();
 loadServarrApps();
 loadProwlarr();
+loadBazarr();
 </script>
 </body>
 </html>
