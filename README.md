@@ -45,7 +45,7 @@ and actually understand what they're running, not just copy-paste it.
 | **Navidrome** | Music streaming (Subsonic API) -- a dedicated music server, since Plex is only "fine" at it. |
 | **Tautulli** | Plex watch-history/stats. |
 | **Homer** | The dashboard -- one page linking to everything else. |
-| **Organizarr** | Custom-built settings hub for the `*arr` apps -- see below. Admins-only. |
+| **Organizarr** | Custom-built settings hub for the `*arr` apps -- see below. Admin tier. |
 | **Prometheus, Grafana, cAdvisor, node-exporter** | Metrics: host, per-container, and dashboards. |
 | **Loki, Promtail** | Log aggregation -- searchable logs across every container, alongside the metrics. |
 
@@ -83,6 +83,46 @@ the proxy over `internal` instead. cAdvisor is the one deliberate
 exception -- its per-container metrics need the real socket, so it's
 kept internal-network-only and read-only-mounted to limit the blast
 radius.
+
+## Who can reach what: the two access tiers
+
+Being logged in is not the same as being allowed everywhere. Every
+gated hostname resolves to an Authentik *application*, and there are two
+kinds:
+
+- **Admin tier.** The app has its own single-application proxy provider
+  with a policy binding to the Admins group. Everything that can change
+  how the stack behaves, see raw indexer results, or expose
+  infrastructure lives here: Prowlarr, Sonarr, Radarr, Lidarr,
+  LazyLibrarian, qBittorrent, Bazarr, Organizarr, Pi-hole, Portainer,
+  Traefik's dashboard, the web terminal, Grafana, Prometheus, Tautulli.
+- **Household tier.** No dedicated application, so the hostname falls
+  through to the domain-level provider, which has no policy bindings:
+  any authenticated user gets in. This is the media itself -- Plex,
+  Navidrome, Seerr, Homer.
+
+The split matters more than it first looks. The `*arr` apps each have an
+interactive/manual search that queries the same indexers Prowlarr does
+and renders raw release titles, and qBittorrent lists every download by
+name. Gating Prowlarr alone would leave five other doors to exactly the
+same content, which is why the whole search-and-download tier moves
+together rather than app by app.
+
+Two things this does *not* do:
+
+- It does not touch internal traffic. Prowlarr pushing indexers to
+  Sonarr, Bazarr querying Radarr, Organizarr reading every app's
+  config -- all of that is container-to-container over the `edge`
+  network and never passes through Traefik or Authentik. Gating a
+  hostname only affects a browser arriving from outside.
+- It does not hide the tiles. Homer renders the same dashboard for
+  everyone, so household-tier users still see admin-tier links and get
+  an Authentik denial on click rather than not seeing them at all. The
+  gate holds either way; it is cosmetic.
+
+To move an app between tiers, add or remove its Authentik application --
+nothing in this repo or in Traefik changes, since every gated router
+uses the same `authentik@file` middleware regardless of tier.
 
 ## Authentik integration patterns
 
@@ -439,7 +479,8 @@ working, the override is a safety net rather than a permanent pin.
 Overrides persist in the `organizarr_data` volume (covered by both
 backup scripts).
 
-**This one is gated to Admins only**, using the same
+**This one is in the Admin tier** (see "Who can reach what" above),
+using the same
 "single-application provider, Admins group only" pattern already used
 for Pi-hole/Portainer/Traefik's dashboard (see "Authentik first boot"
 above), *not* the any-authenticated-user default the rest of the apps
