@@ -1,0 +1,19 @@
+# Second, INDEPENDENT Cloudflare Tunnel -- deliberately not the same one
+# the Docker-based cloudflared container uses. This one runs as a host
+# systemd service (see systemd/cloudflared-emergency.service) so it keeps
+# working even if the entire Docker stack (Traefik, Authentik, the other
+# cloudflared) is down. Its only job is raw SSH -- gated by Cloudflare
+# Access, not Authentik, since Authentik lives in the thing this exists
+# to recover from.
+#
+# Copy this file to emergency-config.yml (git-ignored — holds your real
+# tunnel ID/domain/path) and fill in the placeholders below:
+#   - tunnel / credentials-file: from `cloudflared tunnel create <name>`
+#   - hostname: your own emergency-access subdomain
+tunnel: <YOUR-TUNNEL-ID>
+credentials-file: /home/youruser/.cloudflared/<YOUR-TUNNEL-ID>.json
+
+ingress:
+  - hostname: ssh.example.com
+    service: ssh://localhost:22
+  - service: http_status:404
