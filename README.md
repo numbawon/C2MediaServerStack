@@ -124,14 +124,21 @@ LazyLibrarian share that same network namespace too, so their actual
 *indexer searches* — not just qBittorrent's downloads — also exit
 through the VPN instead of your home IP.
 
-One consequence worth knowing if you extend this: anything sharing
-`vpn-client`'s namespace has no independent network identity of its own.
-Traefik and other containers reach it as `vpn-client:<port>`, never by
-its own service name — and *inside* that shared namespace, services
-reach each other over `localhost`, not by name. (This is exactly why
-Sonarr/Radarr's qBittorrent download-client host is `localhost:8080`,
-not `vpn-client:8080`, even though everything outside the namespace
-uses the latter.)
+Two consequences worth knowing if you extend this:
+
+- Anything sharing `vpn-client`'s namespace has no independent network
+  identity of its own — one IP, differentiated only by port. Docker
+  network aliases paper over this from the outside: `vpn-client`'s
+  `networks.edge.aliases` registers `qbittorrent`/`sonarr`/`radarr`/
+  `lazylibrarian` as additional names for that same IP, so everything
+  *else* on `edge` (Traefik, Organizarr, Prowlarr's stored connections)
+  addresses each app by its own natural name, same as if it had a real
+  container of its own.
+- *Inside* the shared namespace, that trick doesn't apply — services
+  there reach each other over `localhost`, not by name or alias. This
+  is exactly why Sonarr/Radarr's own qBittorrent download-client host
+  is `localhost:8080`, not `qbittorrent:8080`, even though everything
+  outside the namespace uses the latter.
 
 ## Why three compose files
 

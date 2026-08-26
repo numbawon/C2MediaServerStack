@@ -7,9 +7,11 @@
 #
 # Traefik labels are NOT used here — Traefik's docker provider is running in
 # swarmMode and only watches swarm services, so it would never see these
-# containers. Routing to qbittorrent instead comes from a static entry in
-# traefik/dynamic.yml pointing at vpn-client:8080 (qBittorrent has no network
-# of its own; it shares vpn-client's).
+# containers. Routing instead comes from static entries in
+# traefik/dynamic.yml, each pointing at that app's own network alias (see
+# vpn-client's `networks.edge.aliases` below) — qbittorrent/sonarr/radarr/
+# lazylibrarian have no network of their own, they share vpn-client's, but
+# the aliases mean nothing else needs to know that.
 
 # Explicit project name so this and docker-compose.plex.yml don't both fall
 # back to the directory name and flag each other's containers as "orphans"
@@ -33,8 +35,23 @@ services:
       - nordvpn_token
     volumes:
       - ./vpn-init:/custom-cont-init.d:ro
+    # qbittorrent/sonarr/radarr/lazylibrarian all share this container's
+    # network namespace (network_mode: service:vpn-client below) -- one
+    # IP, differentiated only by port, an unavoidable consequence of
+    # routing all four through the VPN this way. These aliases let
+    # everything ELSE on `edge` reach each app by its own natural name
+    # anyway (http://sonarr:8989, http://qbittorrent:8080, ...) instead
+    # of a generic http://vpn-client:<port> for all four -- same IP
+    # under the hood, but every reference reads like what it actually
+    # means. Safe to claim these names: none of the four have any other
+    # standalone network presence to collide with.
     networks:
-      - edge
+      edge:
+        aliases:
+          - qbittorrent
+          - sonarr
+          - radarr
+          - lazylibrarian
     restart: unless-stopped
 
   qbittorrent:
@@ -56,12 +73,10 @@ services:
 
   # Moved out of the Swarm stack so their indexer-search traffic (not just
   # qBittorrent's actual downloads) exits through the VPN too. Same
-  # network_mode:service:vpn-client sharing as qbittorrent above -- these
-  # have no independent network identity of their own now, reachable
-  # internally only as vpn-client:<port>, same as qbittorrent already is.
-  # Traefik's static route in traefik/dynamic.yml reflects that; any other
-  # app that talks to these directly (Seerr, Bazarr, Prowlarr) needs to use
-  # vpn-client:<port>, not sonarr:8989/radarr:7878/lazylibrarian:5299.
+  # network_mode:service:vpn-client sharing as qbittorrent above -- no
+  # independent network identity of their own, but vpn-client's aliases
+  # (see above) mean other apps still reach them as sonarr:8989/
+  # radarr:7878/lazylibrarian:5299, same as if they had one.
   sonarr:
     image: linuxserver/sonarr:latest
     container_name: sonarr

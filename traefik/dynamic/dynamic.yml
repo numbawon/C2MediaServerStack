@@ -140,25 +140,29 @@ http:
         servers:
           - url: "http://172.20.0.1:7681"
 
+    # qbittorrent/sonarr/radarr/lazylibrarian all share vpn-client's
+    # network namespace (see docker-compose.download.yml), but each has
+    # its own network alias there too -- addressed by its own name here,
+    # not the generic vpn-client:<port> the shared identity also answers to.
     qbittorrent:
       loadBalancer:
         servers:
-          - url: "http://vpn-client:8080"
+          - url: "http://qbittorrent:8080"
 
     sonarr:
       loadBalancer:
         servers:
-          - url: "http://vpn-client:8989"
+          - url: "http://sonarr:8989"
 
     radarr:
       loadBalancer:
         servers:
-          - url: "http://vpn-client:7878"
+          - url: "http://radarr:7878"
 
     lazylibrarian:
       loadBalancer:
         servers:
-          - url: "http://vpn-client:5299"
+          - url: "http://lazylibrarian:5299"
 
     plex:
       loadBalancer:
