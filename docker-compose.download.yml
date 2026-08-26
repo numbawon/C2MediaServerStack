@@ -20,31 +20,79 @@
 name: mediastack-download
 
 services:
+  # gluetun, not bubuntux/nordvpn. The old image was archived upstream and
+  # its own boot log told you to migrate to bubuntux/nordlynx -- which has
+  # since been archived too (Nov 2025), so following that advice would have
+  # meant swapping one dead project for another. gluetun is actively
+  # maintained, speaks NordVPN's WireGuard (NordLynx) directly, and brings
+  # the LAN HTTP proxy below with it instead of needing a second container.
+  #
+  # The transport did not actually change: the old container was already
+  # running NordLynx (TECHNOLOGY=NordLynx), so this swaps the wrapper around
+  # the same WireGuard tunnel, reusing the very same private key.
   vpn-client:
-    image: bubuntux/nordvpn:latest
+    image: qmcgaw/gluetun:latest
     container_name: vpn-client
     labels:
-      # Watchtower sees plain compose containers too (it watches the whole
-      # Docker API, not just the Swarm stack). Four apps share this
-      # container's network namespace, so a silent 4am recreate here would
-      # take all of them down with it -- same deliberate-updates-only
-      # policy as Traefik/Authentik/Postgres. (The image is also abandoned
-      # upstream -- its own boot log says to migrate to bubuntux/nordlynx
-      # -- so any update that DID appear would deserve scrutiny, not
-      # auto-apply.)
+      # Four apps share this container's network namespace, so a silent 4am
+      # recreate here would take all of them down with it -- same
+      # deliberate-updates-only policy as Traefik/Authentik/Postgres.
       - "com.centurylinklabs.watchtower.enable=false"
     cap_add:
       - NET_ADMIN
-      - NET_RAW
+    devices:
+      # gluetun needs the tun device even on WireGuard.
+      - /dev/net/tun:/dev/net/tun
     environment:
-      - TOKENFILE=/run/secrets/nordvpn_token
-      - CONNECT=United_States
-      - TECHNOLOGY=NordLynx
-      - NETWORK=192.168.50.0/24
+      - VPN_SERVICE_PROVIDER=nordvpn
+      - VPN_TYPE=wireguard
+      - SERVER_COUNTRIES=${COMMON_VPN_COUNTRY}
+      - TZ=${COMMON_TZ}
+
+      # gluetun's firewall drops everything not explicitly allowed. These
+      # three subnets are the ones that must bypass the tunnel:
+      #   10.0.1.0/24    the `edge` overlay -- how Traefik reaches the four
+      #                  web UIs sharing this namespace. Without it their
+      #                  replies get routed into the tunnel and every app
+      #                  behind this container goes dark.
+      #   172.20.0.0/16  docker_gwbridge, this container's actual path off
+      #                  the host (the old image needed a hand-written
+      #                  iptables script in ./vpn-init for exactly this;
+      #                  gluetun makes it a setting, so that script is gone).
+      #   the LAN        so LAN clients can use the HTTP proxy below.
+      - FIREWALL_OUTBOUND_SUBNETS=10.0.1.0/24,172.20.0.0/16,${COMMON_LAN_SUBNET}
+      # Inbound on the default interface: the proxy plus the four web UIs.
+      - FIREWALL_INPUT_PORTS=8888,8080,8989,7878,5299
+
+      # Built-in HTTP proxy (CONNECT-capable, so it handles HTTPS too).
+      # Anything on the LAN pointed at COMMON_LAN_IP:8888 exits through the
+      # VPN. Credentials are mandatory here, not optional politeness: an
+      # unauthenticated proxy is an open relay for anything that can reach
+      # the port.
+      # gluetun defaults to DNS-over-TLS, but NordVPN's network blocks
+      # outbound 853, so every lookup timed out and the healthcheck put the
+      # tunnel in a restart loop -- while plain HTTP to 1.1.1.1 worked fine,
+      # which is what pinned the fault on DNS rather than the tunnel. These
+      # are NordVPN's own resolvers, which are only reachable from inside
+      # the tunnel, so "plain" here still means the query never leaves the
+      # VPN. (gluetun warns about this setting in general; that warning is
+      # about pointing it at a public resolver reachable outside the tunnel,
+      # which these are not.)
+      - DNS_UPSTREAM_RESOLVER_TYPE=plain
+      - DNS_UPSTREAM_PLAIN_ADDRESSES=103.86.96.100:53,103.86.99.100:53
+
+      - HTTPPROXY=on
+      - HTTPPROXY_LISTENING_ADDRESS=:8888
+      - HTTPPROXY_USER_SECRETFILE=/run/secrets/httpproxy_user
+      - HTTPPROXY_PASSWORD_SECRETFILE=/run/secrets/httpproxy_password
+    ports:
+      # Bound to the LAN address specifically, NOT 0.0.0.0 -- the proxy has
+      # no business listening on every interface on the box.
+      - "${COMMON_LAN_IP}:8888:8888"
     secrets:
-      - nordvpn_token
-    volumes:
-      - ./vpn-init:/custom-cont-init.d:ro
+      - wireguard_private_key
+      - httpproxy_user
+      - httpproxy_password
     # qbittorrent/sonarr/radarr/lazylibrarian all share this container's
     # network namespace (network_mode: service:vpn-client below) -- one
     # IP, differentiated only by port, an unavoidable consequence of
@@ -154,5 +202,13 @@ volumes:
     name: lazylibrarian_config
 
 secrets:
-  nordvpn_token:
-    file: ./secrets/nordvpn_token.txt
+  # Names here are gluetun's expected /run/secrets/<name> filenames. The
+  # WireGuard key was lifted straight out of the old container's running
+  # tunnel (`wg show nordlynx private-key`) -- same account, same key, so
+  # no NordVPN manual-setup round trip was needed to migrate.
+  wireguard_private_key:
+    file: ./secrets/nordlynx_private_key.txt
+  httpproxy_user:
+    file: ./secrets/httpproxy_user.txt
+  httpproxy_password:
+    file: ./secrets/httpproxy_password.txt
