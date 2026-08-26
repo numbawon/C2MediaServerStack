@@ -333,6 +333,29 @@ services:
       # actively clears any password set previously (including one Pi-hole
       # auto-generated on first boot before this was added).
       - FTLCONF_webserver_api_password=
+
+      # Pi-hole's default listeningMode is LOCAL, which means dnsmasq only
+      # answers queries whose source sits on a directly-attached subnet.
+      # This container only ever sees the overlay (10.0.1.0/24) and
+      # docker_gwbridge (172.20.0.0/16), so the actual LAN counted as
+      # "non-local" and every query from it was silently dropped --
+      # Pi-hole was serving nothing to the network it exists to serve.
+      # ALL is the correct setting for a containerised Pi-hole; the
+      # container's idea of "local" can never include the LAN.
+      - FTLCONF_dns_listeningMode=ALL
+
+      # Answer AAAA with NODATA instead of forwarding upstream.
+      # This host has no IPv6 at all (no global address, no default
+      # route, no connectivity), so an AAAA answer is unusable here even
+      # when it succeeds. It also fixes a real breakage: some domains
+      # (api.themoviedb.org, discover.provider.plex.tv) return SERVFAIL
+      # rather than NODATA for AAAA, and musl libc -- which every Alpine
+      # based container here uses -- treats a SERVFAIL on either half of
+      # a dual A/AAAA lookup as total failure and reports EAI_AGAIN, even
+      # though the A record resolved fine. glibc ignores the AAAA failure,
+      # which is why the host could resolve those names and containers
+      # could not. Returning NODATA locally makes musl succeed.
+      - FTLCONF_misc_dnsmasq_lines=filter-AAAA
     ports:
       - target: 53
         published: 53
@@ -430,6 +453,18 @@ services:
       - TZ=${COMMON_TZ}
     volumes:
       - seerr_config:/app/config
+    # Resolve through Pi-hole rather than Docker's default path out to the
+    # router. Seerr is Alpine/musl, and musl fails a whole hostname lookup
+    # with EAI_AGAIN when the AAAA half returns SERVFAIL -- which is exactly
+    # what api.themoviedb.org and discover.provider.plex.tv do upstream, at
+    # every public resolver. That surfaced as a storm of 500s in the UI and
+    # "[TMDB] Failed to fetch ..." in the logs while the host itself
+    # resolved both names fine (glibc tolerates it). Pi-hole answers AAAA
+    # with NODATA locally (see filter-AAAA above), so the lookup succeeds on
+    # the A record. Addressed by LAN IP because that is stable, unlike the
+    # overlay address of a Swarm task.
+    dns:
+      - ${COMMON_LAN_IP}
     networks:
       - edge
     deploy:
