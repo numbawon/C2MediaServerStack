@@ -33,6 +33,27 @@ limits_config:
   per_stream_rate_limit: 8MB
   per_stream_rate_limit_burst: 16MB
 
+  # Loki does NOT expire anything by default -- without this, loki_data
+  # grows forever. 720h == 30 days, which is well past how far back
+  # anyone actually greps container logs here, and keeps the volume in
+  # the tens-of-MB range rather than unbounded. Enforced by the
+  # compactor below; this setting alone does nothing.
+  retention_period: 720h
+
+# The compactor is what actually applies limits_config.retention_period.
+# retention_enabled defaults to false, so the retention_period above is
+# inert without this block. delete_request_store is mandatory once
+# retention is on (Loki refuses to start otherwise) and has to match the
+# filesystem object store this single-node setup uses.
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+  # Chunks are marked for deletion, then removed after this delay --
+  # leaves a window to notice and stop a bad retention change before it
+  # has actually destroyed anything.
+  retention_delete_delay: 2h
+
 schema_config:
   configs:
     - from: 2020-10-24
