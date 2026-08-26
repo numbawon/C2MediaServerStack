@@ -26,7 +26,7 @@ VOLUMES=(
   authentik_data pihole_config pihole_dnsmasq portainer_data postgres_data
   prometheus_data grafana_data sonarr_config radarr_config lidarr_config
   bazarr_config seerr_config lazylibrarian_config prowlarr_config
-  tautulli_config navidrome_config loki_data
+  tautulli_config navidrome_config loki_data organizarr_data
   qbittorrent_config plex_config
 )
 

@@ -218,6 +218,50 @@ async function loadStatus() {
   });
 }
 
+// ---- API key: auto-detect status + manual override fallback ------------
+// Shared by every app's section -- always inserted first, ahead of
+// whatever fieldsets that app's own loader adds.
+async function renderApiKeyField(name, bodyEl) {
+  const fs = el("fieldset");
+  fs.appendChild(el("legend", {text: "API Key"}));
+  fs.appendChild(el("label", {text: "Manual override (only used if auto-detection can't find one)"}));
+  const input = el("input", {type: "password", placeholder: "paste API key"});
+  fs.appendChild(input);
+  const saveBtn = el("button", {class: "secondary", text: "Save"});
+  const clearBtn = el("button", {class: "secondary", text: "Clear override"});
+  clearBtn.style.marginLeft = "8px";
+  fs.appendChild(saveBtn);
+  fs.appendChild(clearBtn);
+
+  async function refresh() {
+    try {
+      const {source} = await api(`/api/${name}/apikey`);
+      const label = source === "auto" ? "Auto-detected"
+                  : source === "manual" ? "Using manual override"
+                  : "Not found — paste one below";
+      msg(fs, label, source !== "none");
+      clearBtn.style.display = source === "manual" ? "" : "none";
+    } catch (e) { msg(fs, e.message, false); }
+  }
+  saveBtn.onclick = async () => {
+    if (!input.value) return;
+    try {
+      await api(`/api/${name}/apikey`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({value: input.value})});
+      input.value = "";
+      await refresh();
+    } catch (e) { msg(fs, e.message, false); }
+  };
+  clearBtn.onclick = async () => {
+    try {
+      await api(`/api/${name}/apikey`, {method:"DELETE"});
+      await refresh();
+    } catch (e) { msg(fs, e.message, false); }
+  };
+
+  bodyEl.insertBefore(fs, bodyEl.firstChild);
+  await refresh();
+}
+
 // ---- per-app host settings + download clients --------------------------
 const AUTH_METHOD_OPTIONS = [["forms","Forms (Login Page)"],["basic","Basic"],["none","None"]];
 const AUTH_REQUIRED_OPTIONS = [["enabled","Enabled"],["disabledForLocalAddresses","Disabled for Local Addresses"]];
@@ -234,6 +278,7 @@ async function loadServarrApps() {
     details.addEventListener("toggle", async function once() {
       if (!details.open) return;
       details.removeEventListener("toggle", once);
+      await renderApiKeyField(name, body);
       await renderHostForm(name, body);
       await renderDownloadClients(name, body);
     }, { once: false });
@@ -309,6 +354,7 @@ async function loadProwlarr() {
   section.addEventListener("toggle", async function once() {
     if (!section.open) return;
     section.removeEventListener("toggle", once);
+    await renderApiKeyField("prowlarr", $("#prowlarr-section .body"));
     await renderApplications();
     await renderIndexers();
   });
@@ -438,11 +484,12 @@ const LAZYLIBRARIAN_SECTIONS = {
 // section back" shape shared by Bazarr and LazyLibrarian -- neither
 // self-describes its fields like the servarr/Prowlarr family, so the
 // field metadata (label/type) is hand-declared per app above instead.
-function loadKeyValueApp(detailsSelector, apiPath, sections, errorFallbackId) {
+function loadKeyValueApp(appName, detailsSelector, apiPath, sections, errorFallbackId) {
   const section = $(detailsSelector);
   section.addEventListener("toggle", async function once() {
     if (!section.open) return;
     section.removeEventListener("toggle", once);
+    await renderApiKeyField(appName, $(`${detailsSelector} .body`));
     try {
       const current = await api(apiPath);
       for (const [sectionName, meta] of Object.entries(sections)) {
@@ -494,11 +541,11 @@ function loadKeyValueApp(detailsSelector, apiPath, sections, errorFallbackId) {
 }
 
 function loadBazarr() {
-  loadKeyValueApp("#bazarr-section", "/api/bazarr/settings", BAZARR_SECTIONS, "bazarr-auth");
+  loadKeyValueApp("bazarr", "#bazarr-section", "/api/bazarr/settings", BAZARR_SECTIONS, "bazarr-auth");
 }
 
 function loadLazyLibrarian() {
-  loadKeyValueApp("#lazylibrarian-section", "/api/lazylibrarian/settings", LAZYLIBRARIAN_SECTIONS, "ll-general");
+  loadKeyValueApp("lazylibrarian", "#lazylibrarian-section", "/api/lazylibrarian/settings", LAZYLIBRARIAN_SECTIONS, "ll-general");
 }
 
 loadStatus();

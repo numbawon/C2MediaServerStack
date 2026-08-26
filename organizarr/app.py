@@ -5,9 +5,13 @@ actually painful to keep straight across apps by hand this project
 (auth method, download-client host/port, Prowlarr's app/indexer sync)
 via each app's own real API, not by touching config files directly.
 
-API keys are never sent to the browser -- read once at startup from
-each app's own config volume (mounted read-only), kept server-side, and
-attached to outbound requests here.
+API keys are never sent back to the browser once set. Auto-detection
+(reading from each app's own config volume, mounted read-only) is tried
+first, lazily and self-healing -- see _get_api_key(). If an app's key
+genuinely can't be auto-detected (volume not mounted, unusual setup),
+a manually-entered override is the fallback, persisted to /state so it
+survives a restart. Auto-detection always wins if it starts working
+later -- the override is a safety net, not a permanent pin.
 
 Auth: this container has no login of its own. It expects to sit behind
 the same Authentik forwardAuth gate as everything else in the stack --
@@ -17,6 +21,7 @@ dashboard. Anyone who reaches this page can change any app's
 authentication settings and download-client credentials.
 """
 import configparser
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -28,6 +33,22 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(title="Organizarr")
+
+OVERRIDE_PATH = Path("/state/api_key_overrides.json")
+
+
+def _load_overrides() -> dict[str, str]:
+    if not OVERRIDE_PATH.exists():
+        return {}
+    try:
+        return json.loads(OVERRIDE_PATH.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_overrides(overrides: dict[str, str]) -> None:
+    OVERRIDE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    OVERRIDE_PATH.write_text(json.dumps(overrides))
 
 # ---------------------------------------------------------------------
 # App registry. "servarr" apps share one settings-provider API shape
@@ -111,7 +132,13 @@ def _get_api_key(name: str) -> str | None:
     cfg = APPS[name]
     if not cfg.get("api_key"):
         cfg["api_key"] = _read_api_key(cfg["config"])
-    return cfg.get("api_key")
+    if cfg.get("api_key"):
+        return cfg["api_key"]
+    # Auto-detection has nothing (yet). Fall back to a manually-entered
+    # override rather than staying stuck -- re-checked every call, same
+    # as the auto path, so if the volume gets fixed later this still
+    # switches back to it automatically (see set_api_key_override()).
+    return _load_overrides().get(name)
 
 
 def _client(name: str) -> httpx.AsyncClient:
@@ -148,6 +175,49 @@ async def _servarr_post(name: str, path: str, body: Any) -> Any:
         r = await c.post(f"/api/{api}{path}", json=body)
         r.raise_for_status()
         return r.json()
+
+
+# ---------------------------------------------------------------------
+# API key management -- auto-detect is always tried first (see
+# _get_api_key); these exist for the apps/setups where it comes up
+# empty. Never echoes a stored key back, auto-detected or manual --
+# only which source is currently in effect.
+# ---------------------------------------------------------------------
+@app.get("/api/{app_name}/apikey")
+async def get_apikey_status(app_name: str):
+    if app_name not in APPS:
+        raise HTTPException(404, "unknown app")
+    cfg = APPS[app_name]
+    if not cfg.get("api_key"):
+        cfg["api_key"] = _read_api_key(cfg["config"])
+    if cfg.get("api_key"):
+        return {"source": "auto"}
+    if app_name in _load_overrides():
+        return {"source": "manual"}
+    return {"source": "none"}
+
+
+@app.post("/api/{app_name}/apikey")
+async def set_apikey_override(app_name: str, body: dict[str, Any]):
+    if app_name not in APPS:
+        raise HTTPException(404, "unknown app")
+    value = (body.get("value") or "").strip()
+    if not value:
+        raise HTTPException(400, "value required")
+    overrides = _load_overrides()
+    overrides[app_name] = value
+    _save_overrides(overrides)
+    return {"ok": True}
+
+
+@app.delete("/api/{app_name}/apikey")
+async def clear_apikey_override(app_name: str):
+    if app_name not in APPS:
+        raise HTTPException(404, "unknown app")
+    overrides = _load_overrides()
+    if overrides.pop(app_name, None) is not None:
+        _save_overrides(overrides)
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------
