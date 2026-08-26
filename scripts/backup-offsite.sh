@@ -6,7 +6,7 @@
 #
 # Reads credentials from secrets/restic.env (git-ignored, chmod 600):
 #   RESTIC_REPOSITORY=b2:your-bucket-name:mediastack
-#   RESTIC_PASSWORD=<a password only you know — losing this loses the backup>
+#   RESTIC_PASSWORD=<a password only you know -- losing this loses the backup>
 #   B2_ACCOUNT_ID=<Backblaze application key ID>
 #   B2_ACCOUNT_KEY=<Backblaze application key>
 set -euo pipefail
@@ -15,7 +15,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 ENV_FILE="secrets/restic.env"
 if [ ! -f "$ENV_FILE" ]; then
-  echo "Missing $ENV_FILE — create it first (see this script's header comment)." >&2
+  echo "Missing $ENV_FILE -- create it first (see this script's header comment)." >&2
   exit 1
 fi
 set -a
@@ -40,7 +40,7 @@ for vol in "${VOLUMES[@]}"; do
 done
 
 if [ "${#PATHS[@]}" -eq 0 ]; then
-  echo "No volumes found to back up — is the stack deployed?" >&2
+  echo "No volumes found to back up -- is the stack deployed?" >&2
   exit 1
 fi
 

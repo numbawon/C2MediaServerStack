@@ -1,4 +1,4 @@
-# Standalone (non-swarm) compose — deployed with:
+# Standalone (non-swarm) compose -- deployed with:
 #   docker compose -f docker-compose.plex.yml up -d
 #
 # Lives outside the Swarm stack because `docker stack deploy` ignores the
@@ -24,7 +24,7 @@ services:
     secrets:
       - plex_claim
     ports:
-      - "32400:32400"   # direct LAN access — Plex clients/DLNA prefer this over the tunnel, and it's needed to reach Settings to whitelist the public hostname
+      - "32400:32400"   # direct LAN access -- Plex clients/DLNA prefer this over the tunnel, and it's needed to reach Settings to whitelist the public hostname
     volumes:
       - plex_config:/config
       - ${COMMON_MEDIA}:/data
@@ -44,7 +44,7 @@ networks:
     external: true
 
 volumes:
-  # Explicit name so it isn't prefixed by the compose project name — see
+  # Explicit name so it isn't prefixed by the compose project name -- see
   # docker-compose.download.yml's qbittorrent_config comment for why.
   plex_config:
     name: plex_config

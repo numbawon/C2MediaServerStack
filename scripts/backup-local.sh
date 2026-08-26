@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fast local snapshot of every app's config volume. Does NOT back up media
-# (/mnt/Storage/Media) — too large, and it's not ephemeral state. Does NOT
-# back up secret values either (Swarm secrets can't be exported by design) —
+# (/mnt/Storage/Media) -- too large, and it's not ephemeral state. Does NOT
+# back up secret values either (Swarm secrets can't be exported by design) --
 # that's what scripts/backup-offsite.sh + init-secrets.sh together cover:
 # restic keeps an encrypted, restorable copy; a lost Swarm secret can also
 # just be recreated with init-secrets.sh since most are random passwords

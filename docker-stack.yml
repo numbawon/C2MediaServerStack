@@ -28,7 +28,7 @@ networks:
 
 volumes:
   # Explicit `name:` on every volume so it doesn't get the `<stack-name>_`
-  # prefix Swarm adds by default — keeps scripts/backup-local.sh's volume
+  # prefix Swarm adds by default -- keeps scripts/backup-local.sh's volume
   # list stable regardless of what you name the stack at deploy time.
   authentik_data:
     name: authentik_data
@@ -86,7 +86,7 @@ secrets:
 services:
 
   # ---------------------------------------------------------------------
-  # Docker socket proxy — the ONLY thing in this stack that touches the
+  # Docker socket proxy -- the ONLY thing in this stack that touches the
   # real docker.sock. Never publish this on a host port.
   # ---------------------------------------------------------------------
   docker-socket-proxy:
@@ -125,7 +125,7 @@ services:
         - "com.centurylinklabs.watchtower.enable=false"
 
   # ---------------------------------------------------------------------
-  # Watchtower — auto-updates everything on :latest. Opt-out via label,
+  # Watchtower -- auto-updates everything on :latest. Opt-out via label,
   # not opt-in: anything NOT explicitly labeled disabled gets updated.
   # Talks to the socket proxy, never the raw socket, same as everything
   # else here. Ran monitor-only through its first real scheduled run
@@ -149,7 +149,7 @@ services:
         - "com.centurylinklabs.watchtower.enable=false"
 
   # ---------------------------------------------------------------------
-  # Traefik — reads the Docker API via the proxy above, never the raw
+  # Traefik -- reads the Docker API via the proxy above, never the raw
   # socket. No dashboard insecure-mode. Only ingress is the Cloudflare
   # Tunnel below; no host ports published at all.
   # ---------------------------------------------------------------------
@@ -175,7 +175,7 @@ services:
       # Engine rejects anything below 1.40. Pin an explicit version well
       # within both bounds instead of relying on negotiation.
       - DOCKER_API_VERSION=1.44
-      # traefik/dynamic.yml uses {{ env "COMMON_DOMAIN" }} — that's Traefik's
+      # traefik/dynamic.yml uses {{ env "COMMON_DOMAIN" }} -- that's Traefik's
       # own Go-template env function reading THIS container's process
       # environment, a completely different mechanism from the ${COMMON_DOMAIN}
       # substitution .env does into this YAML file. Without this, the
@@ -203,7 +203,7 @@ services:
         - "com.centurylinklabs.watchtower.enable=false"
 
   # ---------------------------------------------------------------------
-  # Cloudflare Tunnel — only ingress path. Outbound-only connection to
+  # Cloudflare Tunnel -- only ingress path. Outbound-only connection to
   # Cloudflare edge, no inbound ports opened on the router at all.
   # Tunnel + DNS routes are created once via `cloudflared tunnel create`
   # and `cloudflared tunnel route dns` (see README) before this deploys.
@@ -223,10 +223,10 @@ services:
       replicas: 1
 
   # ---------------------------------------------------------------------
-  # Authentik — SSO / forward-auth gate for everything else.
+  # Authentik -- SSO / forward-auth gate for everything else.
   # First-boot: create admin user, then create a "Proxy Provider" (forward
   # auth, single application / all apps) + Outpost in the Authentik UI.
-  # This cannot be scripted via env vars — see README.
+  # This cannot be scripted via env vars -- see README.
   # ---------------------------------------------------------------------
   authentik-server:
     image: ghcr.io/goauthentik/server:2026.8
@@ -317,7 +317,7 @@ services:
         - "com.centurylinklabs.watchtower.enable=false"
 
   # ---------------------------------------------------------------------
-  # Pi-hole — note: port 53 will conflict with systemd-resolved on this
+  # Pi-hole -- note: port 53 will conflict with systemd-resolved on this
   # Arch host if it's listening on 0.0.0.0:53. Check/disable that stub
   # listener before deploying (see README).
   # ---------------------------------------------------------------------
@@ -326,7 +326,7 @@ services:
     hostname: C2-Pihole
     environment:
       - TZ=${COMMON_TZ}
-      # Explicit empty string, not FTLCONF_webserver_api_password_file — the
+      # Explicit empty string, not FTLCONF_webserver_api_password_file -- the
       # web UI sits behind Traefik's authentik@file middleware already, so a
       # second Pi-hole-native login is redundant. FTL re-reads this env var
       # on every boot and rewrites pwhash in pihole.toml to match, so this
@@ -480,7 +480,7 @@ services:
         - "traefik.http.services.tautulli.loadbalancer.server.port=8181"
 
   # ---------------------------------------------------------------------
-  # Navidrome — Subsonic-API music streaming. `internal`, not `edge`, same
+  # Navidrome -- Subsonic-API music streaming. `internal`, not `edge`, same
   # trust move already made for grafana: ND_EXTAUTH_TRUSTEDSOURCES only
   # accepts the X-authentik-username header from that subnet, so nothing
   # but Traefik can forge it. Two routers below split the one hostname:
@@ -689,7 +689,7 @@ services:
         - "traefik.http.services.grafana.loadbalancer.server.port=3000"
 
   # ---------------------------------------------------------------------
-  # Loki + Promtail — log aggregation alongside the Prometheus/Grafana
+  # Loki + Promtail -- log aggregation alongside the Prometheus/Grafana
   # metrics stack. No Traefik route: only Grafana talks to Loki, over
   # `internal`, same trust boundary as the Prometheus datasource.
   # ---------------------------------------------------------------------
