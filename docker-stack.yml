@@ -517,8 +517,8 @@ services:
         - "traefik.http.services.navidrome.loadbalancer.server.port=4533"
 
   # ---------------------------------------------------------------------
-  # Organizarr -- a small custom hub for the settings that were actually
-  # painful to keep straight by hand across the *arr apps (auth method,
+  # Organizarr -- a small hub for the settings that are actually painful
+  # to keep straight by hand across the *arr apps (auth method,
   # download-client host/port, Prowlarr's app/indexer sync). Talks to
   # each app's real API using a key read from that app's own config
   # volume (read-only) -- never a config-file edit. Auto-detection is
@@ -528,22 +528,32 @@ services:
   # a manual override can be entered in its own UI instead, persisted in
   # organizarr_data.
   #
-  # NOT auto-updated by Watchtower (no upstream image to pull -- built
-  # locally from ./organizarr). organizarr_data IS covered by the backup
-  # scripts now -- it holds any manually-entered key overrides, which
-  # are real state worth not losing even though most keys are just
-  # re-read from volumes already backed up under their owning app.
+  # Extracted to its own public repo/image:
+  # https://github.com/numbawon/organizarr -- pulled like everything
+  # else now, no local build step. organizarr_data is covered by the
+  # backup scripts -- it holds any manually-entered key overrides, real
+  # state worth not losing even though most keys are just re-read from
+  # volumes already backed up under their owning app.
   #
   # SECURITY: this app can rewrite authentication settings and
   # download-client credentials across the whole stack. Bind it to an
   # Admins-only Authentik application (see README), not the
   # any-authenticated-user default the rest of these apps use.
-  #
-  # Build before first deploy (Swarm can't build from a Dockerfile the
-  # way `docker compose` can):
-  #   docker build -t organizarr:local ./organizarr
   organizarr:
-    image: organizarr:local
+    image: ghcr.io/numbawon/organizarr:latest
+    environment:
+      - SONARR_URL=http://vpn-client:8989
+      - SONARR_CONFIG_PATH=/data/sonarr/config.xml
+      - RADARR_URL=http://vpn-client:7878
+      - RADARR_CONFIG_PATH=/data/radarr/config.xml
+      - LIDARR_URL=http://lidarr:8686
+      - LIDARR_CONFIG_PATH=/data/lidarr/config.xml
+      - PROWLARR_URL=http://prowlarr:9696
+      - PROWLARR_CONFIG_PATH=/data/prowlarr/config.xml
+      - BAZARR_URL=http://bazarr:6767
+      - BAZARR_CONFIG_PATH=/data/bazarr/config/config.yaml
+      - LAZYLIBRARIAN_URL=http://vpn-client:5299
+      - LAZYLIBRARIAN_CONFIG_PATH=/data/lazylibrarian/config.ini
     volumes:
       - sonarr_config:/data/sonarr:ro
       - radarr_config:/data/radarr:ro
@@ -556,7 +566,6 @@ services:
       - edge
     deploy:
       labels:
-        - "com.centurylinklabs.watchtower.enable=false"
         - "traefik.enable=true"
         - "traefik.http.routers.organizarr.rule=Host(`organizarr.${COMMON_DOMAIN}`)"
         - "traefik.http.routers.organizarr.entrypoints=web"

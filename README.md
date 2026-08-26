@@ -206,10 +206,6 @@ cloudflared tunnel route dns mediastack <sub>.yourdomain.com
 
 ./scripts/init-secrets.sh          # prompts for Cloudflare/NordVPN/Plex values, generates the rest
 
-# organizarr isn't pulled from a registry -- build it locally first, or
-# the stack deploy below fails trying to schedule it.
-docker build -t organizarr:local ./organizarr
-
 docker stack deploy -c docker-stack.yml mediastack
 docker compose -f docker-compose.download.yml up -d
 docker compose -f docker-compose.plex.yml up -d
@@ -355,12 +351,18 @@ Neither depends on anything inside the Swarm stack.
 
 ## Organizarr — one place for the settings that were painful to keep straight
 
-`organizarr/` is a small custom app (its own container, built locally —
-not pulled from a registry) that surfaces the handful of settings that
-turned out to be genuinely annoying to keep consistent across the `*arr`
-apps by hand: authentication method, download-client host/port, and
-Prowlarr's application/indexer sync. It's not a clone of each app's full
-settings UI — only the fields that were actually worth centralizing.
+A standalone open-source project — [numbawon/organizarr](https://github.com/numbawon/organizarr),
+image pulled from `ghcr.io/numbawon/organizarr` like everything else in
+this stack — that surfaces the handful of settings genuinely annoying
+to keep consistent across the `*arr` apps by hand: authentication
+method, download-client host/port, and Prowlarr's application/indexer
+sync. It's not a clone of each app's full settings UI — only the
+fields actually worth centralizing.
+
+Every app it manages is configured entirely through `<NAME>_URL` /
+`<NAME>_CONFIG_PATH` env vars on the service below (see that project's
+own README for the full reference) — nothing about which apps exist is
+hardcoded.
 
 It talks to each app's real API (never a config file) using an API key
 read from that app's own config volume, mounted read-only — lazily, not
@@ -368,9 +370,8 @@ once at startup: on a fresh deploy, Swarm doesn't guarantee this
 container starts after the apps it depends on, and each of those apps
 only writes its own API key on its own first boot. A miss just gets
 retried on the next request instead of caching a permanent failure, so
-plain `docker stack deploy` (see "Setup order" above, which already
-builds this image first) is enough — no manual ordering, no restart, no
-one needing to notice and intervene.
+plain `docker stack deploy` is enough — no manual ordering, no restart,
+no one needing to notice and intervene.
 
 If an app's key genuinely can't be auto-detected (its volume isn't
 mounted, an unusual setup), every app's section has a manual-override
