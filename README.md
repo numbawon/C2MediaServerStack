@@ -46,6 +46,7 @@ and actually understand what they're running, not just copy-paste it.
 | **Tautulli** | Plex watch-history/stats. |
 | **Homer** | The dashboard -- one page linking to everything else. |
 | **Organizarr** | Custom-built settings hub for the `*arr` apps -- see below. Admin tier. |
+| **FlareSolverr** | Solves Cloudflare's JS challenge for the public indexers that would otherwise fail in Prowlarr. No UI, internal API only. |
 | **Prometheus, Grafana, cAdvisor, node-exporter** | Metrics: host, per-container, and dashboards. |
 | **Loki, Promtail** | Log aggregation -- searchable logs across every container, alongside the metrics. |
 
@@ -201,6 +202,64 @@ stack (see "Why three compose files" below). Sonarr, Radarr, and
 LazyLibrarian share that same network namespace too, so their actual
 *indexer searches* -- not just qBittorrent's downloads -- also exit
 through the VPN instead of your home IP.
+
+### Why Prowlarr is not behind the VPN
+
+Sonarr, Radarr and LazyLibrarian exit through the VPN, but Prowlarr --
+the app that actually performs the indexer searches -- does not. That is
+deliberate, not an oversight.
+
+The exposure the VPN exists to cover is *swarm participation*: monitoring
+outfits join swarms and log peer IPs. That is qBittorrent, and it is
+behind the VPN. Prowlarr never joins a swarm, never announces, and never
+connects to a peer; it makes HTTPS requests to indexer sites and fetches
+`.torrent` files. The residual exposure is that your ISP can see TLS SNI
+to indexer domains and the indexer sees your residential IP, which is a
+different category of thing from sharing a file.
+
+Against that, routing Prowlarr through the VPN actively costs you:
+Cloudflare challenges VPN and datacenter ranges far harder than
+residential ones, and a number of public indexers block known VPN exit
+ranges outright rather than merely challenging them. Exit IPs are also
+shared, so somebody else's abuse becomes your ban with no visibility into
+why.
+
+If you do want specific indexers tunnelled, you do not need to move
+Prowlarr at all. Prowlarr's **Indexer Proxies** feature supports plain
+HTTP and SOCKS proxies alongside FlareSolverr, tagged per indexer, and
+this stack already exposes an authenticated HTTP proxy on the VPN
+container (see below). Point an HTTP proxy entry at
+`${COMMON_LAN_IP}:8888`, tag it, and apply that tag only where you want
+it. Do not put a proxy tag and the FlareSolverr tag on the same indexer;
+FlareSolverr has its own proxy field if one genuinely needs both.
+
+### Cloudflare-blocked indexers (FlareSolverr)
+
+Some public indexers sit behind Cloudflare's JS challenge and simply fail
+in Prowlarr. FlareSolverr runs a headless Chromium, solves the challenge,
+and returns the `cf_clearance` cookie. Prowlarr supports it natively:
+**Settings -> Indexers -> Indexer Proxies -> + -> FlareSolverr**, host
+`http://flaresolverr:8191`, give it a tag such as `cloudflare`, then apply
+that tag to only the indexers that need it. Tagging everything routes
+every search through a browser for no reason.
+
+It runs on `edge` next to Prowlarr rather than behind the VPN because the
+`cf_clearance` cookie is bound to the IP and User-Agent that solved the
+challenge -- if FlareSolverr exits from a different address than Prowlarr,
+the cookie is rejected on first use.
+
+Two honest limitations. FlareSolverr handles the older JS "I'm Under
+Attack" challenge well but is unreliable against Cloudflare Turnstile,
+which more sites are adopting; when an indexer stays broken with the tag
+applied, this is usually why. And it is the one service here with a memory
+limit, because every request spawns a Chromium and upstream has a long
+history of memory growth under sustained use.
+
+For private trackers, check whether the tracker offers a real API or
+Torznab endpoint before reaching for FlareSolverr -- "blocked by
+Cloudflare" often just means the indexer definition is HTML-scraping a
+site that has a sanctioned API, and the API path does not break every
+time the challenge changes.
 
 ### Using the VPN as a proxy from the rest of your LAN
 
