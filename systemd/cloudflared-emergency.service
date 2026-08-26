@@ -1,3 +1,5 @@
+# Replace youruser (both spots below) with your actual login user and
+# repo path before installing.
 [Unit]
 Description=Emergency SSH tunnel (independent of the Docker stack)
 After=network-online.target sshd.service

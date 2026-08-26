@@ -1,0 +1,13 @@
+# Ingress rules for the tunnel. `cloudflared tunnel route dns` only creates
+# the DNS CNAME records — it doesn't tell the tunnel where to send traffic.
+# Everything routes to Traefik on the shared `edge` overlay network; Traefik
+# does the actual host-based routing to each backend service from there.
+#
+# Copy this file to config.yml (git-ignored — holds your real domain) and
+# swap example.com for yours.
+ingress:
+  - hostname: "*.example.com"
+    service: http://traefik:80
+  - hostname: "example.com"
+    service: http://traefik:80
+  - service: http_status:404

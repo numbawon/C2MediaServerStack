@@ -1,0 +1,143 @@
+# Homer dashboard config. Bind-mounted read-only straight into the container
+# at /www/assets/config.yml (see docker-stack.yml's homer service) — edits
+# here are live immediately, no rebuild/redeploy needed, just a page refresh.
+#
+# Copy this file to config.yml (git-ignored — holds your real domain) and
+# swap example.com for yours; rename services/icons as you like.
+title: "C2 MEDIASTACK"
+subtitle: "example.com"
+documentTitle: "C2 Mediastack"
+
+header: false
+footer: false
+
+theme: default
+colors:
+  light:
+    highlight-primary: "#ff00ff"
+    highlight-secondary: "#00ffff"
+    highlight-hover: "#ff2bd6"
+    background: "#0a0a12"
+    card-background: "#12121e"
+    text: "#e6f7ff"
+    text-header: "#00ffff"
+    text-title: "#e6f7ff"
+    text-subtitle: "#8a8ab0"
+    card-shadow: rgba(0, 255, 255, 0.15)
+    link: "#00ffff"
+    link-hover: "#ff00ff"
+  dark:
+    highlight-primary: "#ff00ff"
+    highlight-secondary: "#00ffff"
+    highlight-hover: "#ff2bd6"
+    background: "#0a0a12"
+    card-background: "#12121e"
+    text: "#e6f7ff"
+    text-header: "#00ffff"
+    text-title: "#e6f7ff"
+    text-subtitle: "#8a8ab0"
+    card-shadow: rgba(0, 255, 255, 0.15)
+    link: "#00ffff"
+    link-hover: "#ff00ff"
+
+stylesheet:
+  - "assets/cyberpunk.css"
+
+defaults:
+  layout: columns
+  colorTheme: dark
+
+services:
+  - name: "Media"
+    icon: "fas fa-film"
+    items:
+      - name: "Plex"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/plex.svg"
+        url: "https://plex.example.com"
+        target: "_blank"
+      - name: "Seerr"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/seerr.svg"
+        url: "https://seerr.example.com"
+        target: "_blank"
+      - name: "Navidrome"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/navidrome.svg"
+        url: "https://navidrome.example.com"
+        target: "_blank"
+
+  - name: "Library Management"
+    icon: "fas fa-list"
+    items:
+      - name: "Sonarr"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/sonarr.svg"
+        url: "https://sonarr.example.com"
+        target: "_blank"
+      - name: "Radarr"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/radarr.svg"
+        url: "https://radarr.example.com"
+        target: "_blank"
+      - name: "Lidarr"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/lidarr.svg"
+        url: "https://lidarr.example.com"
+        target: "_blank"
+      - name: "Bazarr"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/bazarr.svg"
+        url: "https://bazarr.example.com"
+        target: "_blank"
+      - name: "LazyLibrarian"
+        icon: "fas fa-book"
+        url: "https://lazylibrarian.example.com"
+        target: "_blank"
+      - name: "Prowlarr"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/prowlarr.svg"
+        url: "https://prowlarr.example.com"
+        target: "_blank"
+
+  - name: "Downloads"
+    icon: "fas fa-download"
+    items:
+      - name: "qBittorrent"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/qbittorrent.svg"
+        url: "https://qbittorrent.example.com"
+        target: "_blank"
+        subtitle: "Routed through NordVPN"
+
+  - name: "Infrastructure"
+    icon: "fas fa-server"
+    items:
+      - name: "Traefik"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/traefik.svg"
+        url: "https://traefik.example.com"
+        target: "_blank"
+      - name: "Portainer"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/portainer.svg"
+        url: "https://portainer.example.com"
+        target: "_blank"
+      - name: "Pi-hole"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/pi-hole.svg"
+        url: "https://pihole.example.com/admin"
+        target: "_blank"
+      - name: "Authentik"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/authentik.svg"
+        url: "https://auth.example.com"
+        target: "_blank"
+      - name: "Terminal"
+        icon: "fas fa-terminal"
+        url: "https://terminal.example.com"
+        target: "_blank"
+        subtitle: "Admins only"
+
+  - name: "Monitoring"
+    icon: "fas fa-chart-line"
+    items:
+      - name: "Grafana"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/grafana.svg"
+        url: "https://grafana.example.com"
+        target: "_blank"
+      - name: "Prometheus"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/prometheus.svg"
+        url: "https://prometheus.example.com"
+        target: "_blank"
+      - name: "Tautulli"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/tautulli.svg"
+        url: "https://tautulli.example.com"
+        target: "_blank"
