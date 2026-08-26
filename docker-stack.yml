@@ -493,6 +493,39 @@ services:
         - "traefik.http.routers.prowlarr.middlewares=authentik@file"
         - "traefik.http.services.prowlarr.loadbalancer.server.port=9696"
 
+  # Solves Cloudflare's JS challenge for the public indexers that would
+  # otherwise just fail in Prowlarr. Prowlarr speaks to it natively:
+  # Settings -> Indexers -> Indexer Proxies -> FlareSolverr, then tag only
+  # the indexers that actually need it. Tagging everything sends every
+  # search through a headless browser for no reason.
+  #
+  # Deliberately on `edge` next to Prowlarr and NOT behind the VPN. The
+  # cf_clearance cookie FlareSolverr returns is bound to the IP and
+  # User-Agent that solved the challenge, so it has to exit from the same
+  # address Prowlarr does or the cookie is rejected the moment Prowlarr
+  # tries to use it. (Prowlarr sits outside the VPN on purpose -- see
+  # "Why Prowlarr is not behind the VPN" in the README.)
+  #
+  # No Traefik labels on purpose: this is an internal API with no UI worth
+  # exposing, so it stays reachable only from inside the overlay.
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    environment:
+      - TZ=${COMMON_TZ}
+      - LOG_LEVEL=info
+    networks:
+      - edge
+    deploy:
+      resources:
+        limits:
+          # The only service in this stack with a memory ceiling, and the
+          # only one that needs one: each request spawns a headless
+          # Chromium, and upstream has a long history of memory growth
+          # under sustained use. Everything else here has a predictable
+          # footprint. If it does run away, Swarm kills and restarts just
+          # this container instead of letting it lean on the whole host.
+          memory: 1536M
+
   # Reads Plex's own watch/library stats via Plex's API + a token generated
   # through Tautulli's own first-boot wizard (Plex account sign-in) -- can't
   # be scripted, same as every other app's first-boot in this stack.
