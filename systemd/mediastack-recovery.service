@@ -10,6 +10,8 @@
 # retry it. `docker compose up -d` is idempotent, so re-running it here is
 # a safe, cheap fix regardless of whether anything actually needed it.
 #
+# Replace youruser (below) with your actual repo path before installing.
+#
 # Install:
 #   sudo cp systemd/mediastack-recovery.service /etc/systemd/system/
 #   sudo systemctl daemon-reload

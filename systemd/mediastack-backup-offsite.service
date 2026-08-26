@@ -1,3 +1,4 @@
+# Replace youruser with your actual repo path before installing.
 [Unit]
 Description=mediastack off-site config backup (restic -> B2)
 After=docker.service network-online.target
