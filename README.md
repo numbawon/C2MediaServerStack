@@ -372,6 +372,13 @@ plain `docker stack deploy` (see "Setup order" above, which already
 builds this image first) is enough — no manual ordering, no restart, no
 one needing to notice and intervene.
 
+If an app's key genuinely can't be auto-detected (its volume isn't
+mounted, an unusual setup), every app's section has a manual-override
+field as a fallback — auto-detection still wins the moment it starts
+working, the override is a safety net rather than a permanent pin.
+Overrides persist in the `organizarr_data` volume (covered by both
+backup scripts).
+
 **Before exposing this one, bind it to an Admins-only Authentik
 application** — the same "single-application provider, Admins group
 only" pattern already used for Pi-hole/Portainer/Traefik's dashboard
