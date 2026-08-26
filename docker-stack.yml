@@ -569,6 +569,14 @@ services:
         - "traefik.enable=true"
         - "traefik.http.routers.organizarr.rule=Host(`organizarr.${COMMON_DOMAIN}`)"
         - "traefik.http.routers.organizarr.entrypoints=web"
+        # Ordinary authentik@file middleware, but the gate behind it is
+        # NOT the ordinary one: organizarr has its own single-application
+        # Authentik provider bound to the Admins group, so this host
+        # resolves to that instead of the any-authenticated-user
+        # domain-level application. Same pattern as pihole/portainer/
+        # traefik-dashboard/terminal. Nothing here expresses that -- the
+        # restriction lives entirely in Authentik, which is why it is
+        # called out in the README rather than only in this file.
         - "traefik.http.routers.organizarr.middlewares=authentik@file"
         - "traefik.http.services.organizarr.loadbalancer.server.port=8000"
 

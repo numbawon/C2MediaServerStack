@@ -398,13 +398,20 @@ working, the override is a safety net rather than a permanent pin.
 Overrides persist in the `organizarr_data` volume (covered by both
 backup scripts).
 
-**Before exposing this one, bind it to an Admins-only Authentik
-application** -- the same "single-application provider, Admins group
-only" pattern already used for Pi-hole/Portainer/Traefik's dashboard
-(see "Authentik first boot" above), *not* the any-authenticated-user
-default the rest of the apps get. This one can rewrite authentication
-settings and download-client credentials across the whole stack; it
-deserves the tighter gate.
+**This one is gated to Admins only**, using the same
+"single-application provider, Admins group only" pattern already used
+for Pi-hole/Portainer/Traefik's dashboard (see "Authentik first boot"
+above), *not* the any-authenticated-user default the rest of the apps
+get. Organizarr can rewrite authentication settings and download-client
+credentials across the whole stack, so it deserves the tighter gate.
+
+If you are standing this up yourself, that means creating a Proxy
+Provider (forward auth, single application) with external host
+`https://organizarr.<your-domain>`, an Application bound to it, a
+policy binding for your Admins group, and adding the provider to the
+embedded outpost. The Traefik side needs no special handling -- the
+router keeps the ordinary `authentik@file` middleware, and the outpost
+picks the most specific matching application by hostname.
 
 ## Monitoring & logs
 
