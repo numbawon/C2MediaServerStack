@@ -68,6 +68,8 @@ volumes:
     name: radarr_config
   lazylibrarian_config:
     name: lazylibrarian_config
+  organizarr_data:
+    name: organizarr_data
 
 secrets:
   postgres_password:
@@ -518,13 +520,19 @@ services:
   # Organizarr -- a small custom hub for the settings that were actually
   # painful to keep straight by hand across the *arr apps (auth method,
   # download-client host/port, Prowlarr's app/indexer sync). Talks to
-  # each app's real API using a key read once at startup from that
-  # app's own config volume (read-only) -- never a config-file edit.
+  # each app's real API using a key read from that app's own config
+  # volume (read-only) -- never a config-file edit. Auto-detection is
+  # tried first and re-tried lazily (handles a fresh deploy where this
+  # container starts before the app it depends on); if an app's key
+  # genuinely can't be auto-detected (volume not mounted, unusual setup),
+  # a manual override can be entered in its own UI instead, persisted in
+  # organizarr_data.
   #
   # NOT auto-updated by Watchtower (no upstream image to pull -- built
-  # locally from ./organizarr) and NOT covered by the backup scripts --
-  # it holds no state of its own, only API keys re-read from volumes
-  # that are already backed up under their owning app.
+  # locally from ./organizarr). organizarr_data IS covered by the backup
+  # scripts now -- it holds any manually-entered key overrides, which
+  # are real state worth not losing even though most keys are just
+  # re-read from volumes already backed up under their owning app.
   #
   # SECURITY: this app can rewrite authentication settings and
   # download-client credentials across the whole stack. Bind it to an
@@ -543,6 +551,7 @@ services:
       - prowlarr_config:/data/prowlarr:ro
       - bazarr_config:/data/bazarr:ro
       - lazylibrarian_config:/data/lazylibrarian:ro
+      - organizarr_data:/state
     networks:
       - edge
     deploy:
