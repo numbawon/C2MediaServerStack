@@ -84,29 +84,45 @@ exception -- its per-container metrics need the real socket, so it's
 kept internal-network-only and read-only-mounted to limit the blast
 radius.
 
-## Who can reach what: the two access tiers
+## Who can reach what: the access tiers
 
-Being logged in is not the same as being allowed everywhere. Every
-gated hostname resolves to an Authentik *application*, and there are two
-kinds:
+Being logged in is not the same as being allowed everywhere. Every gated
+hostname resolves to an Authentik *application*, and each application
+carries policy bindings naming the groups allowed through. Applications
+use `policy_engine_mode = any`, so bindings are OR'd: `Admin` is bound
+alongside each tier group rather than inheriting, which means an admin
+never needs membership in the narrower groups.
 
-- **Admin tier.** The app has its own single-application proxy provider
-  with a policy binding to the Admins group. Everything that can change
-  how the stack behaves, see raw indexer results, or expose
-  infrastructure lives here: Prowlarr, Sonarr, Radarr, Lidarr,
-  LazyLibrarian, qBittorrent, Bazarr, Organizarr, Pi-hole, Portainer,
-  Traefik's dashboard, the web terminal, Grafana, Prometheus, Tautulli.
-- **Household tier.** No dedicated application, so the hostname falls
-  through to the domain-level provider, which has no policy bindings:
-  any authenticated user gets in. This is the media itself -- Plex,
-  Navidrome, Seerr, Homer.
+| Tier | Group(s) bound | Apps |
+| --- | --- | --- |
+| Infrastructure | `Admin` | Portainer, Traefik dashboard, web terminal, Pi-hole, Organizarr |
+| Media management | `Admin`, `Contributor` | Prowlarr, Sonarr, Radarr, Lidarr, LazyLibrarian, Bazarr, qBittorrent |
+| Monitoring | `Admin`, `Metrics` | Grafana, Prometheus, Tautulli |
+| Household | none (domain-level) | Seerr, Navidrome, Homer |
 
-The split matters more than it first looks. The `*arr` apps each have an
-interactive/manual search that queries the same indexers Prowlarr does
-and renders raw release titles, and qBittorrent lists every download by
-name. Gating Prowlarr alone would leave five other doors to exactly the
-same content, which is why the whole search-and-download tier moves
-together rather than app by app.
+`Contributor` is for someone who genuinely helps run the library: they
+can add indexers, manage every `*arr` app, and see the download queue.
+`Metrics` is deliberately separate rather than folded into
+`Contributor`, so dashboards can be handed out without library access
+and vice versa; add a person to both if they need both. Tautulli in
+particular exposes household viewing history, which is not something a
+library helper automatically needs.
+
+Organizarr stays `Admin` even though it is an `*arr` tool: it can
+rewrite authentication settings and download-client credentials across
+every connected app, which is a different kind of power from managing a
+library.
+
+The household tier has no dedicated application at all, so those
+hostnames fall through to the domain-level provider, which has no policy
+bindings: any authenticated user gets in. That is the media itself.
+
+**Why the media-management tier moves as a block.** The `*arr` apps each
+have an interactive/manual search that queries the same indexers Prowlarr
+does and renders raw release titles, and qBittorrent lists every download
+by name. Gating Prowlarr alone would leave six other doors to exactly the
+same content, so the tier is drawn around the exposure rather than around
+individual apps.
 
 Two things this does *not* do:
 
@@ -116,13 +132,14 @@ Two things this does *not* do:
   network and never passes through Traefik or Authentik. Gating a
   hostname only affects a browser arriving from outside.
 - It does not hide the tiles. Homer renders the same dashboard for
-  everyone, so household-tier users still see admin-tier links and get
-  an Authentik denial on click rather than not seeing them at all. The
-  gate holds either way; it is cosmetic.
+  everyone, so lower-tier users still see links they cannot open and get
+  an Authentik denial on click. The gate holds either way; it is
+  cosmetic.
 
-To move an app between tiers, add or remove its Authentik application --
-nothing in this repo or in Traefik changes, since every gated router
-uses the same `authentik@file` middleware regardless of tier.
+To move an app between tiers, add or remove a policy binding on its
+Authentik application. Nothing in this repo or in Traefik changes, since
+every gated router uses the same `authentik@file` middleware regardless
+of tier -- which is exactly why the split is written down here.
 
 ## Authentik integration patterns
 
