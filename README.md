@@ -206,6 +206,10 @@ cloudflared tunnel route dns mediastack <sub>.yourdomain.com
 
 ./scripts/init-secrets.sh          # prompts for Cloudflare/NordVPN/Plex values, generates the rest
 
+# organizarr isn't pulled from a registry -- build it locally first, or
+# the stack deploy below fails trying to schedule it.
+docker build -t organizarr:local ./organizarr
+
 docker stack deploy -c docker-stack.yml mediastack
 docker compose -f docker-compose.download.yml up -d
 docker compose -f docker-compose.plex.yml up -d
@@ -359,12 +363,14 @@ Prowlarr's application/indexer sync. It's not a clone of each app's full
 settings UI — only the fields that were actually worth centralizing.
 
 It talks to each app's real API (never a config file) using an API key
-it reads once at startup from that app's own config volume, mounted
-read-only. Build it before first deploy, same as any local image:
-
-```bash
-docker build -t organizarr:local ./organizarr
-```
+read from that app's own config volume, mounted read-only — lazily, not
+once at startup: on a fresh deploy, Swarm doesn't guarantee this
+container starts after the apps it depends on, and each of those apps
+only writes its own API key on its own first boot. A miss just gets
+retried on the next request instead of caching a permanent failure, so
+plain `docker stack deploy` (see "Setup order" above, which already
+builds this image first) is enough — no manual ordering, no restart, no
+one needing to notice and intervene.
 
 **Before exposing this one, bind it to an Admins-only Authentik
 application** — the same "single-application provider, Admins group
