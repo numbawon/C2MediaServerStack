@@ -34,6 +34,7 @@ just copy-paste it.
 | **Navidrome** | Music streaming (Subsonic API) — a dedicated music server, since Plex is only "fine" at it. |
 | **Tautulli** | Plex watch-history/stats. |
 | **Homer** | The dashboard — one page linking to everything else. |
+| **Organizarr** | Custom-built settings hub for the `*arr` apps — see below. Admins-only. |
 | **Prometheus, Grafana, cAdvisor, node-exporter** | Metrics: host, per-container, and dashboards. |
 | **Loki, Promtail** | Log aggregation — searchable logs across every container, alongside the metrics. |
 
@@ -196,7 +197,8 @@ cloudflared tunnel login
 cloudflared tunnel create mediastack
 # For each hostname you're routing (traefik, auth, pihole, portainer, sonarr,
 # radarr, lidarr, bazarr, seerr, lazylibrarian, prowlarr, tautulli, navidrome,
-# grafana, prometheus, plex, qbittorrent, and the bare domain for homer):
+# organizarr, grafana, prometheus, plex, qbittorrent, and the bare domain for
+# homer):
 cloudflared tunnel route dns mediastack <sub>.yourdomain.com
 # Grab the tunnel token for init-secrets.sh next: Cloudflare Zero Trust
 # dashboard -> Networks -> Tunnels -> mediastack -> Configure -> copy token
@@ -346,6 +348,31 @@ where Traefik/Authentik/the SSO gate itself is what's broken:
   short-lived certificate authority.
 
 Neither depends on anything inside the Swarm stack.
+
+## Organizarr — one place for the settings that were painful to keep straight
+
+`organizarr/` is a small custom app (its own container, built locally —
+not pulled from a registry) that surfaces the handful of settings that
+turned out to be genuinely annoying to keep consistent across the `*arr`
+apps by hand: authentication method, download-client host/port, and
+Prowlarr's application/indexer sync. It's not a clone of each app's full
+settings UI — only the fields that were actually worth centralizing.
+
+It talks to each app's real API (never a config file) using an API key
+it reads once at startup from that app's own config volume, mounted
+read-only. Build it before first deploy, same as any local image:
+
+```bash
+docker build -t organizarr:local ./organizarr
+```
+
+**Before exposing this one, bind it to an Admins-only Authentik
+application** — the same "single-application provider, Admins group
+only" pattern already used for Pi-hole/Portainer/Traefik's dashboard
+(see "Authentik first boot" above), *not* the any-authenticated-user
+default the rest of the apps get. This one can rewrite authentication
+settings and download-client credentials across the whole stack; it
+deserves the tighter gate.
 
 ## Monitoring & logs
 
