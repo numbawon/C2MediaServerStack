@@ -542,9 +542,9 @@ services:
   organizarr:
     image: ghcr.io/numbawon/organizarr:latest
     environment:
-      - SONARR_URL=http://vpn-client:8989
+      - SONARR_URL=http://sonarr:8989
       - SONARR_CONFIG_PATH=/data/sonarr/config.xml
-      - RADARR_URL=http://vpn-client:7878
+      - RADARR_URL=http://radarr:7878
       - RADARR_CONFIG_PATH=/data/radarr/config.xml
       - LIDARR_URL=http://lidarr:8686
       - LIDARR_CONFIG_PATH=/data/lidarr/config.xml
@@ -552,7 +552,7 @@ services:
       - PROWLARR_CONFIG_PATH=/data/prowlarr/config.xml
       - BAZARR_URL=http://bazarr:6767
       - BAZARR_CONFIG_PATH=/data/bazarr/config/config.yaml
-      - LAZYLIBRARIAN_URL=http://vpn-client:5299
+      - LAZYLIBRARIAN_URL=http://lazylibrarian:5299
       - LAZYLIBRARIAN_CONFIG_PATH=/data/lazylibrarian/config.ini
     volumes:
       - sonarr_config:/data/sonarr:ro
