@@ -129,6 +129,20 @@
       </fieldset>
     </div>
   </details>
+
+  <details id="lazylibrarian-section">
+    <summary>LazyLibrarian</summary>
+    <div class="body">
+      <fieldset>
+        <legend>Login</legend>
+        <div id="ll-general"></div>
+      </fieldset>
+      <fieldset>
+        <legend>qBittorrent connection</legend>
+        <div id="ll-qbittorrent"></div>
+      </fieldset>
+    </div>
+  </details>
 </main>
 
 <script>
@@ -399,14 +413,39 @@ const BAZARR_SECTIONS = {
   },
 };
 
-async function loadBazarr() {
-  const section = $("#bazarr-section");
+// LazyLibrarian's shape is identical -- {section: {field: value}}, saved
+// back as {section: {...values}} -- just a different backend and no
+// self-describing schema either, so it shares this loader with Bazarr.
+const LAZYLIBRARIAN_SECTIONS = {
+  General: {
+    containerId: "ll-general",
+    // "" and "FORM" are the only two values confirmed by direct
+    // observation of a live instance, not a guessed full enum.
+    fields: [
+      {name:"auth_type", label:"Authentication Type", type:"select", options:[["","None"],["FORM","Form Login"]]},
+    ],
+  },
+  QBITTORRENT: {
+    containerId: "ll-qbittorrent",
+    fields: [
+      {name:"qbittorrent_host", label:"Host", type:"text"},
+      {name:"qbittorrent_port", label:"Port", type:"text"},
+    ],
+  },
+};
+
+// Generic loader for the "flat {section: {field: value}}, save whole
+// section back" shape shared by Bazarr and LazyLibrarian -- neither
+// self-describes its fields like the servarr/Prowlarr family, so the
+// field metadata (label/type) is hand-declared per app above instead.
+function loadKeyValueApp(detailsSelector, apiPath, sections, errorFallbackId) {
+  const section = $(detailsSelector);
   section.addEventListener("toggle", async function once() {
     if (!section.open) return;
     section.removeEventListener("toggle", once);
     try {
-      const current = await api("/api/bazarr/settings");
-      for (const [sectionName, meta] of Object.entries(BAZARR_SECTIONS)) {
+      const current = await api(apiPath);
+      for (const [sectionName, meta] of Object.entries(sections)) {
         const container = $(`#${meta.containerId}`);
         const inputs = {};
         meta.fields.forEach(f => {
@@ -442,22 +481,31 @@ async function loadBazarr() {
             payload[name] = type === "checkbox" ? input.checked : input.value;
           });
           try {
-            await api("/api/bazarr/settings", {method:"POST", headers:{"Content-Type":"application/json"},
+            await api(apiPath, {method:"POST", headers:{"Content-Type":"application/json"},
               body: JSON.stringify({[sectionName]: payload})});
             msg(container, "Saved.", true);
           } catch (e) { msg(container, e.message, false); }
         };
       }
     } catch (e) {
-      $("#bazarr-auth").appendChild(el("div", {class:"msg err", text: e.message}));
+      $(`#${errorFallbackId}`).appendChild(el("div", {class:"msg err", text: e.message}));
     }
   });
+}
+
+function loadBazarr() {
+  loadKeyValueApp("#bazarr-section", "/api/bazarr/settings", BAZARR_SECTIONS, "bazarr-auth");
+}
+
+function loadLazyLibrarian() {
+  loadKeyValueApp("#lazylibrarian-section", "/api/lazylibrarian/settings", LAZYLIBRARIAN_SECTIONS, "ll-general");
 }
 
 loadStatus();
 loadServarrApps();
 loadProwlarr();
 loadBazarr();
+loadLazyLibrarian();
 </script>
 </body>
 </html>
