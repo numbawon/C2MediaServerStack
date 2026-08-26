@@ -11,9 +11,9 @@ After=network.target docker.service
 # specific docker-internal IP instead keeps the same real-world property
 # (nothing on the LAN/WAN can reach it -- only traffic from inside Docker's
 # bridge can) while actually being reachable by Traefik. Same reasoning as
-# the docker_gwbridge subnet hardcode in docker-compose.download.yml's
-# NordVPN NETWORK var -- stable for a single-node host, revisit if this
-# host ever changes its Docker network layout.
+# the docker_gwbridge subnet in docker-compose.download.yml's
+# FIREWALL_OUTBOUND_SUBNETS -- stable for a single-node host, revisit if
+# this host ever changes its Docker network layout.
 #
 # `login` (not bash/sh) means every session is a real PAM login -- username
 # and password required even though Authentik already gated the request

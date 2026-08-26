@@ -58,10 +58,22 @@ echo
 create_swarm_secret cloudflare_tunnel_token "$cf_token"
 unset cf_token
 
-read -rsp "NordVPN access token (from the NordVPN dashboard): " nord_token
+# gluetun connects to NordVPN over WireGuard directly, so it needs the
+# NordLynx private key rather than an account access token. NordVPN shows
+# it under Manual setup / service credentials. If you are migrating from a
+# container that was already connected, you can read the same key out of
+# the running tunnel instead: docker exec <container> wg show <iface> private-key
+read -rsp "NordVPN WireGuard (NordLynx) private key, from NordVPN's manual-setup page: " nord_key
 echo
-write_local_secret nordvpn_token.txt "$nord_token"
-unset nord_token
+write_local_secret nordlynx_private_key.txt "$nord_key"
+unset nord_key
+
+# Credentials for gluetun's LAN HTTP proxy. Generated rather than prompted:
+# nothing external issues these, they just have to be known to whoever
+# configures a client. Read them back with `cat secrets/httpproxy_*.txt`.
+write_local_secret httpproxy_user.txt "proxy"
+write_local_secret httpproxy_password.txt "$(random_password)"
+echo "Generated LAN proxy credentials: secrets/httpproxy_user.txt / httpproxy_password.txt"
 
 echo "Plex claim tokens expire ~4 minutes after being issued at https://plex.tv/claim"
 read -rp "Open that URL, log in, and paste the claim token here: " plex_claim
@@ -71,4 +83,5 @@ unset plex_claim
 echo
 echo "Done. Swarm secrets: postgres_password, redis_password, grafana_admin_password,"
 echo "authentik_secret_key, cloudflare_tunnel_token."
-echo "Local files: secrets/nordvpn_token.txt, secrets/plex_claim.txt"
+echo "Local files: secrets/nordlynx_private_key.txt, secrets/httpproxy_user.txt,"
+echo "             secrets/httpproxy_password.txt, secrets/plex_claim.txt"

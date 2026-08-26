@@ -3,7 +3,7 @@
 # This is the SWARM-managed portion of the stack. Two things live OUTSIDE this
 # file, as plain (non-swarm) `docker compose` stacks, because Docker Swarm
 # cannot do what they need:
-#   - docker-compose.download.yml  (qBittorrent + NordVPN)
+#   - docker-compose.download.yml  (qBittorrent/Sonarr/Radarr/LazyLibrarian behind gluetun)
 #       Swarm has no equivalent of `network_mode: service:x` (sharing another
 #       container's network namespace), which is how qBittorrent's traffic is
 #       forced through the VPN container. Only plain compose supports that.
