@@ -573,6 +573,22 @@ picks the most specific matching application by hostname.
 
 ## Monitoring & logs
 
+Every service sets `TZ=${COMMON_TZ}` so logs read in local time rather
+than a mix of local and UTC, which matters when correlating an incident
+across Loki. Containers cannot drift from the host clock -- they share
+the host kernel's clock and no time namespace is in use -- so the host's
+NTP sync is the only thing that ever needs to be right, and `TZ` only
+ever affects *display*. The one exception is Watchtower, whose cron
+schedule is genuinely interpreted in the container's timezone (see
+above).
+
+A handful of images hardcode UTC in their own log output regardless of
+`TZ` (Loki, cloudflared, Portainer, Navidrome). That is not worth
+fighting: Loki in particular stores every ingested timestamp in UTC
+internally by design, which is correct, and Grafana renders it back in
+whatever timezone you are viewing from.
+
+
 - **Prometheus** scrapes itself, `node-exporter` (host metrics),
   `cadvisor` (per-container metrics), and Traefik's own metrics
   endpoint -- see `prometheus/prometheus.yml`.
@@ -590,7 +606,11 @@ picks the most specific matching application by hostname.
   (`com.centurylinklabs.watchtower.enable=false`) instead of relying on
   a default-off allowlist -- safer to have new services auto-update by
   default and remember to opt the sensitive ones out, than the other
-  way around.
+  way around. Its `WATCHTOWER_SCHEDULE` cron is interpreted in the
+  container's timezone, so `TZ` is not cosmetic here the way it is
+  elsewhere: without it the 04:00 schedule ran at 04:00 UTC, which is
+  21:00 locally and squarely in the middle of the evening. With `TZ`
+  set it runs at 04:00 local, which is the point.
 
 ## Verification checklist
 
