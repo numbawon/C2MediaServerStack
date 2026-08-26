@@ -97,20 +97,33 @@ def _read_api_key(path: str) -> str | None:
     return None
 
 
-for name, cfg in APPS.items():
-    cfg["api_key"] = _read_api_key(cfg["config"])
+def _get_api_key(name: str) -> str | None:
+    # Lazy + self-healing, not a one-shot read at container startup: on a
+    # genuinely fresh deploy (no prior human/AI to notice and restart
+    # this container), each *arr app only writes its own config.xml --
+    # and the ApiKey inside it -- on ITS OWN first boot, which can lag
+    # this container's startup by anywhere from seconds to however long
+    # a slow pull takes. Caching a startup-time None forever would mean
+    # that app's editor silently 503s until someone happens to restart
+    # Organizarr. Re-reading on every miss means it just starts working
+    # on its own, whenever the app in question actually finishes booting
+    # -- no restart, no one watching required.
+    cfg = APPS[name]
+    if not cfg.get("api_key"):
+        cfg["api_key"] = _read_api_key(cfg["config"])
+    return cfg.get("api_key")
 
 
 def _client(name: str) -> httpx.AsyncClient:
-    cfg = APPS[name]
-    if not cfg.get("api_key"):
-        raise HTTPException(503, f"{name}: no API key found (is its config volume mounted / has it booted yet?)")
-    headers = {"X-Api-Key": cfg["api_key"]}
+    key = _get_api_key(name)
+    if not key:
+        raise HTTPException(503, f"{name}: no API key found yet (has it finished its own first boot?)")
+    headers = {"X-Api-Key": key}
     # follow_redirects handles the urlBase-prefix 307 these apps issue
     # (see docker-stack.yml history for why some carry a urlBase) --
     # httpx preserves method+body across 307/308, so PUT/POST land
     # correctly without hardcoding each app's prefix.
-    return httpx.AsyncClient(base_url=cfg["base"], headers=headers, follow_redirects=True, timeout=15)
+    return httpx.AsyncClient(base_url=APPS[name]["base"], headers=headers, follow_redirects=True, timeout=15)
 
 
 async def _servarr_get(name: str, path: str) -> Any:
@@ -145,8 +158,9 @@ async def status():
     out = []
     for name, cfg in APPS.items():
         entry = {"name": name, "kind": cfg["kind"], "reachable": False, "version": None, "error": None}
-        if not cfg.get("api_key"):
-            entry["error"] = "no API key found"
+        key = _get_api_key(name)
+        if not key:
+            entry["error"] = "no API key found yet (has it finished its own first boot?)"
             out.append(entry)
             continue
         try:
@@ -162,7 +176,7 @@ async def status():
                     entry["version"] = r.json().get("data", {}).get("bazarr_version")
             elif cfg["kind"] == "lazylibrarian":
                 async with httpx.AsyncClient(base_url=cfg["base"], timeout=15) as c:
-                    r = await c.get("/api", params={"apikey": cfg["api_key"], "cmd": "getVersion"})
+                    r = await c.get("/api", params={"apikey": key, "cmd": "getVersion"})
                     r.raise_for_status()
                     data = r.json()
                     entry["reachable"] = bool(data.get("Success"))
@@ -330,7 +344,9 @@ def _ll_unwrap(text: str) -> str:
 
 @app.get("/api/lazylibrarian/settings")
 async def get_lazylibrarian_settings():
-    key = APPS["lazylibrarian"]["api_key"]
+    key = _get_api_key("lazylibrarian")
+    if not key:
+        raise HTTPException(503, "lazylibrarian: no API key found yet (has it finished its own first boot?)")
     out: dict[str, dict[str, Any]] = {}
     async with httpx.AsyncClient(base_url=APPS["lazylibrarian"]["base"], timeout=15) as c:
         for group, names in LAZYLIBRARIAN_FIELDS.items():
@@ -347,7 +363,9 @@ async def set_lazylibrarian_settings(changes: dict[str, dict[str, Any]]):
     bad_groups = set(changes) - set(LAZYLIBRARIAN_FIELDS)
     if bad_groups:
         raise HTTPException(400, f"not editable here: {sorted(bad_groups)}")
-    key = APPS["lazylibrarian"]["api_key"]
+    key = _get_api_key("lazylibrarian")
+    if not key:
+        raise HTTPException(503, "lazylibrarian: no API key found yet (has it finished its own first boot?)")
     async with httpx.AsyncClient(base_url=APPS["lazylibrarian"]["base"], timeout=15) as c:
         for group, fields in changes.items():
             bad_names = set(fields) - set(LAZYLIBRARIAN_FIELDS[group])
