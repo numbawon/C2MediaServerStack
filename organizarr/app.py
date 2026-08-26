@@ -41,7 +41,7 @@ APPS: dict[str, dict[str, Any]] = {
     "lidarr":        {"kind": "servarr",  "base": "http://lidarr:8686",      "api": "v1", "config": "/data/lidarr/config.xml"},
     "prowlarr":      {"kind": "prowlarr", "base": "http://prowlarr:9696",    "api": "v1", "config": "/data/prowlarr/config.xml"},
     "bazarr":        {"kind": "bazarr",    "base": "http://bazarr:6767",     "config": "/data/bazarr/config/config.yaml"},
-    "lazylibrarian": {"kind": "status",   "base": "http://vpn-client:5299", "config": "/data/lazylibrarian/config.ini"},
+    "lazylibrarian": {"kind": "lazylibrarian", "base": "http://vpn-client:5299", "config": "/data/lazylibrarian/config.ini"},
 }
 
 # Bazarr has no self-describing schema like the servarr/Prowlarr family --
@@ -56,6 +56,17 @@ BAZARR_FIELDS = {
     "radarr": ["ip", "port", "apikey", "base_url", "ssl"],
 }
 BAZARR_SECRET_KEYS = {"password", "apikey"}
+
+# LazyLibrarian has no bulk settings endpoint either -- one readCFG/
+# writeCFG call per (group, name) pair (see its own api.py). auth_type
+# is the field that mattered here: found set to FORM (a redundant
+# second login on top of Authentik's gate) earlier this project. "" and
+# "FORM" are the only two values confirmed by direct observation of a
+# live instance -- not guessing at a fuller enum.
+LAZYLIBRARIAN_FIELDS = {
+    "General": ["auth_type"],
+    "QBITTORRENT": ["qbittorrent_host", "qbittorrent_port"],
+}
 
 # Host-settings fields this UI will show/edit -- deliberately not the
 # full config/host object, which also carries the admin password hash.
@@ -149,6 +160,13 @@ async def status():
                     r.raise_for_status()
                     entry["reachable"] = True
                     entry["version"] = r.json().get("data", {}).get("bazarr_version")
+            elif cfg["kind"] == "lazylibrarian":
+                async with httpx.AsyncClient(base_url=cfg["base"], timeout=15) as c:
+                    r = await c.get("/api", params={"apikey": cfg["api_key"], "cmd": "getVersion"})
+                    r.raise_for_status()
+                    data = r.json()
+                    entry["reachable"] = bool(data.get("Success"))
+                    entry["version"] = data.get("current_version")
             else:
                 async with _client(name) as c:
                     r = await c.get("/")
@@ -299,6 +317,47 @@ async def set_bazarr_settings(changes: dict[str, dict[str, Any]]):
         r = await c.post("/api/system/settings", data=form)
         if r.status_code not in (200, 204):
             raise HTTPException(r.status_code, r.text)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------
+# LazyLibrarian -- one readCFG/writeCFG call per field, no bulk endpoint.
+# ---------------------------------------------------------------------
+def _ll_unwrap(text: str) -> str:
+    # readCFG's response is the literal bytes "[value]", not JSON.
+    return text[1:-1] if text.startswith("[") and text.endswith("]") else text
+
+
+@app.get("/api/lazylibrarian/settings")
+async def get_lazylibrarian_settings():
+    key = APPS["lazylibrarian"]["api_key"]
+    out: dict[str, dict[str, Any]] = {}
+    async with httpx.AsyncClient(base_url=APPS["lazylibrarian"]["base"], timeout=15) as c:
+        for group, names in LAZYLIBRARIAN_FIELDS.items():
+            out[group] = {}
+            for name in names:
+                r = await c.get("/api", params={"apikey": key, "cmd": "readCFG", "name": name, "group": group})
+                r.raise_for_status()
+                out[group][name] = _ll_unwrap(r.text)
+    return out
+
+
+@app.post("/api/lazylibrarian/settings")
+async def set_lazylibrarian_settings(changes: dict[str, dict[str, Any]]):
+    bad_groups = set(changes) - set(LAZYLIBRARIAN_FIELDS)
+    if bad_groups:
+        raise HTTPException(400, f"not editable here: {sorted(bad_groups)}")
+    key = APPS["lazylibrarian"]["api_key"]
+    async with httpx.AsyncClient(base_url=APPS["lazylibrarian"]["base"], timeout=15) as c:
+        for group, fields in changes.items():
+            bad_names = set(fields) - set(LAZYLIBRARIAN_FIELDS[group])
+            if bad_names:
+                raise HTTPException(400, f"not editable here: {group}.{sorted(bad_names)}")
+            for name, value in fields.items():
+                r = await c.get("/api", params={"apikey": key, "cmd": "writeCFG", "name": name, "group": group, "value": value})
+                r.raise_for_status()
+                if r.text.strip() != "OK":
+                    raise HTTPException(502, f"{group}.{name}: {r.text}")
     return {"ok": True}
 
 
