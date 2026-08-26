@@ -23,6 +23,16 @@ services:
   vpn-client:
     image: bubuntux/nordvpn:latest
     container_name: vpn-client
+    labels:
+      # Watchtower sees plain compose containers too (it watches the whole
+      # Docker API, not just the Swarm stack). Four apps share this
+      # container's network namespace, so a silent 4am recreate here would
+      # take all of them down with it -- same deliberate-updates-only
+      # policy as Traefik/Authentik/Postgres. (The image is also abandoned
+      # upstream -- its own boot log says to migrate to bubuntux/nordlynx
+      # -- so any update that DID appear would deserve scrutiny, not
+      # auto-apply.)
+      - "com.centurylinklabs.watchtower.enable=false"
     cap_add:
       - NET_ADMIN
       - NET_RAW
