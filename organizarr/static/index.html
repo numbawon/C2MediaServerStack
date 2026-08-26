@@ -42,7 +42,9 @@
     h1 { animation: none; text-shadow: 0 0 6px var(--cyan); }
   }
 
-  .status-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
+  .status-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; }
+  @media (max-width: 640px) { .status-grid { grid-template-columns:repeat(2,1fr); } }
+  @media (min-width:641px) and (max-width: 880px) { .status-grid { grid-template-columns:repeat(3,1fr); } }
   .status-card { background:var(--card); border:1px solid var(--border); border-radius:6px; padding:10px 12px; }
   .status-card .name { font-weight:600; text-transform:capitalize; }
   .status-card .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; box-shadow: 0 0 6px currentColor; }
