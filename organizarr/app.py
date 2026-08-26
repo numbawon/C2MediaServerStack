@@ -40,9 +40,22 @@ APPS: dict[str, dict[str, Any]] = {
     "radarr":        {"kind": "servarr",  "base": "http://vpn-client:7878",  "api": "v3", "config": "/data/radarr/config.xml"},
     "lidarr":        {"kind": "servarr",  "base": "http://lidarr:8686",      "api": "v1", "config": "/data/lidarr/config.xml"},
     "prowlarr":      {"kind": "prowlarr", "base": "http://prowlarr:9696",    "api": "v1", "config": "/data/prowlarr/config.xml"},
-    "bazarr":        {"kind": "status",   "base": "http://bazarr:6767",     "config": "/data/bazarr/config/config.yaml"},
+    "bazarr":        {"kind": "bazarr",    "base": "http://bazarr:6767",     "config": "/data/bazarr/config/config.yaml"},
     "lazylibrarian": {"kind": "status",   "base": "http://vpn-client:5299", "config": "/data/lazylibrarian/config.ini"},
 }
+
+# Bazarr has no self-describing schema like the servarr/Prowlarr family --
+# its settings API is one big fixed-shape object, written back via
+# form-encoded settings-<section>-<key> pairs (see save_settings() in
+# bazarr's own app/config.py). Curated to the fields that actually matter
+# here: its own login, and its Sonarr/Radarr connections -- both were
+# found empty/never configured earlier this project.
+BAZARR_FIELDS = {
+    "auth":   ["type", "username", "password"],
+    "sonarr": ["ip", "port", "apikey", "base_url", "ssl"],
+    "radarr": ["ip", "port", "apikey", "base_url", "ssl"],
+}
+BAZARR_SECRET_KEYS = {"password", "apikey"}
 
 # Host-settings fields this UI will show/edit -- deliberately not the
 # full config/host object, which also carries the admin password hash.
@@ -130,10 +143,22 @@ async def status():
                 data = await _servarr_get(name, "/system/status")
                 entry["reachable"] = True
                 entry["version"] = data.get("version")
+            elif cfg["kind"] == "bazarr":
+                async with _client(name) as c:
+                    r = await c.get("/api/system/status")
+                    r.raise_for_status()
+                    entry["reachable"] = True
+                    entry["version"] = r.json().get("data", {}).get("bazarr_version")
             else:
                 async with _client(name) as c:
                     r = await c.get("/")
-                    entry["reachable"] = r.status_code < 500
+                    # A 4xx here (not just 5xx) means something's actually
+                    # wrong -- a real prior case was an app whose own
+                    # misconfigured URL-prefix setting 404'd on every
+                    # route, and a status_code<500 check called that
+                    # "reachable" when it plainly wasn't.
+                    r.raise_for_status()
+                    entry["reachable"] = True
         except Exception as e:  # noqa: BLE001 -- surfacing to the UI is the point
             entry["error"] = str(e)
         out.append(entry)
@@ -234,6 +259,47 @@ async def create_indexer(body: dict[str, Any]):
 @app.put("/api/prowlarr/indexers/{indexer_id}")
 async def update_indexer(indexer_id: int, body: dict[str, Any]):
     return await _servarr_put("prowlarr", f"/indexer/{indexer_id}", body)
+
+
+# ---------------------------------------------------------------------
+# Bazarr -- its own login, plus its Sonarr/Radarr connections (found
+# empty/never wired up when this project's stack was audited).
+# ---------------------------------------------------------------------
+@app.get("/api/bazarr/settings")
+async def get_bazarr_settings():
+    async with _client("bazarr") as c:
+        r = await c.get("/api/system/settings")
+        r.raise_for_status()
+        full = r.json()
+    out: dict[str, dict[str, Any]] = {}
+    for section, keys in BAZARR_FIELDS.items():
+        section_data = full.get(section) or {}
+        out[section] = {
+            k: ("" if k in BAZARR_SECRET_KEYS else section_data.get(k))
+            for k in keys
+        }
+    return out
+
+
+@app.post("/api/bazarr/settings")
+async def set_bazarr_settings(changes: dict[str, dict[str, Any]]):
+    bad_sections = set(changes) - set(BAZARR_FIELDS)
+    if bad_sections:
+        raise HTTPException(400, f"not editable here: {sorted(bad_sections)}")
+    form: dict[str, str] = {}
+    for section, fields in changes.items():
+        bad_keys = set(fields) - set(BAZARR_FIELDS[section])
+        if bad_keys:
+            raise HTTPException(400, f"not editable here: {section}.{sorted(bad_keys)}")
+        for key, value in fields.items():
+            if key in BAZARR_SECRET_KEYS and value in (None, ""):
+                continue  # blank secret field on the wire == "unchanged"
+            form[f"settings-{section}-{key}"] = str(value)
+    async with _client("bazarr") as c:
+        r = await c.post("/api/system/settings", data=form)
+        if r.status_code not in (200, 204):
+            raise HTTPException(r.status_code, r.text)
+    return {"ok": True}
 
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
