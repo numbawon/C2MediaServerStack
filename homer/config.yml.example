@@ -1,8 +1,8 @@
 # Homer dashboard config. Bind-mounted read-only straight into the container
-# at /www/assets/config.yml (see docker-stack.yml's homer service) — edits
+# at /www/assets/config.yml (see docker-stack.yml's homer service) -- edits
 # here are live immediately, no rebuild/redeploy needed, just a page refresh.
 #
-# Copy this file to config.yml (git-ignored — holds your real domain) and
+# Copy this file to config.yml (git-ignored -- holds your real domain) and
 # swap example.com for yours; rename services/icons as you like.
 title: "C2 MEDIASTACK"
 subtitle: "example.com"

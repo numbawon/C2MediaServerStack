@@ -1,7 +1,7 @@
-# Real config — only .env.example is committed
+# Real config -- only .env.example is committed
 .env
 
-# Real domain/tunnel-ID-bearing config — only the .example templates are
+# Real domain/tunnel-ID-bearing config -- only the .example templates are
 # committed. Copy the .example alongside each of these once and fill in
 # your own values (see README's Setup order).
 cloudflared/config.yml

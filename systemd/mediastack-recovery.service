@@ -1,11 +1,11 @@
 # Recovers the two standalone (non-swarm) compose stacks after a host
-# reboot. The Swarm stack (docker-stack.yml) doesn't need this — Swarm's
+# reboot. The Swarm stack (docker-stack.yml) doesn't need this -- Swarm's
 # manager reconciles service state on its own once the daemon comes back.
 #
 # Plain `docker compose` stacks don't get that. Specifically,
 # docker-compose.download.yml's qbittorrent service uses
 # `network_mode: service:vpn-client`, which does NOT reliably reattach to
-# vpn-client's network namespace across a full daemon restart — qbittorrent
+# vpn-client's network namespace across a full daemon restart -- qbittorrent
 # comes back Exited and Compose's `restart: unless-stopped` policy doesn't
 # retry it. `docker compose up -d` is idempotent, so re-running it here is
 # a safe, cheap fix regardless of whether anything actually needed it.

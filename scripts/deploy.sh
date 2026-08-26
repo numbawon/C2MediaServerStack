@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # `docker stack deploy` does NOT read .env automatically the way
-# `docker compose` does — it only substitutes from the current shell's
+# `docker compose` does -- it only substitutes from the current shell's
 # exported environment. This wraps that so COMMON_* vars from .env always
 # make it into the stack. Usage:
 #   ./scripts/deploy.sh stack       # docker stack deploy (core swarm stack)
