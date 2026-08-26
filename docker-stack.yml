@@ -58,6 +58,16 @@ volumes:
     name: navidrome_config
   loki_data:
     name: loki_data
+  # Owned by docker-compose.download.yml, mounted here read-only too --
+  # named volumes aren't scoped to whichever compose file first created
+  # them, and organizarr only needs to read each app's ApiKey out of
+  # config.xml, never write.
+  sonarr_config:
+    name: sonarr_config
+  radarr_config:
+    name: radarr_config
+  lazylibrarian_config:
+    name: lazylibrarian_config
 
 secrets:
   postgres_password:
@@ -503,6 +513,46 @@ services:
         - "traefik.http.routers.navidrome-api.rule=Host(`navidrome.${COMMON_DOMAIN}`) && PathPrefix(`/rest`)"
         - "traefik.http.routers.navidrome-api.entrypoints=web"
         - "traefik.http.services.navidrome.loadbalancer.server.port=4533"
+
+  # ---------------------------------------------------------------------
+  # Organizarr -- a small custom hub for the settings that were actually
+  # painful to keep straight by hand across the *arr apps (auth method,
+  # download-client host/port, Prowlarr's app/indexer sync). Talks to
+  # each app's real API using a key read once at startup from that
+  # app's own config volume (read-only) -- never a config-file edit.
+  #
+  # NOT auto-updated by Watchtower (no upstream image to pull -- built
+  # locally from ./organizarr) and NOT covered by the backup scripts --
+  # it holds no state of its own, only API keys re-read from volumes
+  # that are already backed up under their owning app.
+  #
+  # SECURITY: this app can rewrite authentication settings and
+  # download-client credentials across the whole stack. Bind it to an
+  # Admins-only Authentik application (see README), not the
+  # any-authenticated-user default the rest of these apps use.
+  #
+  # Build before first deploy (Swarm can't build from a Dockerfile the
+  # way `docker compose` can):
+  #   docker build -t organizarr:local ./organizarr
+  organizarr:
+    image: organizarr:local
+    volumes:
+      - sonarr_config:/data/sonarr:ro
+      - radarr_config:/data/radarr:ro
+      - lidarr_config:/data/lidarr:ro
+      - prowlarr_config:/data/prowlarr:ro
+      - bazarr_config:/data/bazarr:ro
+      - lazylibrarian_config:/data/lazylibrarian:ro
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "com.centurylinklabs.watchtower.enable=false"
+        - "traefik.enable=true"
+        - "traefik.http.routers.organizarr.rule=Host(`organizarr.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.organizarr.entrypoints=web"
+        - "traefik.http.routers.organizarr.middlewares=authentik@file"
+        - "traefik.http.services.organizarr.loadbalancer.server.port=8000"
 
   homer:
     image: b4bz/homer:latest

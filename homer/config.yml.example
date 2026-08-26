@@ -91,6 +91,11 @@ services:
         logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/prowlarr.svg"
         url: "https://prowlarr.example.com"
         target: "_blank"
+      - name: "Organizarr"
+        icon: "fas fa-sliders-h"
+        url: "https://organizarr.example.com"
+        target: "_blank"
+        subtitle: "Admins only"
 
   - name: "Downloads"
     icon: "fas fa-download"
