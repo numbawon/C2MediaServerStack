@@ -1,17 +1,28 @@
 # C2MediaServerStack
 
 A self-hosted media server stack for a single-node Docker Swarm host,
-built around three ideas: **nothing is reachable except through one
+built around four ideas: **nothing is reachable except through one
 gate** (Traefik + a Cloudflare Tunnel, zero open inbound ports),
 **one login covers everything** (Authentik SSO, with three different
-integration patterns depending on what each app actually supports), and
+integration patterns depending on what each app actually supports),
 **nothing touches the real Docker socket except one narrowly-scoped
-proxy**. It requests media (Seerr), manages libraries (the `*arr`
-family + Prowlarr), streams it back out (Plex, Navidrome), downloads
-things through a VPN, and watches its own health (Prometheus/Grafana/
-Loki). This README explains the whole thing well enough for someone
-else to stand it up and actually understand what they're running, not
-just copy-paste it.
+proxy**, and **nothing here should assume it's your system**. That last
+one is deliberate, not incidental: no real domain, credentials, or
+tunnel IDs live in git history or tracked files (only `.example`
+templates with placeholders do — see "Setup order"); anywhere apps talk
+to each other by hostname, that name reflects what the app actually is
+rather than a routing implementation detail (`sonarr`, not
+`vpn-client:8989`, even where the two happen to share a network
+namespace — see "VPN-routed download & indexer traffic"); and the one
+piece of this repo that turned into genuinely general-purpose software
+([Organizarr](https://github.com/numbawon/organizarr)) got split into
+its own project, configured entirely through environment variables
+instead of being wired to this stack's specific topology. It requests
+media (Seerr), manages libraries (the `*arr` family + Prowlarr),
+streams it back out (Plex, Navidrome), downloads things through a VPN,
+and watches its own health (Prometheus/Grafana/Loki). This README
+explains the whole thing well enough for someone else to stand it up
+and actually understand what they're running, not just copy-paste it.
 
 ## What's in the stack
 
