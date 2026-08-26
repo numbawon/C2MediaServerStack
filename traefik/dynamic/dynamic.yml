@@ -5,7 +5,7 @@
 # Two things live here instead of as Docker labels:
 #   1. The `authentik` forwardAuth middleware every other service's Swarm
 #      labels reference as `authentik@file`.
-#   2. Static routers/services for qbittorrent and plex — both run as
+#   2. Static routers/services for qbittorrent and plex -- both run as
 #      standalone (non-swarm) containers, which Traefik's swarmMode docker
 #      provider can't auto-discover via labels. They're reachable by name
 #      because they're joined to the same `edge` overlay network.
@@ -15,7 +15,7 @@ http:
     # cloudflared doesn't set X-Forwarded-Proto when forwarding an HTTPS
     # client request to this HTTP backend (known cloudflared gap), so
     # every app behind Traefik would otherwise see the request as plain
-    # HTTP even though the real client used HTTPS — breaks CSRF/cookie
+    # HTTP even though the real client used HTTPS -- breaks CSRF/cookie
     # secure-scheme checks (bit Authentik's provider-save CSRF check).
     # Attached at the entrypoint level in docker-stack.yml so it applies
     # to every router without needing to touch each one individually.

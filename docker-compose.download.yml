@@ -1,15 +1,15 @@
-# Standalone (non-swarm) compose — deployed with:
+# Standalone (non-swarm) compose -- deployed with:
 #   docker compose -f docker-compose.download.yml up -d
 #
 # Lives outside the Swarm stack because `network_mode: service:vpn-client`
 # (forcing qBittorrent's traffic through the VPN container) is a plain-
 # compose-only feature; Swarm has no equivalent. See docker-stack.yml header.
 #
-# Traefik labels are NOT used here — Traefik's docker provider is running in
+# Traefik labels are NOT used here -- Traefik's docker provider is running in
 # swarmMode and only watches swarm services, so it would never see these
 # containers. Routing instead comes from static entries in
 # traefik/dynamic.yml, each pointing at that app's own network alias (see
-# vpn-client's `networks.edge.aliases` below) — qbittorrent/sonarr/radarr/
+# vpn-client's `networks.edge.aliases` below) -- qbittorrent/sonarr/radarr/
 # lazylibrarian have no network of their own, they share vpn-client's, but
 # the aliases mean nothing else needs to know that.
 
@@ -131,7 +131,7 @@ networks:
 
 volumes:
   # Explicit name so it isn't prefixed by the compose project name (which
-  # defaults to the directory name) — keeps scripts/backup-local.sh and
+  # defaults to the directory name) -- keeps scripts/backup-local.sh and
   # backup-offsite.sh's volume list stable regardless of what directory
   # this repo happens to live in.
   qbittorrent_config:

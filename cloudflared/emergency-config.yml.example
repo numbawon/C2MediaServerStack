@@ -6,7 +6,7 @@
 # Access, not Authentik, since Authentik lives in the thing this exists
 # to recover from.
 #
-# Copy this file to emergency-config.yml (git-ignored — holds your real
+# Copy this file to emergency-config.yml (git-ignored -- holds your real
 # tunnel ID/domain/path) and fill in the placeholders below:
 #   - tunnel / credentials-file: from `cloudflared tunnel create <name>`
 #   - hostname: your own emergency-access subdomain

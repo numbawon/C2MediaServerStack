@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-time setup: swarm init + the shared attachable network. Safe to
-# re-run — every step checks current state first.
+# re-run -- every step checks current state first.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
