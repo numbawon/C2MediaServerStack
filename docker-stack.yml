@@ -92,6 +92,7 @@ services:
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:latest
     environment:
+      TZ: ${COMMON_TZ}
       CONTAINERS: 1
       SERVICES: 1
       NETWORKS: 1
@@ -136,6 +137,7 @@ services:
   watchtower:
     image: nickfedor/watchtower:latest
     environment:
+      - TZ=${COMMON_TZ}
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_SCHEDULE=0 0 4 * * *
@@ -170,6 +172,7 @@ services:
       - --metrics.prometheus=true
       - --log.level=INFO
     environment:
+      - TZ=${COMMON_TZ}
       # Traefik v3.1's swarm provider client defaults to a hardcoded old
       # Docker API version (1.24) and doesn't negotiate up; this host's
       # Engine rejects anything below 1.40. Pin an explicit version well
@@ -212,6 +215,7 @@ services:
     image: cloudflare/cloudflared:latest
     command: tunnel --config /etc/cloudflared/config.yml run
     environment:
+      - TZ=${COMMON_TZ}
       - TUNNEL_TOKEN_FILE=/run/secrets/cloudflare_tunnel_token
     secrets:
       - cloudflare_tunnel_token
@@ -232,6 +236,7 @@ services:
     image: ghcr.io/goauthentik/server:2026.8
     command: server
     environment:
+      - TZ=${COMMON_TZ}
       - AUTHENTIK_SECRET_KEY=file:///run/secrets/authentik_secret_key
       - AUTHENTIK_POSTGRESQL__HOST=postgres
       - AUTHENTIK_POSTGRESQL__USER=authentik
@@ -267,6 +272,7 @@ services:
     image: ghcr.io/goauthentik/server:2026.8
     command: worker
     environment:
+      - TZ=${COMMON_TZ}
       - AUTHENTIK_SECRET_KEY=file:///run/secrets/authentik_secret_key
       - AUTHENTIK_POSTGRESQL__HOST=postgres
       - AUTHENTIK_POSTGRESQL__USER=authentik
@@ -289,6 +295,7 @@ services:
   postgres:
     image: postgres:16
     environment:
+      - TZ=${COMMON_TZ}
       - POSTGRES_USER=authentik
       - POSTGRES_DB=authentik
       - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
@@ -306,6 +313,8 @@ services:
 
   redis:
     image: redis:7-alpine
+    environment:
+      - TZ=${COMMON_TZ}
     command: >
       sh -c 'redis-server --requirepass "$$(cat /run/secrets/redis_password)"'
     secrets:
@@ -385,6 +394,8 @@ services:
     # across the CE->EE image swap per Portainer's own upgrade docs; log
     # back in after this deploys and it'll prompt for the license key.
     image: portainer/portainer-ee:sts
+    environment:
+      - TZ=${COMMON_TZ}
     command: -H tcp://docker-socket-proxy:2375
     volumes:
       - portainer_data:/data
@@ -610,6 +621,7 @@ services:
   organizarr:
     image: ghcr.io/numbawon/organizarr:latest
     environment:
+      - TZ=${COMMON_TZ}
       - SONARR_URL=http://sonarr:8989
       - SONARR_CONFIG_PATH=/data/sonarr/config.xml
       - RADARR_URL=http://radarr:7878
@@ -675,6 +687,8 @@ services:
   # ---------------------------------------------------------------------
   node-exporter:
     image: prom/node-exporter:latest
+    environment:
+      - TZ=${COMMON_TZ}
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
@@ -695,6 +709,8 @@ services:
   # Kept read-only and internal-network-only to limit the blast radius.
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:latest
+    environment:
+      - TZ=${COMMON_TZ}
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
@@ -709,6 +725,8 @@ services:
 
   prometheus:
     image: prom/prometheus:latest
+    environment:
+      - TZ=${COMMON_TZ}
     volumes:
       - prometheus_data:/prometheus
       - ./prometheus:/etc/prometheus:ro
@@ -726,6 +744,7 @@ services:
   grafana:
     image: grafana/grafana:latest
     environment:
+      - TZ=${COMMON_TZ}
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/grafana_admin_password
       # Trusts the X-authentik-* headers Traefik's authentik forwardAuth
@@ -771,6 +790,8 @@ services:
   # ---------------------------------------------------------------------
   loki:
     image: grafana/loki:latest
+    environment:
+      - TZ=${COMMON_TZ}
     # Directory mount, not single-file -- same reasoning as promtail below.
     # Custom config over the image's baked-in default: default ingestion
     # rate limit (4MB/s) 429s immediately when promtail backfills every
@@ -789,6 +810,8 @@ services:
   # everything else here, cAdvisor being the one deliberate exception.
   promtail:
     image: grafana/promtail:latest
+    environment:
+      - TZ=${COMMON_TZ}
     # Directory mount, not a single-file one -- see the repo-wide fix for
     # why (single-file bind mounts go stale on host-side edits/recreates).
     command: -config.file=/etc/promtail/promtail-config.yml
