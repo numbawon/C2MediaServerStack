@@ -86,6 +86,21 @@ volumes:
   # on the next verification run.
   node_exporter_textfile:
     name: node_exporter_textfile
+  recyclarr_config:
+    name: recyclarr_config
+  cleanuparr_config:
+    name: cleanuparr_config
+  audiobookshelf_config:
+    name: audiobookshelf_config
+  audiobookshelf_metadata:
+    name: audiobookshelf_metadata
+  # Immich runs its own Postgres (vector extensions the Authentik one does
+  # not have) and its own Redis. immich_model_cache holds downloaded ML
+  # models -- regenerable, but several GB, so not worth re-downloading.
+  immich_db_data:
+    name: immich_db_data
+  immich_model_cache:
+    name: immich_model_cache
 
 secrets:
   postgres_password:
@@ -617,6 +632,12 @@ services:
       - BAZARR_CONFIG_PATH=/data/bazarr/config/config.yaml
       - LAZYLIBRARIAN_URL=http://lazylibrarian:5299
       - LAZYLIBRARIAN_CONFIG_PATH=/data/lazylibrarian/config.ini
+      # Reachability only -- Cleanuparr has its own API but not the
+      # shared *arr settings shape, so there is nothing to edit here. It
+      # earns a slot because it acts on the same download clients and
+      # queues, so "is it actually up" belongs on the same page. No
+      # CONFIG_PATH: it needs no API key for its health endpoint.
+      - CLEANUPARR_URL=http://cleanuparr:11011
     volumes:
       - sonarr_config:/data/sonarr:ro
       - radarr_config:/data/radarr:ro
@@ -922,6 +943,173 @@ services:
   # Watchtower) instead of bind-mounting /var/lib/docker/containers or the
   # raw socket -- same "never touch docker.sock directly" rule as
   # everything else here, cAdvisor being the one deliberate exception.
+  # ---------------------------------------------------------------------
+  # Recyclarr -- syncs TRaSH Guides quality profiles and custom formats
+  # into Sonarr/Radarr. No web UI and no API: it is a cron'd one-shot, so
+  # there is no hostname and no Authentik application to create. Nothing
+  # to gate means nothing to get wrong.
+  #
+  # On `edge` because sonarr/radarr are network aliases registered there
+  # by the gluetun vpn-client container.
+  # ---------------------------------------------------------------------
+  recyclarr:
+    # Recyclarr publishes NO :latest tag at all, only major-version tags;
+    # :latest gets "manifest unknown" and the task is rejected in a loop.
+    #
+    # Must be 8, not 7: the official config templates track the v8 schema
+    # (their header says schemas.recyclarr.dev/v8/config-schema.json) and
+    # use `quality_profiles: - trash_id:`, which v7 cannot parse. On 7 the
+    # sync dies with a bare "Exception at line 30".
+    #
+    # Diun watches :8 and will notify on 8.x releases; moving to 9 stays a
+    # decision, and would need the configs in recyclarr/configs/ rechecked
+    # against whatever schema 9 expects.
+    image: ghcr.io/recyclarr/recyclarr:8
+    environment:
+      - TZ=${COMMON_TZ}
+      - CRON_SCHEDULE=@daily
+      # Do not scaffold a starter recyclarr.yml into the volume; the real
+      # config is the read-only mount below.
+      - RECYCLARR_CREATE_CONFIG=false
+      - SONARR_API_KEY=${SONARR_API_KEY}
+      - RADARR_API_KEY=${RADARR_API_KEY}
+    volumes:
+      # Volume for Recyclarr's own regenerable state (its clone of the
+      # TRaSH guides repo); read-only directory mount for the config it
+      # actually acts on.
+      - recyclarr_config:/config
+      - ./recyclarr/configs:/config/configs:ro
+    networks:
+      - edge
+
+  # ---------------------------------------------------------------------
+  # Cleanuparr -- removes stalled, blocked and known-malware downloads
+  # from the *arr queues and triggers a fresh search. Admin tier: it can
+  # delete things.
+  #
+  # On `edge` for the same reason as Recyclarr, plus it needs qbittorrent,
+  # which is also a vpn-client alias.
+  # ---------------------------------------------------------------------
+  cleanuparr:
+    image: ghcr.io/cleanuparr/cleanuparr:latest
+    environment:
+      - TZ=${COMMON_TZ}
+      - PORT=11011
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+    volumes:
+      - cleanuparr_config:/config
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.cleanuparr.rule=Host(`cleanuparr.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.cleanuparr.entrypoints=web"
+        - "traefik.http.routers.cleanuparr.middlewares=authentik@file"
+        - "traefik.http.services.cleanuparr.loadbalancer.server.port=11011"
+
+  # ---------------------------------------------------------------------
+  # Audiobookshelf -- audiobooks and podcasts. Household tier.
+  #
+  # NO authentik@file middleware, deliberately. It has native OIDC and a
+  # mobile app that holds its own session; a forward-auth gate would
+  # bounce every API call to a login redirect the app cannot complete.
+  # Same reasoning as Plex, Navidrome's /rest/* and ntfy. Configure OIDC
+  # in its own Settings -> Authentication after first boot (see README).
+  # ---------------------------------------------------------------------
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:latest
+    environment:
+      - TZ=${COMMON_TZ}
+    volumes:
+      - ${COMMON_MEDIA}/AudioBooks:/audiobooks
+      - ${COMMON_MEDIA}/Podcasts:/podcasts
+      - audiobookshelf_config:/config
+      - audiobookshelf_metadata:/metadata
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.audiobookshelf.rule=Host(`audiobookshelf.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.audiobookshelf.entrypoints=web"
+        - "traefik.http.services.audiobookshelf.loadbalancer.server.port=80"
+
+  # ---------------------------------------------------------------------
+  # Immich -- photos and video. Household tier.
+  #
+  # Four services, not one. Immich needs a Postgres with vector
+  # extensions (pgvector/vectorchord) for search embeddings, which the
+  # Authentik Postgres does not have and cannot be given without changing
+  # that image. It also wants its own Redis. Sharing either would couple
+  # Immich's uptime to SSO's, so both are separate on purpose.
+  #
+  # Like Audiobookshelf: NO authentik@file middleware. Native OIDC plus a
+  # mobile app that cannot complete a browser redirect.
+  # ---------------------------------------------------------------------
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:release
+    environment:
+      - TZ=${COMMON_TZ}
+      - DB_HOSTNAME=immich-postgres
+      - DB_USERNAME=immich
+      - DB_DATABASE_NAME=immich
+      - DB_PASSWORD=${IMMICH_DB_PASSWORD}
+      - REDIS_HOSTNAME=immich-redis
+    volumes:
+      - ${COMMON_PHOTOS}:/data
+    networks:
+      - edge
+      - internal
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.immich.rule=Host(`immich.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.immich.entrypoints=web"
+        # No authentik@file -- see the block comment above.
+        - "traefik.http.services.immich.loadbalancer.server.port=2283"
+
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:release
+    environment:
+      - TZ=${COMMON_TZ}
+    volumes:
+      - immich_model_cache:/cache
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          # Model inference is memory-hungry and will happily take
+          # everything. Capped so a large import cannot OOM the host and
+          # let the kernel pick a victim from the rest of the stack.
+          memory: 4096M
+
+  immich-postgres:
+    # Pinned to the exact image Immich ships with. This is NOT
+    # interchangeable with postgres:16 above -- it carries the vector
+    # extensions Immich's search depends on, and Immich checks for them
+    # at startup.
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
+    environment:
+      - TZ=${COMMON_TZ}
+      - POSTGRES_USER=immich
+      - POSTGRES_DB=immich
+      - POSTGRES_PASSWORD=${IMMICH_DB_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--data-checksums
+    volumes:
+      - immich_db_data:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  immich-redis:
+    image: docker.io/valkey/valkey:8-bookworm
+    environment:
+      - TZ=${COMMON_TZ}
+    networks:
+      - internal
+
   promtail:
     image: grafana/promtail:latest
     environment:
