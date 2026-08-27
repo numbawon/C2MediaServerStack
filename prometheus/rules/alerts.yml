@@ -66,36 +66,103 @@ groups:
 
   - name: host
     rules:
-      # Scoped to the system disk (/dev/sdd2, mounted at /) on purpose.
-      # The media drives are separate devices and are EXPECTED to run
-      # near full -- alerting on those is noise. This one filling up
-      # stops Docker, Postgres, and every config volume at once.
+      # All disk thresholds are ABSOLUTE, not percentages. A percentage
+      # is meaningless across drives this different in size: 10% of the
+      # 10 TiB Downloads array is a terabyte of headroom, while 10% of
+      # the 450 GB system disk is 45 GB. What actually matters is
+      # "is there room for the next thing that needs to be written".
+
+      # System disk (/dev/sdd2). Filling this stops Docker, Postgres,
+      # and every config volume at once, so it is the most severe of the
+      # three even though it is the smallest.
       - alert: SystemDiskFilling
-        expr: >-
-          node_filesystem_avail_bytes{mountpoint="/"}
-          / node_filesystem_size_bytes{mountpoint="/"} < 0.10
+        expr: node_filesystem_avail_bytes{mountpoint="/"} < 25e9
         for: 30m
         labels:
           severity: warning
         annotations:
-          summary: "System disk below 10 percent free"
+          summary: "System disk below 25 GB free"
           description: >-
-            The root filesystem is running out of space. Docker images,
-            container logs, and the Postgres data directory all live
-            here.
+            Docker images, container logs, and the Postgres data
+            directory all live on the root filesystem.
 
       - alert: SystemDiskCritical
-        expr: >-
-          node_filesystem_avail_bytes{mountpoint="/"}
-          / node_filesystem_size_bytes{mountpoint="/"} < 0.05
+        expr: node_filesystem_avail_bytes{mountpoint="/"} < 10e9
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "System disk below 5 percent free"
+          summary: "System disk below 10 GB free"
           description: >-
-            Postgres and Docker will start failing writes shortly if
-            this is not cleared.
+            Postgres and Docker will start failing writes shortly.
+
+      # Media library (/mnt/Storage, /dev/sde1, 7.2 TiB). Thresholds are
+      # sized against a single large release: a 4K film runs 60-80 GB,
+      # so 250 GB is "a few more grabs left" and 75 GB is "the next one
+      # probably fails mid-import".
+      - alert: MediaStorageFilling
+        expr: node_filesystem_avail_bytes{mountpoint="/mnt/Storage"} < 250e9
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Media storage below 250 GB free"
+          description: >-
+            /mnt/Storage is filling up. The *arr apps will keep grabbing
+            until it is full and then start failing imports.
+
+      - alert: MediaStorageCritical
+        expr: node_filesystem_avail_bytes{mountpoint="/mnt/Storage"} < 75e9
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Media storage below 75 GB free"
+          description: >-
+            /mnt/Storage has no room for another large release. Imports
+            will fail and partially-moved files can be left behind.
+
+      # Download array (/mnt/Storage/Downloads, /dev/md126, 10.4 TiB).
+      # This one is transient by nature -- things land here and move
+      # out -- so a sustained fill means the move is not happening,
+      # which is a different failure from the library simply being full.
+      - alert: DownloadStorageFilling
+        expr: >-
+          node_filesystem_avail_bytes{mountpoint="/mnt/Storage/Downloads"} < 500e9
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Download array below 500 GB free"
+          description: >-
+            Downloads are accumulating rather than being imported and
+            cleared. Check the *arr import queues, not just disk usage.
+
+      - alert: DownloadStorageCritical
+        expr: >-
+          node_filesystem_avail_bytes{mountpoint="/mnt/Storage/Downloads"} < 100e9
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Download array below 100 GB free"
+          description: >-
+            qBittorrent will start erroring on new torrents.
+
+      # /mnt/Storage/Downloads is an md RAID array. A degraded array is
+      # silent until the next disk goes and takes the data with it,
+      # which is exactly the "something real is wrong in the house"
+      # case this alerting exists for.
+      - alert: RaidArrayDegraded
+        expr: node_md_disks{state="failed"} > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RAID array {{ $labels.device }} has a failed disk"
+          description: >-
+            The array is running degraded. Replace the disk before
+            another one fails.
 
       - alert: HostMemoryPressure
         expr: >-
