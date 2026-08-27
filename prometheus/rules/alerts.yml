@@ -177,6 +177,78 @@ groups:
             own victim, and it is rarely the process you would have
             chosen.
 
+  - name: backups
+    rules:
+      # These come from scripts/verify-backups.sh via node-exporter's
+      # textfile collector. A weekly systemd job is invisible to
+      # Prometheus otherwise, and "the backup job stopped running" looks
+      # exactly like "nothing is wrong" without an explicit staleness
+      # check.
+      - alert: BackupVerificationStale
+        # Runs weekly. 9 days allows one missed run plus slack before
+        # complaining.
+        expr: >-
+          time() - mediastack_backup_verify_last_run_timestamp_seconds > 777600
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Backup verification has not run in over 9 days"
+          description: >-
+            The weekly restic check is not happening. Nothing is
+            currently confirming the off-site backup is restorable.
+
+      - alert: BackupIntegrityFailed
+        expr: mediastack_backup_verify_integrity_success == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "restic check failed on the off-site repository"
+          description: >-
+            The B2 repository did not pass structural and sampled-data
+            verification. Investigate before the next forget/prune, which
+            could compact damage into the only remaining copy.
+
+      - alert: BackupRestoreTestFailed
+        expr: mediastack_backup_verify_restore_success == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backup restore test failed"
+          description: >-
+            Restored {{ $value }} files against the count the snapshot
+            manifest lists. The backup exists but has not been shown to
+            come back.
+
+      - alert: BackupRestoreTestStale
+        # The restore test runs on a 28-day cycle; 45 days means two
+        # cycles were missed or it has been failing silently.
+        expr: >-
+          time() - mediastack_backup_verify_restore_last_success_timestamp_seconds > 3888000
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "No successful restore test in over 45 days"
+          description: >-
+            Integrity checks may still be passing, but nothing has
+            proven the data actually restores recently.
+
+      - alert: BackupSnapshotsMissing
+        # forget --keep-daily 14 --keep-weekly 8 --keep-monthly 12 should
+        # never leave fewer than a handful once the repo is established.
+        expr: mediastack_backup_verify_snapshots < 2
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "Off-site repository has fewer than 2 snapshots"
+          description: >-
+            Either backups have stopped or a prune removed more than
+            intended.
+
   - name: updates
     rules:
       # Diun sets this to 1 per image when a newer digest exists

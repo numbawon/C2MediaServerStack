@@ -43,6 +43,26 @@ for vol in "${VOLUMES[@]}"; do
   fi
 done
 
+# secrets/ is git-ignored by design, which also means it exists in
+# exactly one place: this disk. Everything else here is a Docker volume,
+# so a disk failure would take the WireGuard private key, the Plex claim
+# token, the ntfy passwords and the Cloudflare Access service token with
+# it, and several of those cannot simply be regenerated without also
+# reconfiguring the device that uses them.
+#
+# Deliberately off-site only, not in backup-local.sh: restic encrypts
+# with RESTIC_PASSWORD before anything leaves the host, whereas the local
+# job would just write a second plaintext copy onto the same disk.
+#
+# Yes, this includes secrets/restic.env, so the repository contains its
+# own password. That is circular but harmless: you already need the
+# password to decrypt anything, so it grants a reader nothing new. Keep
+# RESTIC_PASSWORD somewhere outside this machine as well.
+if [ -d secrets ]; then
+  MOUNT_ARGS+=(-v "$(pwd)/secrets:/data/secrets:ro")
+  PATHS+=("/data/secrets")
+fi
+
 if [ "${#PATHS[@]}" -eq 0 ]; then
   echo "No volumes found to back up -- is the stack deployed?" >&2
   exit 1

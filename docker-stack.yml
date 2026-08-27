@@ -81,6 +81,11 @@ volumes:
   # means one noisy run that re-reports everything as new.
   diun_data:
     name: diun_data
+  # Written by scripts/verify-backups.sh, read by node-exporter's
+  # textfile collector. Not backed up: it is derived state, regenerated
+  # on the next verification run.
+  node_exporter_textfile:
+    name: node_exporter_textfile
 
 secrets:
   postgres_password:
@@ -671,11 +676,21 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
+      - node_exporter_textfile:/textfile:ro
     command:
       - --path.procfs=/host/proc
       - --path.sysfs=/host/sys
       - --path.rootfs=/rootfs
       - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+      # Textfile collector: scripts/verify-backups.sh writes .prom files
+      # into this volume and node-exporter serves them as ordinary
+      # metrics. That is how a systemd-timer job that runs once a week
+      # gets to be alertable in Prometheus at all.
+      #
+      # A named volume rather than a host path deliberately -- a host
+      # bind mount would need a root-created directory outside the repo,
+      # and everything else here stays inside Docker's world.
+      - --collector.textfile.directory=/textfile
     networks:
       - internal
     deploy:
