@@ -1023,7 +1023,10 @@ services:
     environment:
       - TZ=${COMMON_TZ}
     volumes:
-      - ${COMMON_MEDIA}/AudioBooks:/audiobooks
+      # NB the lowercase b: the real library is "Audiobooks" (489 GB).
+      # An "AudioBooks" directory was briefly created here by mistake and
+      # this mount pointed at the empty one, so the library looked empty.
+      - ${COMMON_MEDIA}/Audiobooks:/audiobooks
       - ${COMMON_MEDIA}/Podcasts:/podcasts
       - audiobookshelf_config:/config
       - audiobookshelf_metadata:/metadata
@@ -1058,7 +1061,19 @@ services:
       - DB_PASSWORD=${IMMICH_DB_PASSWORD}
       - REDIS_HOSTNAME=immich-redis
     volumes:
-      - ${COMMON_PHOTOS}:/data
+      # /data is Immich's MANAGED store (library/, upload/, thumbs/,
+      # encoded-video/, backups/). It is opaque -- Immich does not scan
+      # it for pre-existing files, it owns the layout. So it gets its own
+      # directory rather than being pointed at Pictures, where it would
+      # scatter six internal folders across 228 existing photos and still
+      # not import a single one of them.
+      - ${COMMON_MEDIA}/Immich:/data
+      # The existing photos are exposed read-only as an External Library
+      # instead, which is the mechanism for indexing files in place.
+      # Add it in Immich under Administration -> External Libraries with
+      # the path /external/pictures. Read-only so an accidental delete in
+      # the UI cannot reach the originals.
+      - ${COMMON_MEDIA}/Pictures:/external/pictures:ro
     networks:
       - edge
       - internal
