@@ -35,7 +35,8 @@ and actually understand what they're running, not just copy-paste it.
 | **Portainer** | Docker management UI, itself gated by Authentik (both the outer forward-auth gate *and* its own real OIDC login -- see below). |
 | **Pi-hole** | Network-wide DNS ad-blocking; also this stack's local DNS. |
 | **docker-socket-proxy** | The *only* thing that touches `/var/run/docker.sock` directly. Everything else that needs Docker API access goes through this, scoped to a minimal read-mostly permission set. |
-| **Watchtower** | Auto-updates anything on `:latest`, opt-out via label (used to keep Traefik/Authentik/Postgres/Redis/the socket proxy pinned). |
+| **Diun** | Watches registries and *notifies* when a newer image ships. It has no write access and updates nothing -- every bump is a deliberate decision. Replaced Watchtower; see "Updates". |
+| **Prometheus, Alertmanager, alert-relay, ntfy** | The alert path. Prometheus evaluates rules, Alertmanager routes them, `alert-relay` formats them, ntfy pushes them to a phone. |
 | **Sonarr, Radarr, Lidarr, LazyLibrarian** | Library management for TV, movies, music, and ebooks -- find, grab, rename, organize. |
 | **Bazarr** | Subtitle management for Sonarr/Radarr's libraries. |
 | **Prowlarr** | Centralized indexer management -- add an indexer once, it syncs to every `*arr` app instead of configuring each separately. |
@@ -77,10 +78,12 @@ anything except a specific trusted peer":
 **The Docker socket.** Only `docker-socket-proxy` ever touches the real
 `/var/run/docker.sock`, and even then read-mostly: enough permission
 bits for Traefik to discover services, Portainer to manage the stack,
-Watchtower to check for updates, and Promtail to read container logs --
-nothing more. Everything else that would normally need direct socket
-access (Traefik's provider, Portainer, Watchtower, Promtail) talks to
-the proxy over `internal` instead. cAdvisor is the one deliberate
+Diun to enumerate image references, and Promtail to read container logs
+-- nothing more. Everything else that would normally need direct socket
+access (Traefik's provider, Portainer, Diun, Promtail) talks to the
+proxy over `internal` instead. `DISTRIBUTION` is off: it existed only
+so Watchtower could ask registries for digests, and Diun queries
+registries directly over the internet rather than through the proxy. cAdvisor is the one deliberate
 exception -- its per-container metrics need the real socket, so it's
 kept internal-network-only and read-only-mounted to limit the blast
 radius.
@@ -342,8 +345,9 @@ by label.
   jump there breaks config syntax or data compatibility -- see
   `scripts/check-pinned-versions.sh` and the `is-it-new` pattern in the
   comments near those services before bumping them. Everything else is
-  on `:latest` and auto-updates via Watchtower; check current tags
-  yourself before first deploy rather than trusting `:latest` blindly.
+  on `:latest`, and *nothing* auto-updates -- Diun notifies you when a
+  newer image ships and you decide. Check current tags yourself before
+  first deploy rather than trusting `:latest` blindly.
 - **Pi-hole vs systemd-resolved**: Pi-hole needs port 53. Check
   `sudo ss -tlnp | grep :53` -- if `systemd-resolved`'s stub listener is
   bound there, disable it (`DNSStubListener=no` in
@@ -578,9 +582,9 @@ than a mix of local and UTC, which matters when correlating an incident
 across Loki. Containers cannot drift from the host clock -- they share
 the host kernel's clock and no time namespace is in use -- so the host's
 NTP sync is the only thing that ever needs to be right, and `TZ` only
-ever affects *display*. The one exception is Watchtower, whose cron
-schedule is genuinely interpreted in the container's timezone (see
-above).
+ever affects *display*. The one exception is Diun, whose watch schedule
+is genuinely interpreted in the container's timezone -- `TZ` is not
+cosmetic there.
 
 A handful of images hardcode UTC in their own log output regardless of
 `TZ` (Loki, cloudflared, Portainer, Navidrome). That is not worth
@@ -600,17 +604,104 @@ whatever timezone you are viewing from.
   socket mount, no host log-directory bind mount, just the same trust
   boundary as everything else. If you add services later, their logs
   show up automatically; nothing per-service to configure.
-- **Watchtower** auto-updates anything on `:latest`; anything that
-  should never be silently updated (Traefik, Authentik, Postgres,
-  Redis, the socket proxy) carries an explicit opt-out label
-  (`com.centurylinklabs.watchtower.enable=false`) instead of relying on
-  a default-off allowlist -- safer to have new services auto-update by
-  default and remember to opt the sensitive ones out, than the other
-  way around. Its `WATCHTOWER_SCHEDULE` cron is interpreted in the
-  container's timezone, so `TZ` is not cosmetic here the way it is
-  elsewhere: without it the 04:00 schedule ran at 04:00 UTC, which is
-  21:00 locally and squarely in the middle of the evening. With `TZ`
-  set it runs at 04:00 local, which is the point.
+- **Alertmanager** routes what Prometheus fires; **alert-relay**
+  (in-repo, `alert-relay/relay.py`) turns Alertmanager's fixed JSON
+  webhook into a readable notification; **ntfy** pushes it to a phone.
+  Alert rules live in `prometheus/rules/`. See "Alerting" below.
+- **Diun** replaced Watchtower. See "Updates" below for why.
+
+## Updates
+
+Nothing in this stack updates itself. **Diun** checks registries daily
+and tells you when a newer image ships; you read the changelog and bump
+it deliberately.
+
+This replaced Watchtower, and the reason is worth writing down because
+the old setup looked correct and was not:
+
+- **Watchtower operates on containers, Swarm reconciles from service
+  specs.** Every service in `docker-stack.yml` is digest-pinned in its
+  spec (`docker service inspect` shows `traefik:v3.7@sha256:...`, and
+  that includes the ones on `:latest`). If Watchtower had stopped a
+  container to update it, Swarm would have recreated the task from the
+  unchanged spec. The net effect was a restart, not an update.
+- **The opt-out labels never applied.** They were written under
+  `deploy.labels`, which are *service* labels. Watchtower reads
+  *container* labels, and the task containers carried only
+  `com.docker.stack.namespace`. So the `enable=false` on Traefik,
+  Authentik, Postgres, Redis and the socket proxy protected nothing.
+  This README previously claimed otherwise.
+- It genuinely worked for the six standalone containers in
+  `docker-compose.download.yml` / `.plex.yml`, which are real
+  containers rather than Swarm tasks.
+
+Diun avoids all of it by having a **Swarm provider** that reads services
+directly, plus a Docker provider for the standalone containers. It gets
+no write access and cannot restart anything.
+
+Findings surface as the Prometheus metric
+`diun_image_update_available{provider,image}`, which
+`prometheus/rules/alerts.yml` turns into a notification through the same
+path as every other alert. One alert pipeline, one place to silence.
+
+Diun watches *registries*, not GitHub releases. That is the more
+reliable signal here: several of these projects tag releases
+inconsistently, but all of them have to push an image.
+
+## Alerting
+
+```
+Prometheus (rules/) --> Alertmanager --> alert-relay --> ntfy --> phone
+                                              ^
+                             Diun metrics ----+ (scraped by Prometheus)
+```
+
+- **Rules** are in `prometheus/rules/alerts.yml`, kept deliberately
+  small. A noisy alerting system gets muted, and a muted one is worse
+  than none because you believe you have one.
+- **`Watchdog`** always fires and is routed to a dead-end receiver, so
+  it never notifies. Its job is to be *visible in Alertmanager's UI*.
+  If you look and it is missing, the alert pipeline itself is broken --
+  which is otherwise indistinguishable from "nothing is wrong".
+- **`alert-relay`** is in this repo rather than an off-the-shelf bridge.
+  There are five competing community Alertmanager-to-ntfy bridges, none
+  official, and the best-maintained had not shipped in over a year. A
+  dead relay fails *silently*, which is the worst possible failure mode
+  for the thing that tells you about failures. It is stdlib-only Python
+  on a stock `python:3-alpine`, so there is no image to build and
+  nothing to rot.
+- **Severity drives priority.** `critical` publishes at ntfy priority 5,
+  which bypasses Android Do Not Disturb and is allowed to wake you.
+  `warning` is 4, `info` is 3. Keep that distinction meaningful.
+
+### ntfy is deliberately not behind Authentik
+
+ntfy is the one internet-reachable service with no forward-auth gate.
+The Android app holds a persistent connection and cannot complete a
+browser login redirect, exactly like Plex and Navidrome's `/rest/*`
+path. Putting `authentik@file` on its router breaks push delivery
+entirely. **Do not "fix" this for consistency.**
+
+What protects it instead, in layers:
+
+1. **Cloudflare Access** with a service token at the edge, so
+   unauthenticated requests never reach the ntfy process at all. The
+   Android app sends `CF-Access-Client-Id` / `CF-Access-Client-Secret`
+   via *Settings -> Advanced -> Custom headers*.
+2. **`auth-default-access: deny-all`** in `ntfy/server.yml`, so anything
+   that got past Cloudflare still needs a valid ntfy token.
+3. **No published port.** Ingress is the Cloudflare Tunnel like
+   everything else; there is no exposed origin IP.
+
+Accounts are least-privilege: `relay` is write-only on the topic,
+`phone` is read-only, neither is an admin. Run `scripts/init-ntfy.sh`
+after the first deploy to create them and issue the tokens.
+
+If an iPhone ever needs to subscribe, note that self-hosted ntfy must
+set `upstream-base-url` to forward `poll_request` messages through
+ntfy.sh for APNs. Message *content* stays on your server, but a ping per
+alert transits a third party, and Cloudflare Access likely breaks the
+iOS notification-service-extension fetch.
 
 ## Verification checklist
 

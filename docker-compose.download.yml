@@ -31,13 +31,11 @@ services:
   # running NordLynx (TECHNOLOGY=NordLynx), so this swaps the wrapper around
   # the same WireGuard tunnel, reusing the very same private key.
   vpn-client:
+    # Four apps share this container's network namespace, so recreating it
+    # takes all of them down with it. Diun will tell you when a new gluetun
+    # image ships; do the bump by hand when you can watch it come back.
     image: qmcgaw/gluetun:latest
     container_name: vpn-client
-    labels:
-      # Four apps share this container's network namespace, so a silent 4am
-      # recreate here would take all of them down with it -- same
-      # deliberate-updates-only policy as Traefik/Authentik/Postgres.
-      - "com.centurylinklabs.watchtower.enable=false"
     cap_add:
       - NET_ADMIN
     devices:
