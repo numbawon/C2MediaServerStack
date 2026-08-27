@@ -734,6 +734,12 @@ services:
       # Needed for the silence links in the UI to be correct behind a
       # reverse proxy.
       - --web.external-url=https://alertmanager.${COMMON_DOMAIN}
+      # Default retention is 120h, which is SHORTER than the 168h
+      # repeat_interval on the image-update route. Alertmanager warns
+      # about this at startup because forgetting an alert it is still
+      # meant to be suppressing makes it re-notify early. 336h covers
+      # the longest repeat_interval with room to spare.
+      - --data.retention=336h
     volumes:
       - alertmanager_data:/alertmanager
       - ./alertmanager:/etc/alertmanager:ro
