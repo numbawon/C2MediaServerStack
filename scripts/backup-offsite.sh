@@ -82,7 +82,8 @@ docker run --rm \
 docker run --rm \
   -e RESTIC_REPOSITORY -e RESTIC_PASSWORD -e B2_ACCOUNT_ID -e B2_ACCOUNT_KEY \
   "${MOUNT_ARGS[@]}" \
-  restic/restic backup "${PATHS[@]}"
+  -v "$(pwd)/restic-excludes.txt:/excludes.txt:ro" \
+  restic/restic backup --exclude-file=/excludes.txt "${PATHS[@]}"
 
 docker run --rm \
   -e RESTIC_REPOSITORY -e RESTIC_PASSWORD -e B2_ACCOUNT_ID -e B2_ACCOUNT_KEY \
