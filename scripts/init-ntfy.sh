@@ -1,28 +1,31 @@
 #!/usr/bin/env bash
 # One-time ntfy bootstrap. Run AFTER the stack is deployed and ntfy has
-# started, because ntfy has to create its user database on first boot
-# before accounts can be added to it.
+# started, because ntfy creates its user database on first boot and
+# accounts cannot be added before that exists.
 #
-# This cannot live in init-secrets.sh for that reason: everything there
-# runs before anything is deployed.
+# This is why it cannot live in init-secrets.sh: everything there runs
+# before anything is deployed.
 #
 # Creates two least-privilege accounts rather than one shared admin:
-#   relay -- write-only on the alerts topic. Its token becomes the
+#   relay -- write-only on the topic. Its token becomes the
 #            ntfy_relay_token Swarm secret that alert-relay publishes
-#            with. A leak of this token lets someone send you a fake
-#            alert; it does not let them read your alert history.
-#   phone -- read-only on the alerts topic. Its token goes in the ntfy
-#            Android app. A leak lets someone read alerts; it does not
-#            let them forge one.
+#            with. Leaking it lets someone send you a fake alert; it
+#            does not let them read your alert history.
+#   phone -- read-only on the topic. Its token goes in the ntfy Android
+#            app. Leaking it lets someone read alerts; it does not let
+#            them forge one.
 #
 # Neither is an admin, so neither can create users or grant access.
+# Verified enforced: anonymous read, anonymous publish, and a publish
+# attempt with the phone token all return 403.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 TOPIC="${NTFY_TOPIC:-alerts}"
+RELAY_SERVICE="mediastack_alert-relay"
 
-C=$(docker ps -qf "name=ntfy" | head -1)
+C=$(docker ps -qf "name=mediastack_ntfy" | head -1)
 if [ -z "$C" ]; then
   echo "No running ntfy container found. Deploy the stack first:" >&2
   echo "  ./scripts/deploy.sh stack" >&2
@@ -30,78 +33,90 @@ if [ -z "$C" ]; then
 fi
 echo "Using ntfy container: $C"
 
-# `ntfy user add` reads the password from a terminal, so this needs -it
-# and cannot be made fully non-interactive. It is a one-time step.
+random_password() { head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 32; }
+
+# `ntfy user add` prompts for a password twice, but it reads from plain
+# stdin rather than requiring a TTY, so piping works and this stays
+# non-interactive. The passwords are deliberately random and thrown
+# away: tokens are what actually authenticate, and neither account is
+# ever meant to be logged into.
 add_user() {
-  local user="$1" perm="$2"
-  if docker exec "$C" ntfy user list 2>/dev/null | grep -q "^user ${user}\b"; then
+  local user="$1" perm="$2" pw
+  if docker exec "$C" ntfy user list 2>/dev/null | grep -q "^user ${user} "; then
     echo "user '${user}' already exists, leaving it alone"
   else
-    echo
-    echo "Creating ntfy user '${user}' -- you will be prompted for a password."
-    echo "You do not need to remember it: the token issued below is what"
-    echo "actually gets used. Any long random string is fine."
-    docker exec -it "$C" ntfy user add "$user"
+    pw=$(random_password)
+    printf '%s\n%s\n' "$pw" "$pw" | docker exec -i "$C" ntfy user add "$user" >/dev/null
+    echo "created user '${user}'"
   fi
-  docker exec "$C" ntfy access "$user" "$TOPIC" "$perm"
-  echo "granted ${user}: ${perm} on topic '${TOPIC}'"
+  docker exec "$C" ntfy access "$user" "$TOPIC" "$perm" >/dev/null
+  echo "  granted ${perm} on topic '${TOPIC}'"
 }
 
-# Extract the token out of `ntfy token add` output, which looks like:
+# `ntfy token add` prints e.g.
 #   tk_abc123... (label), expires never, accessed from ...
 issue_token() {
-  local user="$1" label="$2"
-  docker exec "$C" ntfy token add --label="$label" "$user" 2>/dev/null \
+  docker exec "$C" ntfy token add --label="$2" "$1" 2>&1 \
     | grep -oE 'tk_[A-Za-z0-9]+' | head -1
 }
 
 add_user relay write-only
 add_user phone read-only
 
-echo
 relay_token=$(issue_token relay alert-relay)
-if [ -z "$relay_token" ]; then
-  echo "Could not parse a token out of 'ntfy token add' for relay." >&2
-  exit 1
-fi
+phone_token=$(issue_token phone android-app)
+for t in "$relay_token" "$phone_token"; do
+  if [ -z "$t" ]; then
+    echo "Could not parse a token out of 'ntfy token add'." >&2
+    exit 1
+  fi
+done
+echo "issued both tokens"
 
-# Recreate rather than update: Swarm secrets are immutable, so an
-# existing one has to be removed first. It is only in use by alert-relay.
+# Swarm secrets are immutable, so replacing one means removing it first
+# -- and Docker refuses to remove a secret still attached to a running
+# service. Detach it from alert-relay before the swap. The service keeps
+# running throughout; the redeploy at the end reattaches the new one.
 if docker secret inspect ntfy_relay_token >/dev/null 2>&1; then
-  echo "Removing the previous ntfy_relay_token secret."
-  echo "NOTE: alert-relay keeps running with the OLD token until you"
-  echo "      redeploy the stack, so alerts are not lost in between."
+  if docker service inspect "$RELAY_SERVICE" >/dev/null 2>&1; then
+    echo "Detaching the old secret from ${RELAY_SERVICE}..."
+    docker service update --secret-rm ntfy_relay_token "$RELAY_SERVICE" >/dev/null
+  fi
   docker secret rm ntfy_relay_token >/dev/null
 fi
 printf '%s' "$relay_token" | docker secret create ntfy_relay_token - >/dev/null
-echo "Created Swarm secret: ntfy_relay_token"
+echo "Swarm secret ntfy_relay_token now holds the live relay token"
 
-phone_token=$(issue_token phone android-app)
+# The phone token has to be readable by a human to get it into the app.
+# secrets/ is git-ignored; keep it that way.
+mkdir -p secrets
+printf '%s\n' "$phone_token" > secrets/ntfy_phone_token.txt
+chmod 600 secrets/ntfy_phone_token.txt
 
 cat <<EOF
 
 --------------------------------------------------------------------
-Done.
-
-Put this token in the ntfy Android app
-(Settings -> Manage users, or per-server under the subscription):
-
-  server: https://ntfy.<your-domain>
-  topic:  ${TOPIC}
-  token:  ${phone_token}
-
-You ALSO need the Cloudflare Access service token headers, under
-Settings -> Advanced -> Custom headers:
-
-  CF-Access-Client-Id:     <from the Zero Trust dashboard>
-  CF-Access-Client-Secret: <from the Zero Trust dashboard>
-
-Then redeploy so alert-relay picks up the new secret:
+Done. Redeploy so alert-relay picks up the new secret:
 
   ./scripts/deploy.sh stack
 
-Verify the whole path end to end with:
+Then set up the Android app:
 
-  docker exec ${C} ntfy publish ${TOPIC} "test from the server"
+  server: https://ntfy.<your-domain>
+  topic:  ${TOPIC}
+  token:  (in secrets/ntfy_phone_token.txt)
+
+and under Settings -> Advanced -> Custom headers, the Cloudflare
+Access service token from the Zero Trust dashboard:
+
+  CF-Access-Client-Id:     <...>
+  CF-Access-Client-Secret: <...>
+
+Test the whole path end to end by injecting an alert at Alertmanager
+(not by publishing to ntfy directly, which would skip the relay):
+
+  docker exec \$(docker ps -qf name=mediastack_prometheus) sh -c \\
+    'wget -qO- --post-data='"'"'[{"labels":{"alertname":"Test","severity":"critical"},"annotations":{"summary":"hello"}}]'"'"' \\
+     --header="Content-Type: application/json" http://alertmanager:9093/api/v2/alerts'
 --------------------------------------------------------------------
 EOF
