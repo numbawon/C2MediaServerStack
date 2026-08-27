@@ -1,0 +1,69 @@
+# Diun -- registry update NOTIFIER. This is what replaced Watchtower.
+#
+# The difference that matters: Watchtower pulled and restarted on its
+# own at 04:00. Diun only tells you a newer digest exists. You read the
+# changelog and bump it deliberately. Nothing here can restart a
+# service, and Diun is given no write access to Docker at all.
+#
+# Note it watches REGISTRIES, not GitHub releases. That is the more
+# reliable signal for this stack: several of these projects tag releases
+# inconsistently or not at all, but every one of them has to push an
+# image for you to be able to run it.
+#
+# Findings are exposed as Prometheus metrics (see `metrics` below) and
+# turned into a notification by prometheus/rules/alerts.yml ->
+# Alertmanager -> alert-relay -> ntfy. Diun's own notifiers are
+# deliberately unused so there is exactly one alert path to maintain and
+# one place that can be silenced.
+
+db:
+  path: /data/diun.db
+
+watch:
+  workers: 10
+  # Daily at 06:00 local. Deliberately a morning slot rather than the
+  # 04:00 Watchtower used: this only produces a notification to read, so
+  # it should land when you might actually read it. DiunStale in
+  # rules/alerts.yml fires if a run has not completed in 26h.
+  schedule: "0 6 * * *"
+  jitter: 30s
+  # Do not notify on the very first run. Without this, the initial
+  # baseline scan reports every image in the stack at once.
+  firstCheckNotif: false
+
+metrics:
+  enabled: true
+  addr: ":9090"
+  path: /metrics
+  # No token set on purpose: this service is on the `internal` overlay
+  # only, which is non-attachable and has no ingress path. Prometheus
+  # scrapes it from the same network. Add `tokenFile` if Diun is ever
+  # moved onto `edge`.
+
+defaults:
+  # false = only track the exact tag each service already runs. Setting
+  # this true would report every new tag in the repo, which for anything
+  # on :latest is a firehose.
+  watchRepo: false
+  # `new` fires for images Diun has never seen before, which is noise
+  # every time a service is added. Only actual updates are actionable.
+  notifyOn:
+    - update
+
+providers:
+  # Swarm provider reads SERVICES, which is the correct unit for
+  # docker-stack.yml. This is precisely what Watchtower got wrong: it
+  # only ever saw containers, so on a Swarm stack it was inspecting task
+  # containers whose labels and lifecycle Swarm owns.
+  swarm:
+    endpoint: tcp://docker-socket-proxy:2375
+    watchByDefault: true
+
+  # Docker provider covers the six standalone containers from
+  # docker-compose.download.yml and docker-compose.plex.yml (plex,
+  # vpn-client, qbittorrent, sonarr, radarr, lazylibrarian), which are
+  # real containers and not Swarm tasks.
+  docker:
+    endpoint: tcp://docker-socket-proxy:2375
+    watchByDefault: true
+    watchStopped: false

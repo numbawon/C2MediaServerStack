@@ -28,6 +28,10 @@ VOLUMES=(
   bazarr_config seerr_config lazylibrarian_config prowlarr_config
   tautulli_config navidrome_config loki_data organizarr_data
   qbittorrent_config plex_config
+  # ntfy_data holds every ntfy account and access token, including the
+  # one configured in the phone's custom headers -- losing it means
+  # re-issuing and re-entering them by hand.
+  alertmanager_data ntfy_data diun_data
 )
 
 MOUNT_ARGS=()

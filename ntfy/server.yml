@@ -1,0 +1,67 @@
+# ntfy server config. This is the only service in the stack that is
+# internet-reachable WITHOUT sitting behind Authentik's forward-auth
+# gate, and that is deliberate, not an oversight:
+#
+# The ntfy Android app holds a persistent connection to this server to
+# receive push. It cannot complete a browser login redirect, so a
+# forward-auth gate in front of it would break delivery entirely. Same
+# reason Plex and Navidrome's /rest/* path are exempt.
+#
+# What protects it instead, in layers:
+#   1. Cloudflare Access (service token) at the edge, so unauthenticated
+#      requests never reach this process at all. The Android app sends
+#      the CF-Access-Client-Id / CF-Access-Client-Secret headers via
+#      Settings -> Advanced -> Custom headers.
+#   2. auth-default-access: deny-all below, so even a request that got
+#      past Cloudflare gets nothing without a valid ntfy token.
+#   3. No open port. Ingress is the Cloudflare Tunnel, same as
+#      everything else -- there is no exposed origin IP.
+#
+# Everything INSIDE the stack (alert-relay, and anything else that
+# publishes) reaches ntfy over the `internal` overlay network and never
+# transits Cloudflare at all.
+
+# base-url is deliberately NOT set here. ntfy reads this file as plain
+# YAML with no environment substitution, so "${COMMON_DOMAIN}" would be
+# taken literally and produce a broken base URL. It is set as
+# NTFY_BASE_URL in docker-stack.yml instead, where Compose does
+# substitute it. Every key in this file has an NTFY_-prefixed env
+# equivalent; env wins over file.
+#
+# It must match the public hostname exactly, including scheme -- the
+# mobile app derives topic URLs from it, and a mismatch produces
+# subscriptions that silently never deliver.
+
+listen-http: ":80"
+
+# Trust X-Forwarded-For from Traefik so rate limiting counts real
+# clients instead of attributing every request to Traefik's container IP.
+behind-proxy: true
+
+# Setting auth-file is what turns authentication ON. Without it, the
+# auth-default-access value below is ignored entirely.
+auth-file: "/var/lib/ntfy/user.db"
+
+# Anonymous requests get nothing: no read, no write, no topic
+# enumeration. Every publisher and subscriber needs a token.
+auth-default-access: "deny-all"
+
+# Nobody should be able to create an account on a private server. Login
+# stays on so the web UI is usable for administration.
+enable-signup: false
+enable-login: true
+
+# Same volume as auth-file on purpose: one volume to back up, and the
+# message cache is small.
+cache-file: "/var/lib/ntfy/cache.db"
+# How long messages are retained for clients that were offline. A phone
+# that was out of signal overnight should still get the 3am alert.
+cache-duration: "24h"
+
+# NOT set: upstream-base-url. That forwards poll_request messages
+# through ntfy.sh so iOS can receive APNs push, and is required ONLY for
+# iOS clients. On Android the app holds its own connection to this
+# server, so nothing needs to transit a third party. Add it only if an
+# iPhone ever needs to subscribe.
+
+log-level: info
