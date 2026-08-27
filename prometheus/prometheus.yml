@@ -1,5 +1,19 @@
 global:
   scrape_interval: 15s
+  # How often alerting rules are evaluated. Left at the scrape interval
+  # so a `for: 5m` in rules/ means five real minutes, not five
+  # evaluations of some slower loop.
+  evaluation_interval: 15s
+
+# Rule files are a directory glob, not a single-file mount -- single-file
+# bind mounts go stale on host-side edits (repo-wide convention).
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
 
 scrape_configs:
   - job_name: prometheus
@@ -17,3 +31,14 @@ scrape_configs:
   - job_name: traefik
     static_configs:
       - targets: ["traefik:8080"]
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]
+
+  # Diun publishes diun_image_update_available{provider,image}, which is
+  # what rules/alerts.yml turns into the "an update shipped" notification
+  # that replaced Watchtower's silent 4am restarts.
+  - job_name: diun
+    static_configs:
+      - targets: ["diun:9090"]

@@ -70,6 +70,17 @@ volumes:
     name: lazylibrarian_config
   organizarr_data:
     name: organizarr_data
+  alertmanager_data:
+    name: alertmanager_data
+  # Holds ntfy's user.db (accounts + access tokens) and its message
+  # cache. Losing this means re-issuing every token, including the one
+  # in the phone's custom headers.
+  ntfy_data:
+    name: ntfy_data
+  # Diun's record of which digest it last reported per image. Losing it
+  # means one noisy run that re-reports everything as new.
+  diun_data:
+    name: diun_data
 
 secrets:
   postgres_password:
@@ -81,6 +92,10 @@ secrets:
   grafana_admin_password:
     external: true
   cloudflare_tunnel_token:
+    external: true
+  # ntfy access token used by alert-relay to publish. Create it after
+  # ntfy's first boot (`ntfy token add`), see README.
+  ntfy_relay_token:
     external: true
 
 services:
@@ -105,11 +120,13 @@ services:
       # separate, broader flag this proxy also exposes.
       VOLUMES: 1
       INFO: 1
-      # Watchtower needs both of these: IMAGES for local image info,
-      # DISTRIBUTION to check registries for a newer digest (that's the
-      # actual "is there an update" check -- IMAGES alone 403s on it).
+      # IMAGES is for Portainer's image list view. DISTRIBUTION (the
+      # registry "is there a newer digest" check) was Watchtower-only and
+      # is off now that Watchtower is gone -- Diun queries registries
+      # directly over the internet, not through this proxy, so it needs
+      # only CONTAINERS to discover which image refs are in use.
       IMAGES: 1
-      DISTRIBUTION: 1
+      DISTRIBUTION: 0
       # Portainer/Watchtower need write access to manage stacks/containers;
       # keep this scoped to POST only (no full unrestricted socket access).
       POST: 1
@@ -120,35 +137,6 @@ services:
     deploy:
       placement:
         constraints: [node.role == manager]
-      labels:
-        # Never let Watchtower touch the one thing with real docker.sock
-        # access.
-        - "com.centurylinklabs.watchtower.enable=false"
-
-  # ---------------------------------------------------------------------
-  # Watchtower -- auto-updates everything on :latest. Opt-out via label,
-  # not opt-in: anything NOT explicitly labeled disabled gets updated.
-  # Talks to the socket proxy, never the raw socket, same as everything
-  # else here. Ran monitor-only through its first real scheduled run
-  # (2026-08-25 04:00 UTC) -- scanned 24 containers, correctly skipped
-  # everything labeled disabled, found one legitimate candidate
-  # (qbittorrent), zero failures. Live updates from here on.
-  # ---------------------------------------------------------------------
-  watchtower:
-    image: nickfedor/watchtower:latest
-    environment:
-      - TZ=${COMMON_TZ}
-      - DOCKER_HOST=tcp://docker-socket-proxy:2375
-      - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_SCHEDULE=0 0 4 * * *
-      - WATCHTOWER_MONITOR_ONLY=false
-    networks:
-      - internal
-    deploy:
-      placement:
-        constraints: [node.role == manager]
-      labels:
-        - "com.centurylinklabs.watchtower.enable=false"
 
   # ---------------------------------------------------------------------
   # Traefik -- reads the Docker API via the proxy above, never the raw
@@ -156,6 +144,9 @@ services:
   # Tunnel below; no host ports published at all.
   # ---------------------------------------------------------------------
   traefik:
+    # Pinned to v3.7 deliberately -- see the go/no-go process for pinned
+    # services in the README. Diun notifies when v3.8 ships; the bump is
+    # a decision, not an automatic update.
     image: traefik:v3.7
     command:
       # Traefik v3 split the docker provider in two; swarmMode=true on the
@@ -201,9 +192,6 @@ services:
         - "traefik.http.routers.traefik.service=api@internal"
         - "traefik.http.routers.traefik.middlewares=authentik@file"
         - "traefik.http.services.traefik-dummy.loadbalancer.server.port=8080"
-        # Pinned to v3.7 deliberately -- see the go/no-go process for
-        # pinned services. Watchtower must never touch this one.
-        - "com.centurylinklabs.watchtower.enable=false"
 
   # ---------------------------------------------------------------------
   # Cloudflare Tunnel -- only ingress path. Outbound-only connection to
@@ -266,7 +254,6 @@ services:
         - "traefik.http.routers.authentik.rule=Host(`auth.${COMMON_DOMAIN}`)"
         - "traefik.http.routers.authentik.entrypoints=web"
         - "traefik.http.services.authentik.loadbalancer.server.port=9000"
-        - "com.centurylinklabs.watchtower.enable=false"
 
   authentik-worker:
     image: ghcr.io/goauthentik/server:2026.8
@@ -288,11 +275,10 @@ services:
       - authentik_data:/media
     networks:
       - internal
-    deploy:
-      labels:
-        - "com.centurylinklabs.watchtower.enable=false"
 
   postgres:
+    # Major-version jumps can break the on-disk data format -- pinned to
+    # :16 (patches float), same reasoning as Traefik/Authentik above.
     image: postgres:16
     environment:
       - TZ=${COMMON_TZ}
@@ -305,11 +291,6 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - internal
-    deploy:
-      labels:
-        # Major-version jumps can break the on-disk data format -- pinned
-        # to :16 (patches float), same reasoning as Traefik/Authentik.
-        - "com.centurylinklabs.watchtower.enable=false"
 
   redis:
     image: redis:7-alpine
@@ -321,9 +302,6 @@ services:
       - redis_password
     networks:
       - internal
-    deploy:
-      labels:
-        - "com.centurylinklabs.watchtower.enable=false"
 
   # ---------------------------------------------------------------------
   # Pi-hole -- note: port 53 will conflict with systemd-resolved on this
@@ -740,6 +718,121 @@ services:
         - "traefik.http.routers.prometheus.entrypoints=web"
         - "traefik.http.routers.prometheus.middlewares=authentik@file"
         - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+
+  # ---------------------------------------------------------------------
+  # Alertmanager -- routes what Prometheus fires. Gated by Authentik
+  # like the rest of the monitoring tier: silencing an alert is a
+  # privileged action, so this is not a household-tier page.
+  # ---------------------------------------------------------------------
+  alertmanager:
+    image: prom/alertmanager:latest
+    environment:
+      - TZ=${COMMON_TZ}
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      # Needed for the silence links in the UI to be correct behind a
+      # reverse proxy.
+      - --web.external-url=https://alertmanager.${COMMON_DOMAIN}
+    volumes:
+      - alertmanager_data:/alertmanager
+      - ./alertmanager:/etc/alertmanager:ro
+    networks:
+      - edge
+      - internal
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.alertmanager.rule=Host(`alertmanager.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.alertmanager.entrypoints=web"
+        - "traefik.http.routers.alertmanager.middlewares=authentik@file"
+        - "traefik.http.services.alertmanager.loadbalancer.server.port=9093"
+
+  # ---------------------------------------------------------------------
+  # alert-relay -- turns Alertmanager's fixed JSON webhook into a
+  # readable ntfy notification. In-repo on purpose (see the module
+  # docstring); stdlib only, so a stock python image runs it with
+  # nothing installed and there is no image to build or registry to
+  # depend on. No ingress: only Alertmanager talks to it.
+  # ---------------------------------------------------------------------
+  alert-relay:
+    image: python:3-alpine
+    command: python /app/relay.py
+    environment:
+      - TZ=${COMMON_TZ}
+      - NTFY_URL=http://ntfy:80
+      - NTFY_TOPIC=alerts
+      - NTFY_TOKEN_FILE=/run/secrets/ntfy_relay_token
+      # Unbuffered, or the container logs stay empty until the process
+      # exits and debugging a silent alert path becomes guesswork.
+      - PYTHONUNBUFFERED=1
+    secrets:
+      - ntfy_relay_token
+    volumes:
+      - ./alert-relay:/app:ro
+    networks:
+      - internal
+
+  # ---------------------------------------------------------------------
+  # ntfy -- push notifications. The ONE internet-reachable service that
+  # is deliberately NOT behind Authentik's forward-auth gate: the
+  # Android app holds a persistent connection and cannot complete a
+  # browser login redirect, exactly like Plex and Navidrome's /rest/*.
+  #
+  # Protected instead by (1) Cloudflare Access service token at the
+  # edge, (2) auth-default-access=deny-all in ntfy/server.yml, (3) no
+  # published port, ingress only via the tunnel. See ntfy/server.yml.
+  # ---------------------------------------------------------------------
+  ntfy:
+    image: binwiederhier/ntfy:latest
+    command: serve
+    environment:
+      - TZ=${COMMON_TZ}
+      # Set here, not in server.yml: ntfy does no env substitution when
+      # reading that file, so ${COMMON_DOMAIN} would be taken literally.
+      - NTFY_BASE_URL=https://ntfy.${COMMON_DOMAIN}
+    volumes:
+      - ntfy_data:/var/lib/ntfy
+      - ./ntfy:/etc/ntfy:ro
+    networks:
+      - edge
+      - internal
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.ntfy.rule=Host(`ntfy.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.ntfy.entrypoints=web"
+        # NO authentik@file middleware, and that is deliberate -- adding
+        # it breaks push delivery to the mobile app entirely. Do not
+        # "fix" this by making it consistent with the other routers.
+        - "traefik.http.services.ntfy.loadbalancer.server.port=80"
+
+  # ---------------------------------------------------------------------
+  # Diun -- registry update notifier, the replacement for Watchtower.
+  # Reads Swarm SERVICES and standalone containers through the socket
+  # proxy, checks registries for newer digests, and exposes findings as
+  # Prometheus metrics. It has no write access and cannot restart
+  # anything: every update is your decision.
+  # ---------------------------------------------------------------------
+  diun:
+    image: crazymax/diun:latest
+    # --config passed explicitly rather than relying on an env var:
+    # Diun has two separate config systems (kong CLI flags, which are
+    # unprefixed, and config-file keys, which transpose to DIUN_*), and
+    # the flag has NO default. Get this wrong and Diun starts happily
+    # with zero providers and silently never checks anything.
+    command: serve --config /etc/diun/diun.yml
+    environment:
+      - TZ=${COMMON_TZ}
+      - LOG_LEVEL=info
+    volumes:
+      - diun_data:/data
+      - ./diun:/etc/diun:ro
+    networks:
+      - internal
+    deploy:
+      placement:
+        constraints: [node.role == manager]
 
   grafana:
     image: grafana/grafana:latest

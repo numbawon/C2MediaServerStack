@@ -1,0 +1,84 @@
+# Alertmanager routing. Every alert ends up at the same place (the
+# in-repo alert-relay, which formats it and posts to ntfy) -- what
+# changes per route is how aggressively it repeats.
+#
+# Nothing here talks to ntfy directly: Alertmanager's webhook payload is
+# a fixed JSON schema with no body templating, so posting it straight at
+# ntfy would put raw JSON on your lock screen. See alert-relay/relay.py.
+
+global:
+  # How long a firing alert can go un-refreshed before Alertmanager
+  # decides it resolved. Must be comfortably longer than the Prometheus
+  # evaluation interval or alerts flap resolved/firing.
+  resolve_timeout: 5m
+
+route:
+  # Group by alert name and severity so ten containers dying at once is
+  # a handful of notifications, not fifty.
+  group_by: ["alertname", "severity"]
+  # Wait this long for other alerts in the same group before sending, so
+  # a cascading failure arrives as one batch.
+  group_wait: 45s
+  group_interval: 5m
+  # Default nag cadence for anything that stays broken.
+  repeat_interval: 12h
+  receiver: ntfy
+
+  routes:
+    # The always-firing heartbeat. It exists purely so you can look at
+    # ntfy and confirm the pipe is alive -- it must never notify, or
+    # it's just a recurring 5-minute buzz. Routed to a receiver with no
+    # webhook at all, which is a deliberate dead end, not an oversight.
+    - matchers:
+        - alertname = "Watchdog"
+      receiver: "blackhole"
+      repeat_interval: 8760h
+
+    # Critical means something in the house is actually broken. Nag
+    # every 4h until it clears -- this is the "canary in the coal mine"
+    # case and it is allowed to wake you.
+    - matchers:
+        - severity = "critical"
+      receiver: ntfy
+      repeat_interval: 4h
+
+    # Image updates are a decision queue, not an incident. One
+    # notification, then leave it alone for a week -- otherwise the
+    # thing you check most often is the thing that matters least, and
+    # you start ignoring the channel.
+    - matchers:
+        - alertname = "ImageUpdateAvailable"
+      receiver: ntfy-no-resolve
+      group_by: ["alertname"]
+      group_wait: 5m
+      repeat_interval: 168h
+
+receivers:
+  - name: ntfy
+    webhook_configs:
+      - url: http://alert-relay:8080/
+        # The relay always answers 200, even on a partial ntfy failure,
+        # because a non-200 makes Alertmanager retry the whole group and
+        # re-send the alerts that already went through.
+        send_resolved: true
+
+  # Same relay, but resolutions are suppressed. Diun records a digest
+  # once it has reported it, so diun_image_update_available drops back
+  # to 0 on the NEXT daily run whether or not you actually updated
+  # anything. Without this, every update notice would be followed a day
+  # later by a "resolved" that means nothing.
+  - name: ntfy-no-resolve
+    webhook_configs:
+      - url: http://alert-relay:8080/
+        send_resolved: false
+
+  - name: blackhole
+
+inhibit_rules:
+  # If a whole target is down, don't also page about the individual
+  # symptoms underneath it.
+  - source_matchers:
+      - severity = "critical"
+    target_matchers:
+      - severity = "warning"
+    equal: ["instance"]
