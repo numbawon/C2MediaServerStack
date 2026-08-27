@@ -1,0 +1,22 @@
+# Proves the off-site backup is restorable. See scripts/verify-backups.sh.
+#
+# Replace youruser with your actual repo path before installing.
+#
+# Install:
+#   sudo cp systemd/mediastack-verify-backups.{service,timer} /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mediastack-verify-backups.timer
+[Unit]
+Description=mediastack backup verification (restic check + restore test)
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/youruser/C2MediaServerStack
+ExecStart=/home/youruser/C2MediaServerStack/scripts/verify-backups.sh
+# The 5% data read pulls from B2 and the restore writes to /tmp. Neither
+# is fast, and neither should be killed halfway: a killed run leaves the
+# repository locked and the next run fails on the stale lock.
+TimeoutStartSec=2h
