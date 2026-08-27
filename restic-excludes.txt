@@ -1,0 +1,33 @@
+# Paths restic skips in the off-site backup: content each app regenerates
+# on its next library scan.
+#
+# This is not cosmetic. An untrimmed snapshot ran ~8 GB, of which roughly
+# 700 MB was irreplaceable (databases and config) and the rest was
+# downloaded artwork. That bloat is what pushed the repo past B2's
+# storage cap, and a capped bucket fails the backup outright: the
+# 2026-08-27 run died with "403: storage cap exceeded" having written
+# nothing.
+#
+# Rule: keep .db files and config, drop anything re-fetched from
+# TMDB/TVDB/MusicBrainz or re-derived from the media files.
+#
+# Plex -- Metadata/Movies alone was 3.5 GB. Plug-in Support/Databases is
+# the real payload (watch history, library structure) and is NOT excluded.
+/data/plex_config/Library/Application Support/Plex Media Server/Metadata
+/data/plex_config/Library/Application Support/Plex Media Server/Media
+/data/plex_config/Library/Application Support/Plex Media Server/Cache
+/data/plex_config/Library/Application Support/Plex Media Server/Logs
+/data/plex_config/Library/Application Support/Plex Media Server/Crash Reports
+/data/plex_config/Library/Application Support/Plex Media Server/Scanners
+
+# *arr apps -- MediaCover is poster/fanart thumbnails. radarr.db is 64 MB;
+# its MediaCover was 2.5 GB.
+/data/sonarr_config/MediaCover
+/data/radarr_config/MediaCover
+/data/lidarr_config/MediaCover
+
+# Logs and app-managed internal backups (restic is the backup here).
+/data/*/logs
+/data/*/Backups
+/data/navidrome_config/cache
+/data/tautulli_config/cache

@@ -8,7 +8,22 @@
 # apps rewrite state around, not user-chosen values.
 set -euo pipefail
 
-DEST="${1:-/mnt/Storage/Backups/local}"
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+# Destination comes from .env so it moves with the storage layout rather
+# than being hardcoded. An explicit argument still wins.
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
+# Default deliberately lives on a DIFFERENT physical device from the
+# media library. Writing a backup to the same disk it is backing up
+# protects against nothing except an accidental delete: a drive failure
+# takes the original and the copy together.
+DEST="${1:-${COMMON_BACKUP_LOCAL:-/mnt/Storage/Downloads/Backups/local}}"
 STAMP="$(date +%Y-%m-%d_%H%M%S)"
 OUT="$DEST/$STAMP"
 mkdir -p "$OUT"
@@ -31,6 +46,46 @@ VOLUMES=(
   immich_db_data
 )
 
+# Per-volume tar exclusions for content the app regenerates on its next
+# library scan. This is not a size optimization for its own sake: an
+# untrimmed snapshot ran ~8 GB, of which roughly 700 MB was irreplaceable
+# (the databases and config files) and the rest was downloaded artwork.
+# That bloat is what pushed the restic repo past B2's storage cap and
+# silently broke the off-site backup.
+#
+# Rule of thumb: keep the .db files and config, drop anything the app
+# re-fetches from TMDB/TVDB/MusicBrainz or re-derives from the media.
+exclusions_for() {
+  case "$1" in
+    plex_config)
+      # 3.5 GB of Metadata/Movies alone. Databases/ is the real payload:
+      # watch history, library structure, play counts.
+      printf '%s\n' \
+        --exclude=./Library/Application*Support/Plex*Media*Server/Metadata \
+        --exclude=./Library/Application*Support/Plex*Media*Server/Media \
+        --exclude=./Library/Application*Support/Plex*Media*Server/Cache \
+        --exclude=./Library/Application*Support/Plex*Media*Server/Logs \
+        --exclude=./Library/Application*Support/Plex*Media*Server/Crash*Reports \
+        --exclude=./Library/Application*Support/Plex*Media*Server/Scanners
+      ;;
+    sonarr_config|radarr_config|lidarr_config|readarr_config)
+      # MediaCover is poster/fanart thumbnails, hundreds of numbered dirs.
+      # radarr.db is 64 MB; its MediaCover was 2.5 GB.
+      printf '%s\n' --exclude=./MediaCover --exclude=./logs --exclude=./Backups
+      ;;
+    prowlarr_config|bazarr_config|lazylibrarian_config)
+      printf '%s\n' --exclude=./logs --exclude=./Backups
+      ;;
+    navidrome_config)
+      printf '%s\n' --exclude=./cache
+      ;;
+    tautulli_config)
+      printf '%s\n' --exclude=./logs --exclude=./cache
+      ;;
+    *) : ;;
+  esac
+}
+
 for vol in "${VOLUMES[@]}"; do
   if ! docker volume inspect "$vol" >/dev/null 2>&1; then
     echo "skip: volume '$vol' doesn't exist (not deployed?)"
@@ -51,7 +106,7 @@ for vol in "${VOLUMES[@]}"; do
     -v "${vol}:/volume:ro" \
     -v "${OUT}:/backup" \
     alpine \
-    sh -c "apk add --no-cache tar >/dev/null 2>&1 && tar --ignore-failed-read -czf /backup/${vol}.tar.gz -C /volume ." \
+    sh -c "apk add --no-cache tar >/dev/null 2>&1 && tar --ignore-failed-read $(exclusions_for "$vol" | tr '\n' ' ') -czf /backup/${vol}.tar.gz -C /volume ." \
     || { rc=$?; [ "$rc" -eq 1 ] || exit "$rc"; }
 done
 
