@@ -222,6 +222,19 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     command: tunnel --config /etc/cloudflared/config.yml run
+    # Same musl AAAA problem Seerr hit, and it takes the WHOLE STACK down
+    # rather than one app: Docker's embedded resolver forwards to the
+    # host's nameserver, which is the router, and the router SERVFAILs
+    # every AAAA query. cloudflared is musl-based, so a SERVFAIL on
+    # either half of a dual A/AAAA lookup fails the lookup entirely --
+    # it cannot resolve region1.v2.argotunnel.com, never reaches the
+    # edge, and every hostname returns Cloudflare error 1033.
+    #
+    # Pi-hole answers AAAA correctly (filter-AAAA), so point at it
+    # directly. By LAN IP because that is stable, unlike a Swarm task's
+    # overlay address.
+    dns:
+      - ${COMMON_LAN_IP}
     environment:
       - TZ=${COMMON_TZ}
       - TUNNEL_TOKEN_FILE=/run/secrets/cloudflare_tunnel_token
