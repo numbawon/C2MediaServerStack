@@ -37,17 +37,25 @@ random_password() { head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 32;
 
 # `ntfy user add` prompts for a password twice, but it reads from plain
 # stdin rather than requiring a TTY, so piping works and this stays
-# non-interactive. The passwords are deliberately random and thrown
-# away: tokens are what actually authenticate, and neither account is
-# ever meant to be logged into.
+# non-interactive.
+#
+# Passwords are random but KEPT, not thrown away. An earlier version
+# discarded them on the reasoning that tokens are what authenticate.
+# That was wrong: ntfy's web app (and the Android app's Add-user dialog)
+# only accept a username and password, with no token field. ntfy will
+# take a token as a basic-auth password, but ONLY with an empty
+# username, which those dialogs will not let you leave blank. So without
+# a saved password there is no way to sign in at all.
 add_user() {
   local user="$1" perm="$2" pw
   if docker exec "$C" ntfy user list 2>/dev/null | grep -q "^user ${user} "; then
-    echo "user '${user}' already exists, leaving it alone"
+    echo "user '${user}' already exists, leaving its password alone"
   else
     pw=$(random_password)
     printf '%s\n%s\n' "$pw" "$pw" | docker exec -i "$C" ntfy user add "$user" >/dev/null
-    echo "created user '${user}'"
+    printf '%s\n' "$pw" > "secrets/ntfy_${user}_password.txt"
+    chmod 600 "secrets/ntfy_${user}_password.txt"
+    echo "created user '${user}' (password in secrets/ntfy_${user}_password.txt)"
   fi
   docker exec "$C" ntfy access "$user" "$TOPIC" "$perm" >/dev/null
   echo "  granted ${perm} on topic '${TOPIC}'"
@@ -60,6 +68,7 @@ issue_token() {
     | grep -oE 'tk_[A-Za-z0-9]+' | head -1
 }
 
+mkdir -p secrets
 add_user relay write-only
 add_user phone read-only
 
@@ -102,9 +111,13 @@ Done. Redeploy so alert-relay picks up the new secret:
 
 Then set up the Android app:
 
-  server: https://ntfy.<your-domain>
-  topic:  ${TOPIC}
-  token:  (in secrets/ntfy_phone_token.txt)
+  server:   https://ntfy.<your-domain>
+  topic:    ${TOPIC}
+  username: phone
+  password: (in secrets/ntfy_phone_password.txt)
+
+The token in secrets/ntfy_phone_token.txt is for anything that speaks
+Bearer auth. The app dialogs want a username and password.
 
 and under Settings -> Advanced -> Custom headers, the Cloudflare
 Access service token from the Zero Trust dashboard:
