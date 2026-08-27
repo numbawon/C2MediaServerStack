@@ -32,6 +32,12 @@ VOLUMES=(
   # one configured in the phone's custom headers -- losing it means
   # re-issuing and re-entering them by hand.
   alertmanager_data ntfy_data diun_data
+  # Stage 3. immich_db_data is the important one: it holds every photo's
+  # metadata, albums, faces and search embeddings. The photo FILES live on
+  # a media path and are not in here.
+  recyclarr_config cleanuparr_config
+  audiobookshelf_config audiobookshelf_metadata
+  immich_db_data
 )
 
 MOUNT_ARGS=()

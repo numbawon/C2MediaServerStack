@@ -37,6 +37,10 @@ and actually understand what they're running, not just copy-paste it.
 | **docker-socket-proxy** | The *only* thing that touches `/var/run/docker.sock` directly. Everything else that needs Docker API access goes through this, scoped to a minimal read-mostly permission set. |
 | **Diun** | Watches registries and *notifies* when a newer image ships. It has no write access and updates nothing -- every bump is a deliberate decision. Replaced Watchtower; see "Updates". |
 | **Prometheus, Alertmanager, alert-relay, ntfy** | The alert path. Prometheus evaluates rules, Alertmanager routes them, `alert-relay` formats them, ntfy pushes them to a phone. |
+| **Recyclarr** | Syncs TRaSH Guides quality profiles and custom formats into Sonarr/Radarr. No web UI and no API: a cron'd one-shot, so there is no hostname and no Authentik application. |
+| **Cleanuparr** | Removes stalled, blocked and known-malware downloads from the *arr queues and re-searches. Admin tier, because it deletes things. |
+| **Audiobookshelf** | Audiobooks and podcasts. Household tier, native OIDC, deliberately not forward-auth gated. |
+| **Immich** | Photos and video. Household tier, native OIDC, deliberately not forward-auth gated. Runs its own Postgres and Redis. |
 | **Sonarr, Radarr, Lidarr, LazyLibrarian** | Library management for TV, movies, music, and ebooks -- find, grab, rename, organize. |
 | **Bazarr** | Subtitle management for Sonarr/Radarr's libraries. |
 | **Prowlarr** | Centralized indexer management -- add an indexer once, it syncs to every `*arr` app instead of configuring each separately. |
@@ -609,6 +613,70 @@ whatever timezone you are viewing from.
   webhook into a readable notification; **ntfy** pushes it to a phone.
   Alert rules live in `prometheus/rules/`. See "Alerting" below.
 - **Diun** replaced Watchtower. See "Updates" below for why.
+
+## The apps that are not forward-auth gated
+
+Four services deliberately carry no `authentik@file` middleware, and it
+is the same reason every time: **each has a native client that cannot
+complete a browser login redirect.**
+
+| service | why | what protects it instead |
+|---|---|---|
+| Plex | its own TV/mobile apps | Plex's own account system |
+| Navidrome `/rest/*` | Subsonic API clients | per-person Subsonic password |
+| ntfy | Android app holds a persistent connection | Cloudflare Access service token + ntfy tokens |
+| Audiobookshelf | mobile app | native OIDC against Authentik |
+| Immich | mobile app | native OIDC against Authentik |
+
+Putting the forward-auth gate in front of any of them does not "add
+security", it breaks the app: every API call gets bounced to a login
+page the client cannot render. **Do not add `authentik@file` to these
+routers for consistency.**
+
+Audiobookshelf and Immich are pattern 3 (real OIDC), not pattern 1. The
+Authentik side is already created (`Audiobookshelf OIDC`, `Immich OIDC`
+providers plus their applications); the app side is configured in each
+app's own UI after first boot, because neither accepts OIDC settings as
+environment variables:
+
+- **Audiobookshelf**: Settings -> Authentication -> enable OpenID
+  Connect. Paste the issuer URL and click Auto-populate, then fill in
+  the client ID and secret. Add the mobile redirect URI under *Allowed
+  Mobile Redirect URIs*.
+- **Immich**: Administration -> Settings -> OAuth Authentication.
+
+Client IDs and secrets are in `secrets/oidc-clients.env` (git-ignored).
+Issuer URL for both:
+`https://auth.<domain>/application/o/<app-slug>/.well-known/openid-configuration`
+
+## Recyclarr
+
+Recyclarr is the complement to Organizarr: Organizarr centralizes auth
+and download-client settings, Recyclarr owns quality profiles and custom
+formats from the TRaSH Guides.
+
+Three things about it are easy to get wrong, all of which cost time here:
+
+- **There is no `:latest` tag.** Only major-version tags. `:latest` gets
+  `manifest unknown` and Swarm rejects the task in a loop.
+- **It must be version 8, not 7.** The official config templates track
+  the v8 schema and use `quality_profiles: - trash_id:`, which v7 cannot
+  parse; on 7 the sync dies with a bare `Exception at line 30`.
+- **The templates are complete configs, not includes.** There is no
+  `includes` directory in the template repo, so
+  `include: - template: <name>` never resolves and fails with "unable to
+  find config include with name". `recyclarr/configs/*.yml` are copies of
+  the official templates with `base_url` and `api_key` filled in, which
+  is exactly what `recyclarr config create --template` would produce.
+
+`reset_unmatched_scores` is turned **off**, against the template default.
+The template ships it as `true`, which zeroes the score of every custom
+format the guide does not explicitly set, including anything tuned by
+hand. A daily cron should not quietly undo manual work.
+
+The first sync created new profiles rather than modifying existing ones
+(37 custom formats and a `WEB-1080p` profile in Sonarr, 40 and
+`HD Bluray + WEB` in Radarr), so pre-existing profiles were untouched.
 
 ## Backup verification
 
