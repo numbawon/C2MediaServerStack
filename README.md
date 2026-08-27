@@ -610,6 +610,45 @@ whatever timezone you are viewing from.
   Alert rules live in `prometheus/rules/`. See "Alerting" below.
 - **Diun** replaced Watchtower. See "Updates" below for why.
 
+## Backup verification
+
+`scripts/backup-offsite.sh` exiting 0 proves an upload happened. It does
+not prove the data comes back. `scripts/verify-backups.sh`, on a weekly
+timer, is what actually checks:
+
+- **Integrity, every run.** `restic check --read-data-subset=5%` walks
+  the repository structure *and* downloads and hashes a random 5% of the
+  real pack files. Structure-only checking would miss silent corruption
+  in B2, which is the failure this exists to catch.
+- **Restore, every 28 days.** Restores one volume out of the newest
+  snapshot into a scratch directory and asserts the restored file count
+  equals what the snapshot manifest lists. This is the only step that
+  proves recovery, rather than that the bytes hash correctly.
+
+Results are written as Prometheus metrics into the
+`node_exporter_textfile` volume and served by node-exporter's textfile
+collector, which is how a job that runs once a week becomes something
+Prometheus can alert on continuously. `BackupVerificationStale` fires if
+the timer itself stops, because "no failures reported" and "nothing is
+checking" otherwise look identical.
+
+Two details worth not re-learning:
+
+- `restic ls` needs **`--recursive`**, or it lists only the top level
+  (10 entries against 555 actual files) and the assertion fails every
+  run. Use `--json` and count `"type":"file"` so directories are not
+  counted against a `find -type f` total.
+- restic runs as root inside its container, so the restored tree is
+  root-owned and the script cannot delete it as an ordinary user.
+  Cleanup runs in a throwaway container for that reason.
+
+`secrets/` is included in the off-site backup and deliberately not in the
+local one. It is git-ignored by design, which also means it exists in
+exactly one place, and it holds the WireGuard key, the Plex claim token
+and the ntfy credentials. restic encrypts before anything leaves the
+host; the local job would only write a second plaintext copy to the same
+disk.
+
 ## Updates
 
 Nothing in this stack updates itself. **Diun** checks registries daily

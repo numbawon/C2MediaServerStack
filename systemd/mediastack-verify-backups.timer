@@ -1,0 +1,15 @@
+[Unit]
+Description=Run mediastack backup verification weekly
+
+[Timer]
+# Sunday 05:00, deliberately after the 03:30 off-site backup has
+# finished so it verifies the newest snapshot rather than racing it.
+OnCalendar=Sun *-*-* 05:00:00
+Persistent=true
+# The 5% subset restic reads is chosen at random per run, so spreading
+# start times means different packs get sampled over the weeks rather
+# than the same slice every Sunday at exactly 05:00.
+RandomizedDelaySec=30m
+
+[Install]
+WantedBy=timers.target
