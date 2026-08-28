@@ -727,11 +727,36 @@ UI, which is a worse trade than declaring it here. The consequence is
 that `dns.listeningMode` and `dns.upstreams` live only in the
 `pihole_config` volume; both backup scripts cover it.
 
-`filter-AAAA` remains set. It was added when the router SERVFAILed every
-AAAA query and musl-based containers failed the whole lookup as a result.
-The router has since been fixed, so this is removable -- it currently
-suppresses IPv6 DNS entirely, which is why a blocked domain returns `::`
-rather than `0.0.0.0`.
+`filter-AAAA` is deliberate policy, not a leftover workaround. It was
+originally added because the router SERVFAILed every AAAA query and
+musl-based containers fail the entire lookup when either half fails. The
+router has since been fixed, so that reason is gone -- but a second,
+better reason replaced it.
+
+**This network has no IPv6 at all.** Not "IPv6 is disabled": there is no
+prefix and no route, end to end.
+
+```
+host: 0 global v6 addresses, 0 default v6 routes, curl -6 -> HTTP 000
+router: ipv6_service=ipv6pt (passthrough), ipv6_prefix empty,
+        ipv6_wan_addr empty, ping6 -> Network is unreachable
+```
+
+Handing out AAAA records on a v4-only network means clients try IPv6
+first (RFC 6724 / Happy Eyeballs), fail to connect, and fall back.
+Browsers absorb that in roughly 250ms. Plain-socket clients without Happy
+Eyeballs -- the *arr apps, qBittorrent -- can stall on a full connect
+timeout first. Suppressing AAAA is the correct configuration here, and
+removing it would trade a cosmetic oddity for real latency.
+
+The only visible artifact is that a blocked domain returns `::` for AAAA
+instead of `0.0.0.0`. Both mean blocked.
+
+If IPv6 is ever enabled, the order matters: switch the router off
+passthrough, confirm the ISP actually delegates a prefix, verify gluetun
+blocks IPv6 egress (`FIREWALL_OUTBOUND_SUBNETS` is IPv4-only, so the
+*arr apps sharing its namespace could leak around the VPN), and only
+then remove this.
 
 ### Blocklists
 

@@ -51,10 +51,14 @@ services:
       # alone here to keep this change to one variable.
       # Two dnsmasq directives, semicolon-separated (FTLCONF arrays).
       #
-      # filter-AAAA suppresses AAAA at the resolver. Added when the router
-      # SERVFAILed every AAAA query and musl-based containers failed the
-      # whole lookup as a result. The router is fixed now, so this is a
-      # candidate for removal.
+      # filter-AAAA suppresses AAAA at the resolver. Originally added
+      # because the router SERVFAILed every AAAA query and musl fails the
+      # whole lookup when either half does. That is fixed now, but a
+      # better reason replaced it: this network has NO IPv6 -- no prefix,
+      # no route, router is on passthrough with an empty ipv6_wan_addr.
+      # Returning AAAA records clients cannot route makes them try IPv6
+      # first and stall before falling back. Keep it until IPv6 actually
+      # works end to end. See the DNS section of the README.
       #
       # server=/use-application-dns.net/ with no server after the second
       # slash makes dnsmasq answer NXDOMAIN authoritatively. That is
