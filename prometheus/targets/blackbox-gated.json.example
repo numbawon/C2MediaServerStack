@@ -1,0 +1,13 @@
+[
+  {
+    "targets": [
+      "https://homer.example.com/",
+      "https://seerr.example.com/",
+      "https://grafana.example.com/",
+      "https://prowlarr.example.com/",
+      "https://portainer.example.com/",
+      "https://cleanuparr.example.com/"
+    ],
+    "labels": { "tier": "gated" }
+  }
+]

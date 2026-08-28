@@ -1,0 +1,4 @@
+[
+  { "targets": ["192.168.1.10"], "labels": { "resolver": "pihole" } },
+  { "targets": ["192.168.1.1"], "labels": { "resolver": "router" } }
+]

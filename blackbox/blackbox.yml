@@ -1,0 +1,59 @@
+# Blackbox exporter: probes this stack the way a real user reaches it,
+# from OUTSIDE the tunnel.
+#
+# This exists because of the 2026-08-27 outage. The router came back from
+# a power cut SERVFAILing every AAAA query, cloudflared could not resolve
+# the Cloudflare edge, and every hostname returned error 1033 -- while all
+# 37 services sat at 1/1 and every Prometheus target reported up. All the
+# existing scraping happens over the internal Docker network, on the
+# server side of the tunnel, so it cannot see the one path that matters.
+
+modules:
+  # Public hostnames sit behind Authentik forward-auth, which answers 302
+  # to a login page. A 302 is the CORRECT healthy response for a gated
+  # app -- treating only 200 as healthy would alert constantly.
+  https_gated:
+    prober: http
+    timeout: 15s
+    http:
+      valid_status_codes: [200, 302, 401, 403]
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      method: GET
+      follow_redirects: false
+      preferred_ip_protocol: ip4
+      # ip4 explicitly: this stack has repeatedly been bitten by AAAA
+      # lookups failing while A records resolve fine. A probe that dies
+      # on IPv6 would report an outage that users are not experiencing.
+
+  # Ungated apps (native OIDC, no forward-auth) should answer 200.
+  https_open:
+    prober: http
+    timeout: 15s
+    http:
+      valid_status_codes: [200]
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      method: GET
+      follow_redirects: true
+      preferred_ip_protocol: ip4
+
+  # Does the name resolve at all, independent of whether HTTP works.
+  # Separates "DNS is broken" from "the app is down", which is precisely
+  # the distinction that took hours to establish during the outage.
+  dns_a:
+    prober: dns
+    timeout: 8s
+    dns:
+      query_name: "cloudflare.com"
+      query_type: "A"
+      valid_rcodes: ["NOERROR"]
+
+  # The AAAA half, which is what actually broke. Alerting on this gives
+  # the answer directly instead of via a musl resolver failure three
+  # layers downstream.
+  dns_aaaa:
+    prober: dns
+    timeout: 8s
+    dns:
+      query_name: "cloudflare.com"
+      query_type: "AAAA"
+      valid_rcodes: ["NOERROR"]
