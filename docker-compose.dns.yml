@@ -49,7 +49,22 @@ services:
       # failing the whole lookup as a result. The router has since been
       # fixed, so this is a candidate for removal -- deliberately left
       # alone here to keep this change to one variable.
-      - FTLCONF_misc_dnsmasq_lines=filter-AAAA
+      # Two dnsmasq directives, semicolon-separated (FTLCONF arrays).
+      #
+      # filter-AAAA suppresses AAAA at the resolver. Added when the router
+      # SERVFAILed every AAAA query and musl-based containers failed the
+      # whole lookup as a result. The router is fixed now, so this is a
+      # candidate for removal.
+      #
+      # server=/use-application-dns.net/ with no server after the second
+      # slash makes dnsmasq answer NXDOMAIN authoritatively. That is
+      # Mozilla's documented network opt-out: Firefox queries this canary
+      # on startup and disables DNS-over-HTTPS when it gets NXDOMAIN.
+      # Without it, Firefox resolves through Cloudflare directly and
+      # bypasses Pi-hole entirely -- no blocklists, no query log, nothing.
+      # It happens to return NXDOMAIN upstream today, but relying on that
+      # means DoH silently re-enables if that ever changes.
+      - FTLCONF_misc_dnsmasq_lines=filter-AAAA;server=/use-application-dns.net/
     volumes:
       # Same named volumes the Swarm service used. Blocklists, settings
       # and query history carry over untouched.
