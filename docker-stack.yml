@@ -1138,6 +1138,33 @@ services:
     networks:
       - internal
 
+  # ---------------------------------------------------------------------
+  # Blackbox exporter -- probes the stack from OUTSIDE the tunnel, the
+  # way a real user reaches it.
+  #
+  # Everything else Prometheus scrapes lives on the internal network, on
+  # the server side of Cloudflare. During the 2026-08-27 outage that left
+  # every target reporting up while nothing was actually reachable. This
+  # is the only check that would have caught it.
+  #
+  # On `edge` for outbound internet, and pinned to Pi-hole for DNS for
+  # the same musl AAAA reason as cloudflared -- a probe that cannot
+  # resolve would report an outage that is not happening.
+  # ---------------------------------------------------------------------
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    command:
+      - --config.file=/etc/blackbox/blackbox.yml
+    environment:
+      - TZ=${COMMON_TZ}
+    dns:
+      - ${COMMON_LAN_IP}
+    volumes:
+      - ./blackbox:/etc/blackbox:ro
+    networks:
+      - edge
+      - internal
+
   promtail:
     image: grafana/promtail:latest
     environment:

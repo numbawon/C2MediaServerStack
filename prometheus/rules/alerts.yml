@@ -236,6 +236,37 @@ groups:
             Integrity checks may still be passing, but nothing has
             proven the data actually restores recently.
 
+      # The gap that let a broken backup look healthy for days. The
+      # verification alerts above check that STORED snapshots restore,
+      # which kept passing while the nightly upload was failing on B2's
+      # storage cap. These watch whether the JOB itself succeeded.
+      - alert: BackupJobFailed
+        expr: mediastack_backup_success == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "The off-site backup job failed on its last run"
+          description: >-
+            restic exited non-zero. Common causes: B2 storage or
+            transaction cap exceeded, credentials expired, or a stale
+            repository lock. Check
+            `journalctl -u mediastack-backup-offsite.service`.
+
+      - alert: BackupJobStale
+        # Runs daily at 03:30. 30h allows one missed run plus slack.
+        expr: >-
+          time() - mediastack_backup_last_success_timestamp_seconds > 108000
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "No successful off-site backup in over 30 hours"
+          description: >-
+            Either the timer stopped or every run has been failing. This
+            fires even if the job never runs at all, which a
+            failure-only alert would miss.
+
       - alert: BackupSnapshotsMissing
         # forget --keep-daily 14 --keep-weekly 8 --keep-monthly 12 should
         # never leave fewer than a handful once the repo is established.
@@ -248,6 +279,84 @@ groups:
           description: >-
             Either backups have stopped or a prune removed more than
             intended.
+
+  - name: external
+    rules:
+      # The alerts that would have caught the 2026-08-27 outage. Every
+      # other check in this file runs on the internal network, on the
+      # server side of the tunnel, and all of them reported healthy for
+      # the entire time nothing was reachable from outside.
+      - alert: PublicEndpointDown
+        # Scoped to the HTTP probes only. A `blackbox-.*` selector also
+        # matches the DNS jobs, so a resolver fault would be reported as
+        # an endpoint outage -- two alerts naming the wrong cause, which
+        # is worse than one naming the right one.
+        expr: probe_success{job=~"blackbox-(gated|open)"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }} is unreachable from outside"
+          description: >-
+            The probe failed through Cloudflare. If several fire at once
+            the tunnel is down, not the individual apps -- check
+            cloudflared, and check DNS before assuming the apps broke.
+
+      - alert: TunnelDown
+        # Several public endpoints failing together is a tunnel or DNS
+        # fault, not an app fault. Distinct alert so the notification
+        # says the right thing at 3am.
+        expr: >-
+          count(probe_success{job=~"blackbox-(gated|open)"} == 0)
+          >= 3
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Multiple public endpoints down: tunnel or DNS, not the apps"
+          description: >-
+            {{ $value }} endpoints are failing at once. Cloudflare error
+            1033 means cloudflared cannot reach the edge. Check whether
+            AAAA resolution is working.
+
+      - alert: DnsResolverAaaaFailing
+        # Names the exact fault that took the stack down: A resolving
+        # fine while AAAA SERVFAILs, which musl-based containers treat
+        # as total lookup failure.
+        expr: probe_success{job="blackbox-dns-aaaa"} == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AAAA lookups failing on the {{ $labels.resolver }} resolver"
+          description: >-
+            A records may still resolve. musl-based containers
+            (cloudflared, alpine images) fail the ENTIRE lookup when
+            either half SERVFAILs, so this breaks things that look
+            unrelated to DNS.
+
+      - alert: DnsResolverDown
+        expr: probe_success{job="blackbox-dns"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "DNS resolver {{ $labels.resolver }} not answering"
+          description: >-
+            If this is Pi-hole, container DNS is about to break stack-wide.
+
+      - alert: TlsCertExpiringSoon
+        expr: >-
+          probe_ssl_earliest_cert_expiry{job=~"blackbox-(gated|open)"} - time()
+          < 14 * 24 * 3600
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "TLS certificate for {{ $labels.instance }} expires in under 14 days"
+          description: >-
+            Cloudflare normally renews these automatically, so this
+            firing means something is wrong with the tunnel hostname.
 
   - name: updates
     rules:

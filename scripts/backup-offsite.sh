@@ -74,19 +74,73 @@ if [ "${#PATHS[@]}" -eq 0 ]; then
   exit 1
 fi
 
+# Report the outcome as Prometheus metrics via node-exporter's textfile
+# collector. Without this, a failing backup is INVISIBLE: verify-backups.sh
+# checks that STORED snapshots are restorable, which keeps passing happily
+# while the nightly upload fails. That is exactly what happened when B2's
+# storage cap was hit -- the job failed for days while every alert read
+# healthy, because nothing watched whether the job itself succeeded.
+TEXTFILE_VOLUME="node_exporter_textfile"
+METRIC_FILE="backup_offsite.prom"
+
+write_metrics() {
+  # Atomic: node-exporter parses any *.prom in the directory, and a
+  # half-written file yields garbage metrics.
+  docker run --rm -i -v "${TEXTFILE_VOLUME}:/t" alpine:latest \
+    sh -c "cat > /t/${METRIC_FILE}.tmp && mv /t/${METRIC_FILE}.tmp /t/${METRIC_FILE}" 2>/dev/null || true
+}
+
+read_prev_success() {
+  docker run --rm -v "${TEXTFILE_VOLUME}:/t" alpine:latest \
+    sh -c "grep -m1 '^mediastack_backup_last_success_timestamp_seconds ' /t/${METRIC_FILE} 2>/dev/null | awk '{print \$2}'" 2>/dev/null
+}
+
 # init is a no-op (with a warning) if the repo already exists
 docker run --rm \
   -e RESTIC_REPOSITORY -e RESTIC_PASSWORD -e B2_ACCOUNT_ID -e B2_ACCOUNT_KEY \
   restic/restic init 2>/dev/null || true
 
+# Not under `set -e`: a failure here must still write its metrics, or the
+# alert this exists to raise never fires.
+backup_rc=0
 docker run --rm \
   -e RESTIC_REPOSITORY -e RESTIC_PASSWORD -e B2_ACCOUNT_ID -e B2_ACCOUNT_KEY \
   "${MOUNT_ARGS[@]}" \
   -v "$(pwd)/restic-excludes.txt:/excludes.txt:ro" \
-  restic/restic backup --exclude-file=/excludes.txt "${PATHS[@]}"
+  restic/restic backup --exclude-file=/excludes.txt "${PATHS[@]}" || backup_rc=$?
 
+now=$(date +%s)
+last_success=$(read_prev_success)
+last_success=${last_success%%.*}
+[ -z "$last_success" ] && last_success=0
+[ "$backup_rc" -eq 0 ] && last_success=$now
+
+write_metrics <<METRICS
+# HELP mediastack_backup_last_run_timestamp_seconds Unix time the off-site backup last ran.
+# TYPE mediastack_backup_last_run_timestamp_seconds gauge
+mediastack_backup_last_run_timestamp_seconds ${now}
+# HELP mediastack_backup_success Whether the last off-site backup run succeeded.
+# TYPE mediastack_backup_success gauge
+mediastack_backup_success $([ "$backup_rc" -eq 0 ] && echo 1 || echo 0)
+# HELP mediastack_backup_last_success_timestamp_seconds Unix time of the last SUCCESSFUL off-site backup.
+# TYPE mediastack_backup_last_success_timestamp_seconds gauge
+mediastack_backup_last_success_timestamp_seconds ${last_success}
+METRICS
+
+if [ "$backup_rc" -ne 0 ]; then
+  echo "Off-site backup FAILED (exit ${backup_rc}); metrics written." >&2
+  exit "$backup_rc"
+fi
+
+# --group-by '' matters: restic groups by host,paths BY DEFAULT, and this
+# script's path list grows every time a service is added (16 -> 15 -> 20 ->
+# 29 paths so far). Each distinct path set becomes its own group, so a
+# retention policy is applied per-group and keeps the newest of each --
+# meaning old snapshots are never actually expired. That is how the repo
+# reached 10 GiB and tripped B2's cap while appearing to prune nightly.
 docker run --rm \
   -e RESTIC_REPOSITORY -e RESTIC_PASSWORD -e B2_ACCOUNT_ID -e B2_ACCOUNT_KEY \
-  restic/restic forget --keep-daily 14 --keep-weekly 8 --keep-monthly 12 --prune
+  restic/restic forget --group-by '' \
+    --keep-daily 14 --keep-weekly 8 --keep-monthly 12 --prune
 
 echo "Off-site backup complete."

@@ -36,6 +36,76 @@ scrape_configs:
     static_configs:
       - targets: ["alertmanager:9093"]
 
+  # Blackbox probes: these hit the PUBLIC hostnames through Cloudflare,
+  # not internal service names, which is the entire point.
+  #
+  # Targets come from files, not inline, for two reasons. Prometheus does
+  # NO environment substitution in this file (same trap as ntfy's
+  # server.yml), so ${COMMON_DOMAIN} would be taken literally. And the
+  # real domain and LAN IP stay out of version control -- targets/*.json
+  # is git-ignored, with a .example alongside it.
+  #
+  # Generate the real files with scripts/gen-prometheus-targets.sh.
+  - job_name: blackbox-gated
+    metrics_path: /probe
+    params:
+      module: [https_gated]
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/blackbox-gated.json"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: blackbox-open
+    metrics_path: /probe
+    params:
+      module: [https_open]
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/blackbox-open.json"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # DNS health, A and AAAA split apart. The 2026-08-27 outage was AAAA
+  # SERVFAILing at the router while A resolved fine; separating them
+  # names the fault directly instead of surfacing it as an unrelated
+  # service failure several layers downstream.
+  - job_name: blackbox-dns
+    metrics_path: /probe
+    params:
+      module: [dns_a]
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/blackbox-dns.json"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: blackbox-dns-aaaa
+    metrics_path: /probe
+    params:
+      module: [dns_aaaa]
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/blackbox-dns-aaaa.json"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
   # Diun publishes diun_image_update_available{provider,image}, which is
   # what rules/alerts.yml turns into the "an update shipped" notification
   # that replaced Watchtower's silent 4am restarts.
