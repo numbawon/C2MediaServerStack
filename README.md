@@ -434,6 +434,42 @@ For the two other patterns from "Authentik integration patterns" above:
   "auto-assign admin to this group" setting to it -- a plain OAuth login
   by itself only proves identity, not authorization.
 
+  Two things cost hours on the Immich and Audiobookshelf providers. Check
+  both on any new one.
+
+  **Set `grant_types` explicitly.** Creating a provider through `ak shell`
+  with `OAuth2Provider.objects.get_or_create(...)` leaves that field
+  EMPTY rather than applying the model default. Authentik then rejects
+  every authorization-code request with `invalid_request` / "The request
+  is otherwise malformed", and the app reports something vague like
+  "Failed to finish oauth". The giveaway is only in Authentik's log:
+
+  ```
+  event: "Invalid grant_type for provider"
+  grant_type: "authorization_code"
+  ```
+
+  `['authorization_code', 'refresh_token']` covers a browser app with a
+  mobile client. A provider created through the web UI instead gets every
+  grant type including `password` and `client_credentials`, which these
+  apps have no use for.
+
+  **Set the app's "match existing user by" rule before the first login.**
+  Unset, the first OIDC login creates a NEW local account rather than
+  linking to the existing admin. Two accounts then share a username,
+  which breaks *local* login as well, because the lookup finds the OIDC
+  account and that one has no password. Recovery means moving the stored
+  subject claim onto the original account and deleting the duplicate.
+  Matching on email avoids it entirely, and needs the email actually
+  populated on both sides -- Authentik had it, Audiobookshelf did not.
+
+  Diagnose either from Authentik, not the app. The app only ever sees a
+  generic failure; Authentik logs the precise reason:
+
+  ```
+  docker logs <authentik-server> 2>&1 | grep -iE "invalid_client|grant_type|malformed"
+  ```
+
 Plex is deliberately excluded from any of this (see
 `traefik/dynamic/dynamic.yml` comment) -- its own mobile/TV apps can't
 complete a browser SSO redirect. It relies on your Plex account
