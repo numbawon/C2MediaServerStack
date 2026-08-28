@@ -6,6 +6,7 @@
 #   ./scripts/deploy.sh stack       # docker stack deploy (core swarm stack)
 #   ./scripts/deploy.sh download    # docker compose -f docker-compose.download.yml up -d
 #   ./scripts/deploy.sh plex        # docker compose -f docker-compose.plex.yml up -d
+#   ./scripts/deploy.sh dns         # docker compose -f docker-compose.dns.yml up -d (Pi-hole)
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -23,8 +24,11 @@ case "${1:-}" in
   plex)
     docker compose -f docker-compose.plex.yml up -d
     ;;
+  dns)
+    docker compose -f docker-compose.dns.yml up -d
+    ;;
   *)
-    echo "Usage: $0 {stack|download|plex}" >&2
+    echo "Usage: $0 {stack|download|plex|dns}" >&2
     exit 1
     ;;
 esac

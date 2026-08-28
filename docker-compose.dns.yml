@@ -1,0 +1,68 @@
+# Standalone (non-swarm) compose -- deployed with:
+#   ./scripts/deploy.sh dns
+#
+# Pi-hole lives OUTSIDE the Swarm stack, for three reasons:
+#
+# 1. Real client IPs. As a Swarm service with port 53 published mode=host,
+#    every query still crossed Docker's NAT on the way into the container
+#    and arrived with its source rewritten to the docker_gwbridge gateway
+#    (172.20.0.1). Pi-hole saw the entire LAN as a single client, so
+#    per-client stats, groups and blocking were all useless.
+#    network_mode: host removes that hop entirely.
+#
+# 2. Start ordering. Swarm has no depends_on and no ordering primitive. A
+#    standalone container with restart: always comes up with the Docker
+#    daemon, before Swarm converges -- which matters because everything in
+#    the stack depends on this for DNS.
+#
+# 3. Blast radius. `docker stack rm mediastack` previously took LAN DNS
+#    down for the whole house, including devices with nothing to do with
+#    this stack. Pi-hole is infrastructure the stack depends on, so it
+#    should not live inside the thing it serves.
+#
+# Routing: network_mode: host is exclusive -- the container cannot also
+# join the `edge` overlay, so Traefik cannot reach it by service name.
+# It is reached at the docker_gwbridge gateway instead, via a static entry
+# in traefik/dynamic/dynamic.yml. Same approach as ttyd (see that file).
+
+name: mediastack-dns
+
+services:
+  pihole:
+    image: pihole/pihole:latest
+    container_name: pihole
+    hostname: C2-Pihole
+    # Shares the host's network stack: binds :53 and :80 directly, sees
+    # real LAN source addresses. No `ports:` key -- publishing is
+    # meaningless (and rejected) under host networking.
+    network_mode: host
+    environment:
+      - TZ=${COMMON_TZ}
+      # Explicit empty string, not a *_FILE variant -- the web UI sits
+      # behind Traefik's authentik@file middleware already, so a second
+      # Pi-hole-native login is redundant. FTL re-reads this on every boot
+      # and rewrites pwhash to match, so it actively clears any password
+      # set previously, including one auto-generated on first boot.
+      - FTLCONF_webserver_api_password=
+      # Suppresses AAAA at the resolver. Added when the router was
+      # SERVFAILing every AAAA query and musl-based containers were
+      # failing the whole lookup as a result. The router has since been
+      # fixed, so this is a candidate for removal -- deliberately left
+      # alone here to keep this change to one variable.
+      - FTLCONF_misc_dnsmasq_lines=filter-AAAA
+    volumes:
+      # Same named volumes the Swarm service used. Blocklists, settings
+      # and query history carry over untouched.
+      - pihole_config:/etc/pihole
+      - pihole_dnsmasq:/etc/dnsmasq.d
+    cap_add:
+      # Pi-hole drops privileges after binding :53; without this it cannot
+      # bind a port below 1024 under host networking.
+      - NET_BIND_SERVICE
+    restart: always
+
+volumes:
+  pihole_config:
+    external: true
+  pihole_dnsmasq:
+    external: true
