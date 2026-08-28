@@ -394,6 +394,26 @@ groups:
             (found by the {{ $labels.provider }} provider). Read the
             changelog, then bump it deliberately.
 
+      - alert: DiunTrackingNothing
+        # DiunStale only proves a run happened. This catches a run that
+        # completed successfully while finding NOTHING, which is what
+        # happens when Diun starts before Docker's embedded DNS has
+        # registered docker-socket-proxy: the client fails to construct,
+        # both providers report "No image found", the job reports success,
+        # and update detection is silently dead until the next daily run.
+        # Swarm has no ordering primitive to prevent the race, so detect
+        # it instead.
+        expr: count(diun_image_update_available) < 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Diun completed a run but is tracking no images"
+          description: >-
+            Update detection is silently doing nothing. Usually Diun lost
+            its Docker client at startup; check its log for "Cannot create
+            Docker client" and restart the service.
+
       - alert: DiunStale
         # Diun runs daily. If the last completed run is more than 26h
         # old it has wedged, and "no update notifications" would
