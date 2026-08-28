@@ -733,6 +733,66 @@ The router has since been fixed, so this is removable -- it currently
 suppresses IPv6 DNS entirely, which is why a blocked domain returns `::`
 rather than `0.0.0.0`.
 
+### Blocklists
+
+Three lists, deliberately few. Gravity holds ~2.4M domains.
+
+| list | what for |
+|---|---|
+| Hagezi Multi PRO | the main blocklist; aggregates 200+ upstream sources |
+| Hagezi Threat Intelligence Feeds | malware, phishing, scam domains |
+| StevenBlack unified | belt and braces; heavy overlap with the above, harmless |
+
+Two lists were removed. One pointed at a GitHub *web page* rather than a
+raw file, so gravity imported SVG path data as domain names (entries like
+`1.078-3.144-.292-.741`). The other was `StevenBlack/data/StevenBlack/hosts`,
+94% of which is already in the unified list.
+
+**The allowlist is empty on purpose.** Rather than importing a general
+anti-breakage list, the domains this stack actually depends on were tested
+against gravity directly: TMDB, TVDB, MusicBrainz, Plex, the container
+registries, B2, Cloudflare, ntfy, the TRaSH guides and the rest. Zero false
+positives. The only blocked results were `sentry.io` and
+`notify.bugsnag.com`, which are telemetry and should stay blocked.
+
+`anudeepND/whitelist` is the commonly-recommended Pi-hole allowlist and is
+deliberately NOT used: its last commit was March 2024. Adding a stale
+dependency to fix a problem that does not exist is how the Watchtower
+situation happened.
+
+Re-run that check after changing lists:
+
+```
+docker run --rm --network host alpine sh -c 'apk add -q bind-tools
+for d in api.themoviedb.org api.thetvdb.com plex.tv musicbrainz.org \
+         ghcr.io registry-1.docker.io api.backblazeb2.com; do
+  printf "%-26s %s\n" "$d" "$(dig +short @<pihole> -t A $d | head -1)"
+done'
+```
+
+An empty result or `0.0.0.0` means blocked. Note `filter-AAAA` makes
+blocked domains return `::` for AAAA rather than `0.0.0.0`; both mean
+blocked.
+
+### Browser DNS-over-HTTPS
+
+A browser doing its own DoH bypasses every layer above -- Pi-hole never
+sees the query. Two defences:
+
+1. Pi-hole answers NXDOMAIN for `use-application-dns.net` (via
+   `misc.dnsmasq_lines`), which is Mozilla's documented network opt-out.
+   Firefox checks it on startup and disables DoH. This covers every
+   Firefox on the LAN, not just this machine.
+2. `docs/firefox-policies.json` locks the setting so it cannot be
+   re-enabled per-profile. Layer 1 is only honoured while
+   `network.trr.mode` is at its default; ticking the box in Settings
+   overrides it.
+
+Chrome is not installed here. If it is ever added, it only auto-upgrades
+to DoH when the system resolver is a recognised DoH provider -- Pi-hole is
+not one -- so the default is safe, but the equivalent policy is
+`DnsOverHttpsMode: "off"` in `/etc/opt/chrome/policies/managed/`.
+
 ### What watches this
 
 `blackbox-dns` checks that resolvers answer. `blackbox-dns-blocked`
