@@ -376,6 +376,18 @@ services:
       # which is why the host could resolve those names and containers
       # could not. Returning NODATA locally makes musl succeed.
       - FTLCONF_misc_dnsmasq_lines=filter-AAAA
+      # Forward to the router, which does DNS-over-TLS upstream. This was
+      # previously 8.8.8.8/8.8.4.4 set inside the volume, which only
+      # worked by accident: the router intercepts outbound port 53
+      # (Merlin DNS Director) and answered those queries itself. Naming
+      # it makes the real path explicit, survives a volume rebuild, and
+      # removes the redirect loop risk -- a query aimed at the router is
+      # not subject to a redirect that targets Pi-hole.
+      #
+      # Semicolon-separated for arrays. NOTE: anything set via FTLCONF_
+      # becomes READ-ONLY in Pi-hole's web UI, so upstreams change here
+      # from now on, not in the dashboard.
+      - FTLCONF_dns_upstreams=${COMMON_LAN_ROUTER}
     ports:
       - target: 53
         published: 53
