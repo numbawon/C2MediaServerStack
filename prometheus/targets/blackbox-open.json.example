@@ -1,0 +1,10 @@
+[
+  {
+    "targets": [
+      "https://ntfy.example.com/",
+      "https://immich.example.com/",
+      "https://audiobookshelf.example.com/"
+    ],
+    "labels": { "tier": "open" }
+  }
+]
