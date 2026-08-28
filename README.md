@@ -777,21 +777,23 @@ blocked.
 ### Browser DNS-over-HTTPS
 
 A browser doing its own DoH bypasses every layer above -- Pi-hole never
-sees the query. Two defences:
+sees the query, so no blocklists, no query log, no per-client visibility.
 
-1. Pi-hole answers NXDOMAIN for `use-application-dns.net` (via
-   `misc.dnsmasq_lines`), which is Mozilla's documented network opt-out.
-   Firefox checks it on startup and disables DoH. This covers every
-   Firefox on the LAN, not just this machine.
-2. `docs/firefox-policies.json` locks the setting so it cannot be
-   re-enabled per-profile. Layer 1 is only honoured while
-   `network.trr.mode` is at its default; ticking the box in Settings
-   overrides it.
+Handled at the network level, not per-device: Pi-hole answers NXDOMAIN
+for `use-application-dns.net` via `misc.dnsmasq_lines`. That is Mozilla's
+documented opt-out signal. Firefox checks it on startup and disables DoH
+on its own, which covers every Firefox on the LAN -- phones and laptops
+included -- without touching anyone's browser settings.
 
-Chrome is not installed here. If it is ever added, it only auto-upgrades
-to DoH when the system resolver is a recognised DoH provider -- Pi-hole is
-not one -- so the default is safe, but the equivalent policy is
-`DnsOverHttpsMode: "off"` in `/etc/opt/chrome/policies/managed/`.
+It is a soft signal by design. Anyone can still tick "Enable DNS over
+HTTPS" in Settings and override it, and that is intentional: an
+enterprise policy file could enforce it, but locking a browser setting on
+a machine someone actually uses is a worse trade than the marginal
+coverage it buys.
+
+Chrome is not installed. If it is ever added, it only auto-upgrades to
+DoH when the system resolver is a recognised DoH provider, which Pi-hole
+is not, so its default is already safe.
 
 ### What watches this
 
