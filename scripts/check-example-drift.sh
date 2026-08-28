@@ -24,7 +24,7 @@ set +a
 
 REAL_USER="${USER:-$(id -un)}"
 
-# 192.168.50.0/24 -> prefix 192.168.50, router 192.168.50.1
+# e.g. 10.9.8.0/24 -> prefix 10.9.8, router 10.9.8.1
 LAN_PREFIX="${COMMON_LAN_SUBNET%%/*}"; LAN_PREFIX="${LAN_PREFIX%.*}"
 LAN_ROUTER="${LAN_PREFIX}.1"
 
