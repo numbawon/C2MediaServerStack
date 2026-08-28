@@ -335,6 +335,25 @@ groups:
             either half SERVFAILs, so this breaks things that look
             unrelated to DNS.
 
+      - alert: DnsFilteringBypassed
+        # DnsResolverDown catches "no answer". This catches the quieter
+        # failure: an answer arrives, but not from Pi-hole. A known-blocked
+        # domain resolving to a real address means the blocklists are not
+        # being applied -- DNS Director's redirect removed, gravity empty,
+        # or something upstream answering in Pi-hole's place. Nothing else
+        # in this file would notice.
+        expr: probe_success{job="blackbox-dns-blocked"} == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pi-hole is answering but no longer blocking"
+          description: >-
+            A domain that should resolve to 0.0.0.0 returned a real
+            address. Check DNS Director's global redirection is still set,
+            that the Pi-hole MAC exemption is still present, and that
+            gravity is populated (pihole -g).
+
       - alert: DnsResolverDown
         expr: probe_success{job="blackbox-dns"} == 0
         for: 5m

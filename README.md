@@ -678,6 +678,74 @@ The first sync created new profiles rather than modifying existing ones
 (37 custom formats and a `WEB-1080p` profile in Sonarr, 40 and
 `HD Bluray + WEB` in Radarr), so pre-existing profiles were untouched.
 
+## DNS
+
+Four moving parts, three of which live outside this repo. Written down
+because a silent change to any of them breaks something that looks
+unrelated.
+
+```
+LAN device ---> asks the router (DHCP tells it to)
+                  |
+                  +-- DNS Director DNATs :53 to Pi-hole
+                          |
+this server ------------> Pi-hole (blocklists)         [127.0.0.1]
+                          |
+                          +-- forwards to the router   [MAC-exempt, no loop]
+                                  |
+                                  +-- stubby -> DNS-over-TLS -> Cloudflare
+```
+
+**Router (nvram, not in this repo).** `dnsfilter_enable_x=1`,
+`dnsfilter_mode=8` ("User Defined 1"), `dnsfilter_custom1` = Pi-hole.
+`dnspriv_enable=1` with `dnspriv_profile=1` (opportunistic) and
+Cloudflare's IPv4 DoT servers. IPv6 upstreams are deliberately omitted:
+this host has no IPv6 route and they fail with "Network unreachable".
+
+**The MAC exemption is load-bearing.** DNS Director's client list holds
+this server's MAC set to "No Redirection", solely so Pi-hole's own
+upstream queries can reach the router instead of being DNAT'd back to
+Pi-hole. Remove it and DNS dies house-wide immediately.
+
+**The DHCP lease says the ROUTER, and that is correct.** Asuswrt
+suppresses DHCP option 6 whenever DNS Director is enabled, so
+`dhcp_dns1_x` is stored but never emitted. Clients are told to use the
+router and then silently redirected. A lease showing the router's address
+is not a symptom of anything.
+
+**This server needs its own resolver pinned.** It is MAC-exempt, so
+without intervention its own browsing skips Pi-hole entirely -- encrypted
+by DoT, but unfiltered. NetworkManager is set to
+`ipv4.dns "127.0.0.1 <router>"` with `ipv4.ignore-auto-dns yes`. Pi-hole
+runs with `network_mode: host`, so loopback reaches it directly. Without
+`ignore-auto-dns`, a DHCP renewal silently reverts this and the desktop
+stops being filtered.
+
+**Pi-hole settings are NOT locked via FTLCONF_ env vars**, apart from
+`misc_dnsmasq_lines`. Anything set that way becomes read-only in the web
+UI, which is a worse trade than declaring it here. The consequence is
+that `dns.listeningMode` and `dns.upstreams` live only in the
+`pihole_config` volume; both backup scripts cover it.
+
+`filter-AAAA` remains set. It was added when the router SERVFAILed every
+AAAA query and musl-based containers failed the whole lookup as a result.
+The router has since been fixed, so this is removable -- it currently
+suppresses IPv6 DNS entirely, which is why a blocked domain returns `::`
+rather than `0.0.0.0`.
+
+### What watches this
+
+`blackbox-dns` checks that resolvers answer. `blackbox-dns-blocked`
+checks that Pi-hole still *filters*, by querying a known-blocked domain
+and requiring `0.0.0.0` -- the first passes just as happily when Pi-hole
+has been bypassed and something upstream is answering in its place.
+Verified in both directions: the probe returns `probe_success 0` against
+the router and `1` against Pi-hole, with both returning an answer, so it
+is inspecting content rather than reachability.
+
+Not covered: this server's own `resolv.conf` regressing. That is a
+NetworkManager setting no probe here can see.
+
 ## Backup verification
 
 `scripts/backup-offsite.sh` exiting 0 proves an upload happened. It does
