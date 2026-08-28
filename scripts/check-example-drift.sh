@@ -24,12 +24,24 @@ set +a
 
 REAL_USER="${USER:-$(id -un)}"
 
+# 192.168.50.0/24 -> prefix 192.168.50, router 192.168.50.1
+LAN_PREFIX="${COMMON_LAN_SUBNET%%/*}"; LAN_PREFIX="${LAN_PREFIX%.*}"
+LAN_ROUTER="${LAN_PREFIX}.1"
+
 normalize() {
   # Order matters: the domain check has to run before the bare-username
   # one, same reasoning as the git-filter-repo rules used to scrub
   # history -- a bare username replace running first would also eat the
   # username-shaped part of the domain if they ever happen to collide.
+  # LAN addresses before the domain: they are the other class of value
+  # these files leak. The router IP is derived from COMMON_LAN_SUBNET
+  # rather than hardcoded, so this keeps working if the LAN is
+  # renumbered. Longest-first ordering matters -- substituting the /24
+  # prefix before the specific hosts would corrupt them.
   sed \
+    -e "s#${COMMON_LAN_IP}#192.168.1.10#g" \
+    -e "s#${LAN_ROUTER}#192.168.1.1#g" \
+    -e "s#${LAN_PREFIX}\.#192.168.1.#g" \
     -e "s#${COMMON_DOMAIN}#example.com#g" \
     -e "s#/home/${REAL_USER}#/home/youruser#g" \
     -e "s#User=${REAL_USER}#User=youruser#g"
