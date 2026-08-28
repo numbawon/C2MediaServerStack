@@ -580,6 +580,14 @@ services:
   # any-authenticated-user default the rest of these apps use.
   organizarr:
     image: ghcr.io/numbawon/organizarr:latest
+    # CONTAINER label, not deploy.labels. Diun runs both a swarm provider
+    # (reads service labels) and a docker provider (reads container
+    # labels), so excluding this image needs the label in BOTH places or
+    # the docker provider keeps reporting it. Exactly the service-vs-
+    # container label distinction that made Watchtower's opt-outs
+    # decorative -- see the Updates section of the README.
+    labels:
+      - "diun.enable=false"
     environment:
       - TZ=${COMMON_TZ}
       - SONARR_URL=http://sonarr:8989
@@ -625,6 +633,13 @@ services:
         # called out in the README rather than only in this file.
         - "traefik.http.routers.organizarr.middlewares=authentik@file"
         - "traefik.http.services.organizarr.loadbalancer.server.port=8000"
+        # Excluded from Diun. This image is built from a repo in this
+        # household and deployed as soon as it is pushed, so an "update
+        # available" notification is always describing a change that was
+        # already made deliberately, minutes earlier. Diun's value is
+        # telling you about OTHER people's releases; noise about your own
+        # is how a notification channel gets ignored.
+        - "diun.enable=false"
 
   homer:
     image: b4bz/homer:latest
