@@ -1,0 +1,31 @@
+{
+  "_comment": [
+    "Firefox enterprise policy. Install to /etc/firefox/policies/policies.json",
+    "",
+    "Why: Firefox can resolve DNS itself over HTTPS, bypassing the OS resolver",
+    "entirely. When it does, Pi-hole never sees the query -- no blocklists, no",
+    "query log, no per-client visibility. Every other layer in the DNS chain",
+    "(DNS Director, Pi-hole, the router's DoT) is irrelevant to a browser doing",
+    "its own lookups.",
+    "",
+    "Pi-hole already returns NXDOMAIN for use-application-dns.net, Mozilla's",
+    "canary domain, which disables DoH network-wide for every Firefox on the",
+    "LAN. That is the right first layer, but it is only honoured while",
+    "network.trr.mode is at its default. Ticking 'Enable DNS over HTTPS' in",
+    "Settings overrides the canary and the bypass returns silently.",
+    "",
+    "Locked: true greys the setting out so it cannot be re-enabled per-profile,",
+    "and unlike a prefs.js edit it survives a profile reset or a new profile.",
+    "",
+    "Install:",
+    "  sudo mkdir -p /etc/firefox/policies",
+    "  sudo cp docs/firefox-policies.json /etc/firefox/policies/policies.json",
+    "  # restart Firefox, then confirm at about:policies"
+  ],
+  "policies": {
+    "DNSOverHTTPS": {
+      "Enabled": false,
+      "Locked": true
+    }
+  }
+}
