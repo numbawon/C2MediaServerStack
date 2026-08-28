@@ -71,6 +71,20 @@ http:
         - authentik
       service: terminal
 
+    # Pi-hole moved out of the Swarm stack to network_mode: host, so it
+    # sees real client IPs instead of everything arriving as the
+    # docker_gwbridge gateway. Host networking is exclusive -- it cannot
+    # also join `edge` -- so it is addressed by gateway IP below rather
+    # than by service name. Gated by its own single-application Authentik
+    # provider (Admin group), same as portainer/traefik/terminal.
+    pihole:
+      rule: 'Host(`pihole.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+      middlewares:
+        - authentik
+      service: pihole
+
     qbittorrent:
       rule: 'Host(`qbittorrent.{{ env "COMMON_DOMAIN" }}`)'
       entryPoints:
@@ -144,6 +158,15 @@ http:
     # network namespace (see docker-compose.download.yml), but each has
     # its own network alias there too -- addressed by its own name here,
     # not the generic vpn-client:<port> the shared identity also answers to.
+    # Same docker_gwbridge gateway address ttyd uses, and for the same
+    # reason: a host-networked process is not reachable by container name
+    # from Traefik's overlay-only container, but the gateway IP is.
+    # Pi-hole binds 0.0.0.0:80 under host networking, so it answers here.
+    pihole:
+      loadBalancer:
+        servers:
+          - url: "http://172.20.0.1:80"
+
     qbittorrent:
       loadBalancer:
         servers:

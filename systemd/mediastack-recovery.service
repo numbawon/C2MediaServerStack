@@ -25,6 +25,9 @@ Requires=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=/home/youruser/C2MediaServerStack
+# DNS first: everything else resolves through it, and Swarm has no
+# ordering primitive to express that.
+ExecStart=/home/youruser/C2MediaServerStack/scripts/deploy.sh dns
 ExecStart=/home/youruser/C2MediaServerStack/scripts/deploy.sh download
 ExecStart=/home/youruser/C2MediaServerStack/scripts/deploy.sh plex
 

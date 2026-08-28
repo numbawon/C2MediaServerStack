@@ -337,82 +337,17 @@ services:
       - internal
 
   # ---------------------------------------------------------------------
-  # Pi-hole -- note: port 53 will conflict with systemd-resolved on this
-  # Arch host if it's listening on 0.0.0.0:53. Check/disable that stub
-  # listener before deploying (see README).
+  # Pi-hole is NOT here. It moved to docker-compose.dns.yml with
+  # network_mode: host so it sees real LAN client IPs -- as a Swarm
+  # service, Docker's NAT rewrote every query's source to the
+  # docker_gwbridge gateway and Pi-hole saw the whole LAN as one client.
+  # It also now starts with the Docker daemon rather than whenever Swarm
+  # converges, and `docker stack rm` no longer takes LAN DNS down.
+  #
+  # Its Traefik router/service are static entries in
+  # traefik/dynamic/dynamic.yml, since a host-networked container cannot
+  # join the `edge` overlay for label discovery.
   # ---------------------------------------------------------------------
-  pihole:
-    image: pihole/pihole:latest
-    hostname: C2-Pihole
-    environment:
-      - TZ=${COMMON_TZ}
-      # Explicit empty string, not FTLCONF_webserver_api_password_file -- the
-      # web UI sits behind Traefik's authentik@file middleware already, so a
-      # second Pi-hole-native login is redundant. FTL re-reads this env var
-      # on every boot and rewrites pwhash in pihole.toml to match, so this
-      # actively clears any password set previously (including one Pi-hole
-      # auto-generated on first boot before this was added).
-      - FTLCONF_webserver_api_password=
-
-      # Pi-hole's default listeningMode is LOCAL, which means dnsmasq only
-      # answers queries whose source sits on a directly-attached subnet.
-      # This container only ever sees the overlay (10.0.1.0/24) and
-      # docker_gwbridge (172.20.0.0/16), so the actual LAN counted as
-      # "non-local" and every query from it was silently dropped --
-      # Pi-hole was serving nothing to the network it exists to serve.
-      # ALL is the correct setting for a containerised Pi-hole; the
-      # container's idea of "local" can never include the LAN.
-      # listeningMode is NOT set here. Setting it via FTLCONF_ locks the
-      # entire Interface Settings panel in Pi-hole's web UI, which is a
-      # bigger cost than the setting is worth owning declaratively.
-      #
-      # It MUST be "ALL" (or at least not "LOCAL") or Pi-hole drops every
-      # query from outside its own subnet, which is how Seerr's TMDB
-      # lookups broke. The value lives in the pihole_config volume and is
-      # covered by both backup scripts. If DNS ever fails stack-wide
-      # after a volume rebuild, check this first:
-      #   docker exec <pihole> pihole-FTL --config dns.listeningMode
-
-      # Answer AAAA with NODATA instead of forwarding upstream.
-      # This host has no IPv6 at all (no global address, no default
-      # route, no connectivity), so an AAAA answer is unusable here even
-      # when it succeeds. It also fixes a real breakage: some domains
-      # (api.themoviedb.org, discover.provider.plex.tv) return SERVFAIL
-      # rather than NODATA for AAAA, and musl libc -- which every Alpine
-      # based container here uses -- treats a SERVFAIL on either half of
-      # a dual A/AAAA lookup as total failure and reports EAI_AGAIN, even
-      # though the A record resolved fine. glibc ignores the AAAA failure,
-      # which is why the host could resolve those names and containers
-      # could not. Returning NODATA locally makes musl succeed.
-      - FTLCONF_misc_dnsmasq_lines=filter-AAAA
-      # NB: upstreams are deliberately NOT set here. Anything set via
-      # FTLCONF_ becomes read-only in Pi-hole's web UI, and the upstream
-      # list is something worth changing from the dashboard. It lives in
-      # the pihole_config volume instead (currently the router, which
-      # does DoT). Backed up by backup-local/backup-offsite.
-    ports:
-      - target: 53
-        published: 53
-        protocol: tcp
-        mode: host
-      - target: 53
-        published: 53
-        protocol: udp
-        mode: host
-    volumes:
-      - pihole_config:/etc/pihole
-      - pihole_dnsmasq:/etc/dnsmasq.d
-    networks:
-      - edge
-    deploy:
-      placement:
-        constraints: [node.role == manager]
-      labels:
-        - "traefik.enable=true"
-        - "traefik.http.routers.pihole.rule=Host(`pihole.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.pihole.entrypoints=web"
-        - "traefik.http.routers.pihole.middlewares=authentik@file"
-        - "traefik.http.services.pihole.loadbalancer.server.port=80"
 
   portainer:
     # Business Edition -- licensed. Preserves portainer_data/admin account
