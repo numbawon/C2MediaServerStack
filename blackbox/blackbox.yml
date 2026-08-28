@@ -47,6 +47,26 @@ modules:
       query_type: "A"
       valid_rcodes: ["NOERROR"]
 
+  # Verifies Pi-hole is actually FILTERING, not merely answering. The
+  # dns_a module above passes just as happily when Pi-hole has been
+  # bypassed and something upstream is resolving instead -- a query
+  # succeeding says nothing about whether the blocklists were applied.
+  #
+  # doubleclick.net is on the default gravity lists and is not going to
+  # be removed from them. A blocked answer is 0.0.0.0 (or :: for AAAA);
+  # a real routable address means the query reached a resolver that is
+  # not Pi-hole, or Pi-hole stopped blocking.
+  dns_blocked:
+    prober: dns
+    timeout: 8s
+    dns:
+      query_name: "doubleclick.net"
+      query_type: "A"
+      valid_rcodes: ["NOERROR"]
+      validate_answer_rrs:
+        fail_if_not_matches_regexp:
+          - ".*\\s+0\\.0\\.0\\.0$"
+
   # The AAAA half, which is what actually broke. Alerting on this gives
   # the answer directly instead of via a musl resolver failure three
   # layers downstream.

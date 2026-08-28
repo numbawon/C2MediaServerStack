@@ -64,6 +64,14 @@ cat > "$OUT/blackbox-dns.json" <<JSON
 ]
 JSON
 
+# Only Pi-hole: the router does not block, so probing it here would
+# fail by design and produce a permanently-firing alert.
+cat > "$OUT/blackbox-dns-blocked.json" <<JSON
+[
+  { "targets": ["${COMMON_LAN_IP}"], "labels": { "resolver": "pihole" } }
+]
+JSON
+
 cat > "$OUT/blackbox-dns-aaaa.json" <<JSON
 [
   { "targets": ["${COMMON_LAN_IP}"], "labels": { "resolver": "pihole" } },
