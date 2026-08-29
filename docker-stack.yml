@@ -1044,7 +1044,14 @@ services:
       # directory rather than being pointed at Pictures, where it would
       # scatter six internal folders across 228 existing photos and still
       # not import a single one of them.
-      - ${COMMON_MEDIA}/Immich:/data
+      #
+      # It lives under COMMON_APPDATA, not COMMON_MEDIA. It is Immich's
+      # bookkeeping, not a library: it has no business sitting next to
+      # Movies and TV, and Plex and the *arr scanners should never walk
+      # it. It still needs to be on the array rather than in a named
+      # volume, because every photo anyone uploads lands here and the OS
+      # SSD has no room to grow into.
+      - ${COMMON_APPDATA}/immich:/data
       # The existing photos are exposed read-only as an External Library
       # instead, which is the mechanism for indexing files in place.
       # Add it in Immich under Administration -> External Libraries with
