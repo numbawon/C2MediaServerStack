@@ -991,6 +991,26 @@ Prometheus (rules/) --> Alertmanager --> alert-relay --> ntfy --> phone
 - **Rules** are in `prometheus/rules/alerts.yml`, kept deliberately
   small. A noisy alerting system gets muted, and a muted one is worse
   than none because you believe you have one.
+- **Editing a rule is not enough to apply it.** The rules directory is a
+  bind mount, so the new file is inside the container immediately, but
+  Prometheus only re-reads it on SIGHUP. `docker stack deploy` will not
+  do it either: if nothing in the service spec changed, Swarm leaves the
+  running task alone and the old rules keep evaluating against the old
+  thresholds, with no warning anywhere that the file on disk and the
+  rules in memory have diverged. After editing:
+
+  ```bash
+  docker run --rm -v "$PWD/prometheus:/p" --entrypoint promtool \
+    prom/prometheus:latest check rules /p/rules/alerts.yml
+  docker kill -s HUP "$(docker ps -qf name=mediastack_prometheus)"
+  ```
+
+  Then confirm what is actually loaded, not what is on disk:
+  `wget -qO- http://localhost:9090/api/v1/rules` from inside the
+  container. The HTTP `/-/reload` endpoint returns 403 here, because
+  `--web.enable-lifecycle` is deliberately not set: it would let anything
+  that can reach port 9090 on the `edge` overlay reload or shut down
+  Prometheus, and SIGHUP already does the job from the host.
 - **`Watchdog`** always fires and is routed to a dead-end receiver, so
   it never notifies. Its job is to be *visible in Alertmanager's UI*.
   If you look and it is missing, the alert pipeline itself is broken --
