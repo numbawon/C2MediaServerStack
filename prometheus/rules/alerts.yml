@@ -96,73 +96,64 @@ groups:
           description: >-
             Postgres and Docker will start failing writes shortly.
 
-      # Media library (/mnt/Storage, /dev/sde1, 7.2 TiB). Thresholds are
-      # sized against a single large release: a 4K film runs 60-80 GB,
-      # so 250 GB is "a few more grabs left" and 75 GB is "the next one
-      # probably fails mid-import".
+      # The array (/mnt/Media, btrfs across sda/sdb/sdc, 10.9 TiB).
+      # Library, downloads and completed all share this one filesystem
+      # so imports can hardlink, which also means there is exactly one
+      # number to watch instead of two. Thresholds are sized against a
+      # single large release: a 4K film runs 60-80 GB, so 250 GB is
+      # "a few more grabs left" and 75 GB is "the next one probably
+      # fails mid-import".
+      #
+      # There is deliberately no separate "downloads not clearing"
+      # alert any more. That used to be inferable because downloads had
+      # their own filesystem; now a stalled import queue just looks like
+      # the array filling, and the *arr queues are where you would look
+      # either way.
       - alert: MediaStorageFilling
-        expr: node_filesystem_avail_bytes{mountpoint="/mnt/Storage"} < 250e9
+        expr: node_filesystem_avail_bytes{mountpoint="/mnt/Media"} < 250e9
         for: 1h
         labels:
           severity: warning
         annotations:
           summary: "Media storage below 250 GB free"
           description: >-
-            /mnt/Storage is filling up. The *arr apps will keep grabbing
-            until it is full and then start failing imports.
+            /mnt/Media is filling up. The *arr apps will keep grabbing
+            until it is full and then start failing imports. Check the
+            import queues too, not just disk usage.
 
       - alert: MediaStorageCritical
-        expr: node_filesystem_avail_bytes{mountpoint="/mnt/Storage"} < 75e9
+        expr: node_filesystem_avail_bytes{mountpoint="/mnt/Media"} < 75e9
         for: 15m
         labels:
           severity: critical
         annotations:
           summary: "Media storage below 75 GB free"
           description: >-
-            /mnt/Storage has no room for another large release. Imports
+            /mnt/Media has no room for another large release. Imports
             will fail and partially-moved files can be left behind.
 
-      # Download array (/mnt/Storage/Downloads, /dev/md126, 10.4 TiB).
-      # This one is transient by nature -- things land here and move
-      # out -- so a sustained fill means the move is not happening,
-      # which is a different failure from the library simply being full.
-      - alert: DownloadStorageFilling
-        expr: >-
-          node_filesystem_avail_bytes{mountpoint="/mnt/Storage/Downloads"} < 500e9
-        for: 1h
-        labels:
-          severity: warning
-        annotations:
-          summary: "Download array below 500 GB free"
-          description: >-
-            Downloads are accumulating rather than being imported and
-            cleared. Check the *arr import queues, not just disk usage.
-
-      - alert: DownloadStorageCritical
-        expr: >-
-          node_filesystem_avail_bytes{mountpoint="/mnt/Storage/Downloads"} < 100e9
-        for: 15m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Download array below 100 GB free"
-          description: >-
-            qBittorrent will start erroring on new torrents.
-
-      # /mnt/Storage/Downloads is an md RAID array. A degraded array is
-      # silent until the next disk goes and takes the data with it,
-      # which is exactly the "something real is wrong in the house"
-      # case this alerting exists for.
-      - alert: RaidArrayDegraded
-        expr: node_md_disks{state="failed"} > 0
+      # The array is btrfs -d single -m raid1: metadata is mirrored, but
+      # file data is not, so losing one disk loses whatever extents were
+      # allocated on it rather than the whole filesystem. btrfs records
+      # per-device read/write/flush/corruption counters and keeps serving
+      # reads regardless, so this is silent until something goes to read
+      # a file that is already gone.
+      #
+      # increase() rather than > 0 because these counters never reset
+      # short of `btrfs device stats -z`, so a bare threshold would latch
+      # on forever after a single historical blip.
+      - alert: BtrfsDeviceErrors
+        expr: increase(node_btrfs_device_errors_total[1h]) > 0
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "RAID array {{ $labels.device }} has a failed disk"
+          summary: "btrfs {{ $labels.type }} errors on {{ $labels.device }}"
           description: >-
-            The array is running degraded. Replace the disk before
-            another one fails.
+            The array logged new {{ $labels.type }} errors on
+            {{ $labels.device }}. Run `btrfs device stats /mnt/Media` and
+            check SMART. Data is -d single, so a failing disk takes its
+            share of the files with it.
 
       - alert: HostMemoryPressure
         expr: >-

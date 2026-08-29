@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fast local snapshot of every app's config volume. Does NOT back up media
-# (/mnt/Storage/Media) -- too large, and it's not ephemeral state. Does NOT
+# (/mnt/Media) -- too large, and it's not ephemeral state. Does NOT
 # back up secret values either (Swarm secrets can't be exported by design) --
 # that's what scripts/backup-offsite.sh + init-secrets.sh together cover:
 # restic keeps an encrypted, restorable copy; a lost Swarm secret can also
@@ -20,10 +20,10 @@ if [ -f .env ]; then
 fi
 
 # Default deliberately lives on a DIFFERENT physical device from the
-# media library. Writing a backup to the same disk it is backing up
-# protects against nothing except an accidental delete: a drive failure
-# takes the original and the copy together.
-DEST="${1:-${COMMON_BACKUP_LOCAL:-/mnt/Storage/Downloads/Backups/local}}"
+# volumes being snapshotted. Everything in VOLUMES below is a Docker
+# named volume on the OS SSD; the array is a separate set of spindles, so
+# an SSD failure does not take the original and the copy together.
+DEST="${1:-${COMMON_BACKUP_LOCAL:-/mnt/Media/.backups/local}}"
 STAMP="$(date +%Y-%m-%d_%H%M%S)"
 OUT="$DEST/$STAMP"
 mkdir -p "$OUT"

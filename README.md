@@ -485,12 +485,46 @@ Movies/          -> Radarr, Plex, Bazarr
 TV/              -> Sonarr, Plex, Bazarr
 Music/           -> Lidarr, Plex, Navidrome
 EBooks/          -> LazyLibrarian, Plex
+Pictures/        -> Immich, as a read-only External Library
 (anything else)  -> Plex only, via its full data mount
 ```
 
 `COMMON_DOWNLOADS` and `COMMON_COMPLETED` (also set in `.env`) are
 qBittorrent's active/completed folders, also mounted into Sonarr/
 Radarr/Lidarr/LazyLibrarian so they can import finished downloads.
+
+**Keep all three on one filesystem.** The *arr apps import by hardlinking
+out of the download folder into the library, which only works within a
+single filesystem. Put the library on one mount and the downloads on
+another and every import silently becomes a full byte-for-byte copy that
+runs at disk speed, doubles the space used until the torrent is removed,
+and gives no error to tell you it happened. Here that filesystem is a
+single btrfs volume spanning three disks (`-d single -m raid1`), mounted
+at `/mnt/Media`, holding `Movies/`, `TV/`, ... alongside `Downloads/` and
+`Completed/`.
+
+### Things that are not libraries
+
+Two dot-prefixed directories sit at the array root:
+
+```
+.appdata/immich/   -> Immich's managed store (COMMON_APPDATA)
+.backups/local/    -> config-volume snapshots (COMMON_BACKUP_LOCAL)
+```
+
+They are dot-prefixed on purpose. Immich's store in particular is
+bookkeeping, not a library: it is `library/ upload/ thumbs/
+encoded-video/ profile/ backups/`, six internal folders that Immich owns
+and that mean nothing to anything else. Left at the library root it shows
+up in every `ls`, in Plex's folder picker, and in anything that walks the
+tree looking for media. It still has to be on the array rather than in a
+Docker named volume, because every photo the household uploads lands in
+it and the OS SSD has no room to grow into.
+
+The photos that already existed are a separate thing: they stay in
+`Pictures/` and Immich indexes them in place, read-only, as an External
+Library (`/external/pictures` inside the container). Nothing is moved
+into Immich's store, and a delete in the Immich UI cannot reach them.
 
 ## Backups
 
