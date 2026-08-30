@@ -526,6 +526,95 @@ The photos that already existed are a separate thing: they stay in
 Library (`/external/pictures` inside the container). Nothing is moved
 into Immich's store, and a delete in the Immich UI cannot reach them.
 
+## Local AI (Ollama + Open WebUI)
+
+`docker-compose.ai.yml`, deployed with `./scripts/deploy.sh ai`. Reachable
+at `ai.<domain>`, gated to the Admin and Contributor tiers.
+
+### Why it is not in the Swarm stack
+
+`docker stack deploy` ignores GPU reservations. It does not warn, it does
+not fail: the service comes up, works, and runs every model on the CPU at
+a fraction of the speed, with nothing anywhere reporting that the card is
+idle. Same reason Plex is a standalone compose.
+
+### The GPU wiring, and the trap in it
+
+`driver: nvidia` with `capabilities: [gpu]`, exactly what Plex uses. No
+`daemon.json` change and no Docker restart is needed, because
+`nvidia-container-toolkit`'s prestart hook injects the driver libraries
+and `nvidia-smi` into the container at start.
+
+That injection only works on glibc images. Point the identical block at an
+Alpine image and the `/dev/nvidia*` nodes appear, `nvidia-smi` does not,
+and CUDA never initialises. The device nodes showing up makes it look like
+the GPU passed through when nothing usable did. Ollama and Open WebUI are
+both Debian-based, so this is fine here, but do not assume it survives a
+switch to an Alpine variant.
+
+Docker 25+ also supports CDI directly (`--device nvidia.com/gpu=all`
+against the spec in `/etc/cdi/nvidia.yaml`), which does work on Alpine
+because it bind-mounts rather than running `ldconfig`. Compose does not
+drive that path the same way, which is why this uses the older reservation
+syntax.
+
+### Sizing, because 8 GB is the whole constraint
+
+The card reports 7.6 GiB total and about 6.4 GiB actually free, since the
+desktop session holds roughly 1.1 GB. An 8B model at Q4_K_M occupies
+around 4.9 GB loaded, which leaves well under 2 GB for KV cache. Three
+settings keep that from falling over, and none of them are the default:
+
+| Setting | Default | Why it is changed |
+| --- | --- | --- |
+| `OLLAMA_MAX_LOADED_MODELS=1` | several | A second model does not fit. |
+| `OLLAMA_NUM_PARALLEL=1` | 4 | Each slot gets its own KV cache. Four multiplies context memory by four and OOMs mid-generation. |
+| `OLLAMA_KEEP_ALIVE=5m` | 5m | Kept explicit: Plex transcodes on this same card, and a model idling in VRAM competes with NVENC. |
+
+Models live on the array (`COMMON_APPDATA/ollama`), not in a named volume.
+They are multi-GB each and the OS SSD has under 80 GB free.
+
+### Ollama has no authentication
+
+None. Not "weak", none: anything that can reach port 11434 can load
+models, run inference and delete them. So it is not on the `edge` overlay
+and has no Traefik router. It sits on a private bridge that only Open
+WebUI joins. If you ever give it a route, understand you are publishing an
+unauthenticated API.
+
+### OIDC
+
+Open WebUI does real OIDC against Authentik, so there is no
+`authentik@file` middleware in front of it, same as Immich and
+Audiobookshelf. Unlike those two it reads its credentials from environment
+variables rather than its own settings UI, so they live in `.env`.
+
+Roles come from the `groups` claim, the same pattern Portainer uses.
+`OAUTH_ALLOWED_ROLES=Admin,Contributor` decides who may sign in and
+`OAUTH_ADMIN_ROLES=Admin` decides who administers it. Adding `Family`
+to the first opens it to the whole household, which is worth thinking
+about rather than doing reflexively: everyone would be sharing one 8 GB
+card that Plex also transcodes on.
+
+The provider needs `grant_types` set explicitly. Creating one through the
+ORM leaves that field empty because no model default is applied, and the
+resulting failure is an opaque client error with nothing useful in the
+logs. This cost hours on Immich and Audiobookshelf; see the OIDC pitfalls
+section above.
+
+### A new hostname needs its own DNS record
+
+The tunnel ingress is already a wildcard (`*.<domain>` to Traefik), so
+adding a service needs no cloudflared config change. It does need a CNAME,
+which the wildcard does not provide:
+
+```bash
+cloudflared tunnel route dns mediastack ai.yourdomain.com
+```
+
+Without it the name simply does not resolve, which looks like the service
+being down rather than like a missing record.
+
 ## Backups
 
 - **Local** (`scripts/backup-local.sh`): tars every app's config volume
