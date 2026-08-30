@@ -104,13 +104,33 @@ services:
       - ENABLE_OAUTH_ROLE_MANAGEMENT=true
       - OAUTH_ROLES_CLAIM=groups
       # Real Authentik group names (Admin / Contributor / Metrics /
-      # Family), matching the access-tier table in the README. This lands
-      # AI on the Media-management tier. Adding Family here is the
-      # one-line change that opens it to the whole household, which is
-      # worth thinking about first: everyone shares one 8 GB card that
-      # Plex also transcodes on.
-      - OAUTH_ALLOWED_ROLES=Admin,Contributor
+      # Family), matching the access-tier table in the README. Family is
+      # included: this is open to the whole household. Everyone shares one
+      # 8 GB card that Plex also transcodes on, and MAX_LOADED_MODELS=1
+      # below means concurrent requests queue rather than run in parallel.
+      - OAUTH_ALLOWED_ROLES=Admin,Contributor,Family
       - OAUTH_ADMIN_ROLES=Admin
+
+      # --- Household visibility ----------------------------------------
+      # This instance exists partly to teach kids how to use AI well, so
+      # an admin needs to be able to read back what was actually asked.
+      # Three settings decide whether that is possible at all, and the
+      # defaults on two of them make it not.
+      #
+      # ENABLE_ADMIN_CHAT_ACCESS is already true by default; it is stated
+      # explicitly so a future upstream default change is visible here
+      # rather than silently removing the capability.
+      - ENABLE_ADMIN_CHAT_ACCESS=true
+      #
+      # CHAT_TEMPORARY is the one that matters most. Left on, any user can
+      # flip "Temporary Chat" in the UI and that conversation is never
+      # written to the database at all. Not hidden, not private: absent.
+      # No amount of admin access recovers it.
+      - USER_PERMISSIONS_CHAT_TEMPORARY=false
+      #
+      # And a saved chat that can be deleted is only a record until
+      # someone decides otherwise.
+      - USER_PERMISSIONS_CHAT_DELETE=false
     volumes:
       - open_webui_data:/app/backend/data
     networks:

@@ -590,11 +590,37 @@ Audiobookshelf. Unlike those two it reads its credentials from environment
 variables rather than its own settings UI, so they live in `.env`.
 
 Roles come from the `groups` claim, the same pattern Portainer uses.
-`OAUTH_ALLOWED_ROLES=Admin,Contributor` decides who may sign in and
-`OAUTH_ADMIN_ROLES=Admin` decides who administers it. Adding `Family`
-to the first opens it to the whole household, which is worth thinking
-about rather than doing reflexively: everyone would be sharing one 8 GB
-card that Plex also transcodes on.
+`OAUTH_ALLOWED_ROLES=Admin,Contributor,Family` decides who may sign in and
+`OAUTH_ADMIN_ROLES=Admin` decides who administers it. `Family` is included
+deliberately: this is open to the whole household. Everyone shares one
+8 GB card that Plex also transcodes on, and `MAX_LOADED_MODELS=1` means
+concurrent requests queue rather than run in parallel.
+
+### Household visibility
+
+Part of why this exists is to teach kids to use AI well, which means an
+admin has to be able to read back what was actually asked. Three settings
+decide whether that is possible, and two of them default against it:
+
+| Setting | Default | Set to | Effect |
+| --- | --- | --- | --- |
+| `ENABLE_ADMIN_CHAT_ACCESS` | true | true | Admins can read any user's chats. Stated explicitly so an upstream default change shows up here rather than silently removing the capability. |
+| `USER_PERMISSIONS_CHAT_TEMPORARY` | true | **false** | Left on, any user flips "Temporary Chat" in the UI and that conversation is never written to the database. |
+| `USER_PERMISSIONS_CHAT_DELETE` | true | **false** | A saved chat that can be deleted is a record only until someone decides otherwise. |
+
+Temporary Chat is the one that matters. It is a single toggle in the chat
+UI, it is on by default, and a conversation held that way is not hidden or
+private, it is absent. No amount of admin access recovers it afterwards,
+because nothing was ever stored.
+
+`USER_PERMISSIONS_CHAT_DELETE_MESSAGE` is left at its default of true, so
+individual messages can still be removed from a conversation. Turn it off
+too if whole-conversation integrity matters more than letting someone
+clean up a bad prompt.
+
+Worth knowing when you decide how to handle this with the household: Open
+WebUI shows users no indication that an administrator can read their
+conversations. Nothing in the interface says so.
 
 The provider needs `grant_types` set explicitly. Creating one through the
 ORM leaves that field empty because no model default is applied, and the
