@@ -131,6 +131,19 @@ services:
       # And a saved chat that can be deleted is only a record until
       # someone decides otherwise.
       - USER_PERMISSIONS_CHAT_DELETE=false
+      #
+      # Open WebUI tells users nothing about any of the above. Since the
+      # point here is teaching people to notice how monitored these tools
+      # are, having this instance quietly be the exception would teach the
+      # opposite. dismissible:false keeps it visible rather than something
+      # you click away once and never see again. This is the same notice a
+      # school or employer tenant would show, which is the lesson.
+      - >-
+        WEBUI_BANNERS=[{"id":"monitored","type":"info","title":"These
+        conversations are saved","content":"An administrator can read
+        anything you type here. That is true of nearly every AI tool at a
+        school or a job too, whether or not it says so. Assume someone can
+        read it, and write accordingly.","dismissible":false,"timestamp":0}]
     volumes:
       - open_webui_data:/app/backend/data
     networks:
