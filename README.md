@@ -653,6 +653,54 @@ cloudflared tunnel route dns mediastack ai.yourdomain.com
 Without it the name simply does not resolve, which looks like the service
 being down rather than like a missing record.
 
+## File naming
+
+Target scheme: `Title (Year) [1080p]`, spaces rather than periods.
+
+Both apps ship with renaming **off**, which is why imports keep their
+period-separated release names. Turning it on is the actual fix, and it is
+not retroactive: existing files move only when you trigger a rename.
+
+### Why a script is involved
+
+Neither app has a bare-resolution token. The complete set is
+`{Quality Title}`, `{Quality Full}` and the `{MediaInfo *}` family, and
+none render a plain `1080p` -- `{Quality Title}` gives `HDTV-1080p`.
+
+The native workaround does not survive contact either. Quality *titles*
+are editable and `{Quality Title}` renders the title, so renaming them all
+to `1080p` would need no script at all. Titles must be unique: setting
+`HDTV-1080p` to `1080p` is accepted, setting `WEBDL-1080p` to the same
+thing is silently refused and the old value stays. Only one quality per
+resolution can carry the name.
+
+So `scripts/arr/strip-quality-source.sh` lets the app name the file, then
+rewrites `[Bluray-1080p]` to `[1080p]` and tells the app where the file
+went. It is wired as a Custom Script connection on **Download, Upgrade and
+Rename**. Rename matters: the app's format still says `[{Quality Title}]`,
+so a manual "Rename Files" would otherwise put the source straight back.
+With the trigger wired, the app immediately undoes its own work.
+
+To fix files that predate this, or after any bulk operation:
+
+```bash
+docker exec radarr /scripts/strip-quality-source.sh --all
+docker exec sonarr /scripts/strip-quality-source.sh --all
+```
+
+### Two constraints worth knowing
+
+**Quality tokens are rejected in folder names.** Radarr answers a folder
+format containing `{Quality Title}` with a 400 naming the token, so
+`Title (Year) [1080p]/` is not producible. Folders get `{Movie Title}
+({Release Year})` and only the file carries the resolution.
+
+**UrlBase is set to the hostname** on both apps (`radarr.<domain>`), so
+every API path is prefixed and `/api/v3/...` answers 307. A PUT that
+follows that redirect arrives with its body dropped and fails as an opaque
+400. The script reads `UrlBase` out of `config.xml` rather than assuming
+it is empty; anything else talking to these APIs needs to do the same.
+
 ## Backups
 
 - **Local** (`scripts/backup-local.sh`): tars every app's config volume
