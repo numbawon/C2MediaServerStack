@@ -59,6 +59,41 @@ log() { echo "[$LOG_TAG] $*"; }
 #   [x265 DTS]     -> untouched    not a quality bracket at all
 STRIP_RE='s/\[[A-Za-z]+-([0-9]+p)\]/[\1]/g'
 
+# Extensions deleted from a media folder on import. Release groups ship
+# spam beside the video -- www.YTS.MX.jpg, YTSProxies.com.txt,
+# donate_to_help.txt, screenshot folders -- and a loose image is the one
+# that does damage: Plex will use a jpg in a movie folder as the poster,
+# which is how a torrent site logo becomes cover art.
+#
+# Plex is also configured with useLocalAssets=false, so it ignores these
+# anyway. This is the second layer: nothing arrives, rather than arriving
+# and being ignored. Posters are added deliberately through Plex later,
+# never by whatever happened to be in a torrent.
+#
+# Subtitles are NOT in this list. srt/sub/idx are wanted.
+JUNK_EXT="jpg jpeg png gif bmp nfo txt url sfv md5 srr exe lnk"
+
+purge_junk() {  # $1 = directory
+  local dir="$1" ext f
+  [ -d "$dir" ] || return 0
+
+  # Recursive, not just the top level. Release "Screens" and "Proof"
+  # folders put their images one level down, and a shallow sweep leaves
+  # exactly the artwork Plex is most likely to latch onto.
+  local -a args=()
+  for ext in $JUNK_EXT; do args+=( -iname "*.$ext" -o ); done
+  unset 'args[${#args[@]}-1]'   # trailing -o
+
+  find "$dir" -type f \( "${args[@]}" \) -print0 2>/dev/null |
+    while IFS= read -r -d '' f; do
+      rm -f -- "$f" && log "deleted junk: ${f#"$dir"/}"
+    done
+
+  # Then the now-empty directories they lived in. Only empties, so a
+  # folder still holding anything real is never touched.
+  find "$dir" -mindepth 1 -type d -empty -delete 2>/dev/null
+}
+
 strip_name() { printf '%s' "$1" | sed -E "$STRIP_RE"; }
 
 # Rename a single path if its basename changes. Result lands in the
@@ -167,6 +202,7 @@ if [ "$APP" = radarr ]; then
   # (subtitles, nfo) to match, and leaving those behind would split the
   # naming scheme across a single movie.
   if [ -d "$FOLDER" ]; then
+    purge_junk "$FOLDER"
     for f in "$FOLDER"/*; do [ -f "$f" ] && rename_if_needed "$f"; done
   elif [ -n "$FILE" ]; then
     rename_if_needed "$FILE"
@@ -209,6 +245,7 @@ else
   # carries no quality, and season folders carry none either, so there is
   # nothing above the file to rewrite.
   DIR=$(dirname "$FILE")
+  purge_junk "$DIR"
   for f in "$DIR"/*; do
     [ -f "$f" ] || continue
     case "$(basename "$f")" in
