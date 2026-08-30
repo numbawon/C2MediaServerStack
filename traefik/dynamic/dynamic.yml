@@ -130,6 +130,20 @@ http:
         - web
       service: plex
 
+    # Open WebUI is NOT behind the authentik middleware, deliberately.
+    # It does real OIDC against Authentik itself (see
+    # docker-compose.ai.yml), so forward-auth on top would mean signing in
+    # twice for one app. Same reasoning as Immich and Audiobookshelf.
+    #
+    # Note what is absent: there is no router for ollama. Its API is
+    # unauthenticated, so it is reachable only from Open WebUI over a
+    # private bridge and has no route in or out of here.
+    open-webui:
+      rule: 'Host(`ai.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+      service: open-webui
+
     overseerr-to-seerr:
       rule: 'Host(`overseerr.{{ env "COMMON_DOMAIN" }}`)'
       entryPoints:
@@ -191,6 +205,11 @@ http:
       loadBalancer:
         servers:
           - url: "http://plex:32400"
+
+    open-webui:
+      loadBalancer:
+        servers:
+          - url: "http://open-webui:8080"
 
     seerr-redirect-target:
       loadBalancer:
