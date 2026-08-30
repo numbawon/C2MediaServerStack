@@ -745,9 +745,17 @@ and cannot be confused by anything sitting beside the file. The trade is
 that deliberate local `poster.jpg` / `fanart.jpg` stop working too, which
 is the point rather than a side effect.
 
-Files that predate this were moved, not deleted, to
-`COMMON_APPDATA/quarantine`, keeping their original paths so anything
-removed by mistake can be put back.
+There is a fourth layer, because "Plex ignores it" still leaves it on
+disk. `strip-quality-source.sh` deletes junk from the media folder on
+import: `jpg jpeg png gif bmp nfo txt url sfv md5 srr exe lnk`, recursively,
+then removes the directories it emptied. Recursive matters -- release
+"Screens" and "Proof" folders put their images one level down, and a
+shallow sweep leaves exactly the artwork Plex is most likely to latch on
+to. Subtitles are not in the list: `srt`, `sub` and `idx` are kept.
+
+Posters are added deliberately through Plex afterwards, never by whatever
+happened to be in a torrent. Nothing between the download and the library
+puts one there.
 
 Note on repairing artwork that is already wrong: a **forced** metadata
 refresh (`?force=1`) re-fetches everything and discards metadata you have
