@@ -147,6 +147,9 @@ services:
       - sonarr_config:/config
       - ${COMMON_MEDIA}/TV:/tv
       - ${COMMON_DOWNLOADS}:/downloads
+      # Post-import naming fixup, wired as a Custom Script connection.
+      # Read-only: the app runs it, it must not be editable from inside.
+      - ./scripts/arr:/scripts:ro
     restart: unless-stopped
 
   radarr:
@@ -163,6 +166,9 @@ services:
       - radarr_config:/config
       - ${COMMON_MEDIA}/Movies:/movies
       - ${COMMON_DOWNLOADS}:/downloads
+      # Post-import naming fixup, wired as a Custom Script connection.
+      # Read-only: the app runs it, it must not be editable from inside.
+      - ./scripts/arr:/scripts:ro
     restart: unless-stopped
 
   lazylibrarian:
