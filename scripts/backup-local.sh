@@ -20,10 +20,10 @@ if [ -f .env ]; then
 fi
 
 # Default deliberately lives on a DIFFERENT physical device from the
-# volumes being snapshotted. Everything in VOLUMES below is a Docker
-# named volume on the OS SSD; the array is a separate set of spindles, so
-# an SSD failure does not take the original and the copy together.
-DEST="${1:-${COMMON_BACKUP_LOCAL:-/mnt/Media/.backups/local}}"
+# volumes being snapshotted. Everything in VOLUMES below is a Docker named
+# volume on the OS SSD, the media is on the array, and this lands on a
+# third disk -- so no single failure takes both an original and its copy.
+DEST="${1:-${COMMON_BACKUP_LOCAL:-/mnt/Storage/.backups/local}}"
 STAMP="$(date +%Y-%m-%d_%H%M%S)"
 OUT="$DEST/$STAMP"
 mkdir -p "$OUT"
