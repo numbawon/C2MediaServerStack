@@ -850,9 +850,19 @@ environment variables:
   After enabling OIDC it asks you to *link* the account. That is not
   access control, Authentik's group binding already handles that; it
   ties the OIDC identity to the existing local account so they are one
-  user. Do it before turning on `oidcExclusiveMode`, which disables the
-  local password path entirely and will lock you out if the linked
-  identity is not an admin.
+  user. Do it before turning on `oidcExclusiveMode`.
+
+  `oidcExclusiveMode` is **on** here, which means the local password path
+  is gone. Cleanuparr is now reachable only while Authentik can complete
+  an authorization, so an Authentik outage or the linked identity losing
+  its `Admin` binding locks the app entirely. That is the intended trade
+  (one identity, no second credential to leak), but it means recovery is
+  a host-level job: stop the container and clear the flag in
+  `cleanuparr_config`'s SQLite, or fix Authentik. There is no in-app back
+  door, by design.
+
+  Organizarr reads this state from `/api/auth/status` and shows it on the
+  Cleanuparr card, so "OIDC, exclusive" is visible without opening the app.
 
 - **Audiobookshelf**: Settings -> Authentication -> enable OpenID
   Connect. Paste the issuer URL and click Auto-populate, then fill in
