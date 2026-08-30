@@ -154,6 +154,15 @@ services:
         target: "_blank"
         subtitle: "Admins only"
 
+  - name: "AI"
+    icon: "fas fa-robot"
+    items:
+      - name: "Open WebUI"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/open-webui.svg"
+        url: "https://ai.example.com"
+        subtitle: "Local models on the GPU. Conversations are saved."
+        target: "_blank"
+
   - name: "Monitoring"
     icon: "fas fa-chart-line"
     items:
