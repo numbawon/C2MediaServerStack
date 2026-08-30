@@ -154,14 +154,18 @@ services:
         target: "_blank"
         subtitle: "Admins only"
 
-  - name: "AI"
-    icon: "fas fa-robot"
-    items:
-      - name: "Open WebUI"
-        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/open-webui.svg"
-        url: "https://ai.example.com"
-        subtitle: "Local models on the GPU. Conversations are saved."
-        target: "_blank"
+  # AI is parked. docker-compose.ai.yml is down, so this link would 502.
+  # Uncomment when it comes back, and if it moves to its own machine
+  # change the open-webui service URL in traefik/dynamic/dynamic.yml from
+  # the container name to that host's address.
+  # - name: "AI"
+  #   icon: "fas fa-robot"
+  #   items:
+  #     - name: "Open WebUI"
+  #       logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/open-webui.svg"
+  #       url: "https://ai.example.com"
+  #       subtitle: "Local models on the GPU. Conversations are saved."
+  #       target: "_blank"
 
   - name: "Monitoring"
     icon: "fas fa-chart-line"
