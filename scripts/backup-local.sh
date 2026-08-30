@@ -44,6 +44,11 @@ VOLUMES=(
   recyclarr_config cleanuparr_config
   audiobookshelf_config audiobookshelf_metadata
   immich_db_data
+  # open_webui_data holds every account and every saved conversation.
+  # docker-compose.ai.yml is parked, so this volume is near-empty today
+  # and tars in seconds -- listed now because the moment it stops being
+  # near-empty is exactly when nobody will think to add it.
+  open_webui_data
 )
 
 # Per-volume tar exclusions for content the app regenerates on its next
