@@ -966,6 +966,18 @@ services:
   #
   # On `edge` for the same reason as Recyclarr, plus it needs qbittorrent,
   # which is also a vpn-client alias.
+  #
+  # NO authentik@file middleware, deliberately. Cleanuparr does real OIDC
+  # against Authentik itself, so forward-auth on top meant signing in
+  # twice for one app. Same choice as Immich, Audiobookshelf and Open
+  # WebUI. Access control did not move to the app: the `Cleanuparr`
+  # application in Authentik is bound to the Admin group, so the
+  # authorization step still decides who gets in.
+  #
+  # Its OIDC "redirect url" setting takes the app's BASE url
+  # (https://cleanuparr.<domain>), not a callback path. Cleanuparr
+  # appends /api/auth/oidc/callback itself, and giving it the full path
+  # produces a doubled URI that fails as redirect_uri mismatch.
   # ---------------------------------------------------------------------
   cleanuparr:
     image: ghcr.io/cleanuparr/cleanuparr:latest
@@ -983,7 +995,7 @@ services:
         - "traefik.enable=true"
         - "traefik.http.routers.cleanuparr.rule=Host(`cleanuparr.${COMMON_DOMAIN}`)"
         - "traefik.http.routers.cleanuparr.entrypoints=web"
-        - "traefik.http.routers.cleanuparr.middlewares=authentik@file"
+        # No authentik@file -- see the block comment above.
         - "traefik.http.services.cleanuparr.loadbalancer.server.port=11011"
 
   # ---------------------------------------------------------------------

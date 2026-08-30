@@ -103,10 +103,14 @@ never needs membership in the narrower groups.
 
 | Tier | Group(s) bound | Apps |
 | --- | --- | --- |
-| Infrastructure | `Admin` | Portainer, Traefik dashboard, web terminal, Pi-hole, Organizarr |
+| Infrastructure | `Admin` | Portainer, Traefik dashboard, web terminal, Pi-hole, Organizarr, Cleanuparr* |
 | Media management | `Admin`, `Contributor` | Prowlarr, Sonarr, Radarr, Lidarr, LazyLibrarian, Bazarr, qBittorrent |
 | Monitoring | `Admin`, `Metrics` | Grafana, Prometheus, Tautulli |
 | Household | none (domain-level) | Seerr, Navidrome, Homer |
+
+*Cleanuparr is bound to `Admin` like the rest of that row, but reaches it
+through its own OIDC login rather than the forward-auth gate. The group
+binding still decides who gets in; only the mechanism differs.
 
 `Contributor` is for someone who genuinely helps run the library: they
 can add indexers, manage every `*arr` app, and see the download queue.
@@ -820,6 +824,8 @@ complete a browser login redirect.**
 | ntfy | Android app holds a persistent connection | Cloudflare Access service token + ntfy tokens |
 | Audiobookshelf | mobile app | native OIDC against Authentik |
 | Immich | mobile app | native OIDC against Authentik |
+| Open WebUI | has real OIDC, gate would be a second login | native OIDC, `Admin`/`Contributor`/`Family` via groups claim |
+| Cleanuparr | has real OIDC, gate would be a second login | native OIDC, `Admin` binding on the Authentik application |
 
 Putting the forward-auth gate in front of any of them does not "add
 security", it breaks the app: every API call gets bounced to a login
@@ -831,6 +837,22 @@ Authentik side is already created (`Audiobookshelf OIDC`, `Immich OIDC`
 providers plus their applications); the app side is configured in each
 app's own UI after first boot, because neither accepts OIDC settings as
 environment variables:
+
+- **Cleanuparr**: Settings -> Authentication -> OIDC. One field is a
+  trap: its "redirect url" wants the app's BASE url
+  (`https://cleanuparr.<domain>`), not a callback path. Cleanuparr
+  appends `/api/auth/oidc/callback` itself, so pasting the full callback
+  produces `.../oidc/callback/api/auth/oidc/callback` and fails as a
+  redirect_uri mismatch with nothing in the logs explaining why. The way
+  to see what it actually sends is to POST to `/api/auth/oidc/start`,
+  which returns the authorization URL it built.
+
+  After enabling OIDC it asks you to *link* the account. That is not
+  access control, Authentik's group binding already handles that; it
+  ties the OIDC identity to the existing local account so they are one
+  user. Do it before turning on `oidcExclusiveMode`, which disables the
+  local password path entirely and will lock you out if the linked
+  identity is not an admin.
 
 - **Audiobookshelf**: Settings -> Authentication -> enable OpenID
   Connect. Paste the issuer URL and click Auto-populate, then fill in
