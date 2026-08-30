@@ -618,9 +618,17 @@ individual messages can still be removed from a conversation. Turn it off
 too if whole-conversation integrity matters more than letting someone
 clean up a bad prompt.
 
-Worth knowing when you decide how to handle this with the household: Open
-WebUI shows users no indication that an administrator can read their
-conversations. Nothing in the interface says so.
+Open WebUI shows users no indication that an administrator can read their
+conversations, so `WEBUI_BANNERS` adds one. It is set `dismissible: false`
+deliberately: a notice you click away once and never see again is not a
+notice.
+
+That banner is not a legal formality, it is the actual lesson. These tools
+are monitored in nearly every school and workplace tenant, usually without
+saying so anywhere in the interface. An instance that quietly behaved
+better than that would teach exactly the wrong instinct. Knowing to assume
+someone can read it is the transferable skill; this is just the one place
+where the assumption is stated out loud.
 
 The provider needs `grant_types` set explicitly. Creating one through the
 ORM leaves that field empty because no model default is applied, and the
