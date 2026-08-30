@@ -688,6 +688,27 @@ docker exec radarr /scripts/strip-quality-source.sh --all
 docker exec sonarr /scripts/strip-quality-source.sh --all
 ```
 
+### TV folders
+
+```
+Show Name (2010)/
+  S01/
+    Show Name (2010) - S01E01 - Episode Title [1080p].mkv
+  Specials/
+```
+
+Series folders cannot carry the resolution, and it is worth knowing why
+the two apps fail differently. Radarr rejects a quality token in a folder
+format outright, with a 400 naming the token. Sonarr accepts it and then
+renders nothing: `The Series Title's! []`. A series folder is created when
+the series is added, before a single file exists, so there is no quality
+to resolve. It would also be a claim that does not survive a season
+arriving at a different resolution.
+
+Season folders are `S{season:00}`, chosen because that is what is already
+on disk. `Season {season:00}` reads no better and would relocate every
+episode in the library to say so.
+
 ### Two constraints worth knowing
 
 **Quality tokens are rejected in folder names.** Radarr answers a folder
@@ -700,6 +721,38 @@ every API path is prefixed and `/api/v3/...` answers 307. A PUT that
 follows that redirect arrives with its body dropped and fails as an opaque
 400. The script reads `UrlBase` out of `config.xml` rather than assuming
 it is empty; anything else talking to these APIs needs to do the same.
+
+## Metadata Plex should ignore
+
+Release groups leave things next to the video: `www.YTS.MX.jpg`,
+`YTSProxies.com.txt`, `donate_to_help.txt`, screenshot folders, and
+`tvshow.nfo` written by other tools. A loose image in a movie folder is
+the one that actually bites, because Plex will happily use it as the
+poster.
+
+Three settings decide whether any of it reaches Plex, and all three are
+now set so none of it does:
+
+| Where | Setting | Value |
+| --- | --- | --- |
+| Radarr / Sonarr | `importExtraFiles` | false |
+| Radarr / Sonarr | metadata writers | all disabled |
+| Plex, Movies and TV | `useLocalAssets` | **false** |
+
+The Plex one is the decisive one. With it on, Plex reads `.nfo` files and
+loose artwork from the media folder; with it off it uses TMDB/TVDB only
+and cannot be confused by anything sitting beside the file. The trade is
+that deliberate local `poster.jpg` / `fanart.jpg` stop working too, which
+is the point rather than a side effect.
+
+Files that predate this were moved, not deleted, to
+`COMMON_APPDATA/quarantine`, keeping their original paths so anything
+removed by mistake can be put back.
+
+Note on repairing artwork that is already wrong: a **forced** metadata
+refresh (`?force=1`) re-fetches everything and discards metadata you have
+corrected by hand. A plain scan does not. Refresh individual items from
+the Plex UI rather than forcing a whole library.
 
 ## Backups
 
