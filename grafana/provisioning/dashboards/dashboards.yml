@@ -1,0 +1,22 @@
+apiVersion: 1
+
+# Dashboards are provisioned from files rather than created in the UI, so
+# they survive a rebuild of the grafana_data volume and live in git where
+# a change is reviewable.
+#
+# The JSON sits in this same directory because ./grafana/provisioning is
+# what the stack file mounts; a sibling ./grafana/dashboards would not be
+# visible inside the container.
+providers:
+  - name: mediastack
+    orgId: 1
+    folder: mediastack
+    type: file
+    # Editing in the UI is allowed, but anything saved there is overwritten
+    # on the next reload. Change the JSON in the repo to make it stick.
+    disableDeletion: false
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false
