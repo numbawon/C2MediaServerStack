@@ -1,7 +1,22 @@
 apiVersion: 1
 
+# deleteDatasources runs before datasources are created, and it is what
+# makes the pinned uid below possible. Grafana 13 treats a provisioned uid
+# that does not match the existing datasource as a FATAL provisioning
+# error and refuses to start, so the old entry has to go first.
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
+
 datasources:
   - name: Prometheus
+    # Pinned to the uid Grafana generated on first start. NOT cosmetic:
+    # the Docker, Node Exporter and Traefik dashboards were imported
+    # through the UI and hardcode this uid in every panel. Change it and
+    # those dashboards query a datasource that 404s, with no visible cause.
+    # Dashboards provisioned from this repo use a ${datasource} template
+    # variable instead, so they do not depend on this value.
+    uid: PBFA97CFB590B2093
     type: prometheus
     access: proxy
     url: http://prometheus:9090
