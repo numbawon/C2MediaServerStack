@@ -8,6 +8,7 @@
 #   ./scripts/deploy.sh plex        # docker compose -f docker-compose.plex.yml up -d
 #   ./scripts/deploy.sh dns         # docker compose -f docker-compose.dns.yml up -d (Pi-hole)
 #   ./scripts/deploy.sh ai          # docker compose -f docker-compose.ai.yml up -d (Ollama + Open WebUI)
+#   ./scripts/deploy.sh tdarr       # docker compose -f docker-compose.tdarr.yml up -d
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -31,8 +32,11 @@ case "${1:-}" in
   ai)
     docker compose -f docker-compose.ai.yml up -d
     ;;
+  tdarr)
+    docker compose -f docker-compose.tdarr.yml up -d
+    ;;
   *)
-    echo "Usage: $0 {stack|download|plex|dns|ai}" >&2
+    echo "Usage: $0 {stack|download|plex|dns|ai|tdarr}" >&2
     exit 1
     ;;
 esac

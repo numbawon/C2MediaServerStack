@@ -144,6 +144,17 @@ http:
         - web
       service: open-webui
 
+    # Tdarr rewrites files in the library, so it sits behind authentik with
+    # no exception. It has no SSO of its own -- its only built-in gate is a
+    # paid feature -- which means forward-auth is the whole of its security.
+    tdarr:
+      rule: 'Host(`tdarr.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+      middlewares:
+        - authentik
+      service: tdarr
+
     overseerr-to-seerr:
       rule: 'Host(`overseerr.{{ env "COMMON_DOMAIN" }}`)'
       entryPoints:
@@ -210,6 +221,13 @@ http:
       loadBalancer:
         servers:
           - url: "http://open-webui:8080"
+
+    # 8265 is the web UI. 8266 is the server API the node talks to; it stays
+    # on the overlay and is deliberately not routed.
+    tdarr:
+      loadBalancer:
+        servers:
+          - url: "http://tdarr:8265"
 
     seerr-redirect-target:
       loadBalancer:
