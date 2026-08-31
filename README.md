@@ -653,6 +653,36 @@ cloudflared tunnel route dns mediastack ai.yourdomain.com
 Without it the name simply does not resolve, which looks like the service
 being down rather than like a missing record.
 
+## When the VPN reconnects
+
+`qbittorrent`, `sonarr`, `radarr` and `lazylibrarian` run with
+`network_mode: service:vpn-client`, so they have no network stack of their
+own. When gluetun reconnects it builds a fresh `tun0`, and libtorrent
+stays bound to the interface that is now gone. qBittorrent then reports
+its OLD external address, sits at zero DHT nodes and transfers nothing,
+while still looking connected in its own UI.
+
+Observed: the exit IP moved and downloads stopped silently. Nothing
+alerted, because the container was up, the mounts were fine and no log
+line said anything. `docker restart qbittorrent` took it from
+`firewalled / 0 DHT nodes` to `connected / 292 nodes / 18 MB/s`.
+
+`scripts/vpn-watchdog.sh` on a two-minute timer closes that. It reads the
+public IP from inside the tunnel, and on a change restarts every container
+sharing the namespace and pushes to ntfy. Members are discovered from
+Docker rather than hardcoded, so a fifth app behind the VPN needs no edit.
+
+It does not use gluetun's control server (`/v1/publicip/ip` on :8000),
+which would be the obvious source: every endpoint answers 401 on this
+version, and enabling that auth means restarting gluetun, which drops all
+four dependent apps -- the exact outage this exists to avoid. Making one
+outbound request from inside the namespace is also a better test, since it
+proves traffic actually leaves through the tunnel rather than proving
+gluetun believes it should.
+
+If no provider answers, it reports and restarts nothing: that means the
+tunnel is down, and a restart does not fix a dead tunnel.
+
 ## File naming
 
 Target scheme: `Title (Year) [1080p]`, spaces rather than periods.
@@ -767,6 +797,58 @@ library as if they were albums.
 **Cover art is kept in the music library**, unlike Movies and TV. Plex's
 music section still has `useLocalAssets` on and Navidrome reads folder
 images, so `folder.jpg` is wanted here. Only text junk is removed.
+
+### Repairing music tags and artwork (beets)
+
+Audited across 7,583 tracks:
+
+```
+missing embedded art  4,733       album folders with no cover image at all  411
+missing date            406       missing title   117
+missing track           289       missing album   115
+                                  missing artist   84
+```
+
+So the gap is overwhelmingly artwork, not metadata. Core tags are largely
+fine. Navidrome and Plex both fall back to a folder image when there is no
+embedded one, so writing `cover.jpg` beside the tracks is what actually
+fixes a blank tile.
+
+`beets` does this and Lidarr does not: Lidarr organises and renames, it
+never repairs tags, which is why the gap exists despite Lidarr running.
+
+**It is configured for tags and artwork only.** The three lines that
+matter are in `beets/config.yaml`:
+
+```yaml
+import:
+  copy: no       # never duplicate into a new tree
+  move: no       # never relocate
+  write: yes     # do write corrected tags into the files
+```
+
+beets' default is to take ownership of the library and impose its own
+layout, which would delete the hand-built Artist/Albums/Live/Singles
+structure. There is deliberately no `paths:` block either, so a stray
+`beet move` has nothing to reorganise toward.
+
+The config is bind-mounted from the repo rather than living in the volume,
+so that guard is visible in git instead of being a setting somebody could
+change without leaving a trace.
+
+There is no schedule and no web UI. Retagging on a timer is how good tags
+get silently overwritten by a bad match at 3am. Run it by hand:
+
+```bash
+B=$(docker ps -qf name=mediastack_beets)
+docker exec -it $B beet version          # confirm all 7 plugins load
+docker exec -it $B beet import -A /music # -A = do not autotag, artwork only
+```
+
+One trap worth knowing: `fetchart`'s `sources` and `cover_names` must be
+YAML **lists**. Written as a space-separated string, beets 2.x reads the
+whole line as one source name and the plugin refuses to load. Nothing says
+so at runtime; the only symptom is `fetchart` missing from `beet version`.
 
 ## Metadata Plex should ignore
 

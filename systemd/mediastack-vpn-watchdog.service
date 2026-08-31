@@ -1,0 +1,15 @@
+# Replace youruser with your actual repo path before installing.
+#
+# Install:
+#   sudo cp systemd/mediastack-vpn-watchdog.{service,timer} /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mediastack-vpn-watchdog.timer
+[Unit]
+Description=mediastack VPN public-IP watchdog
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/youruser/C2MediaServerStack
+ExecStart=/home/youruser/C2MediaServerStack/scripts/vpn-watchdog.sh
