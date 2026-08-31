@@ -951,6 +951,52 @@ refresh (`?force=1`) re-fetches everything and discards metadata you have
 corrected by hand. A plain scan does not. Refresh individual items from
 the Plex UI rather than forcing a whole library.
 
+## Flood
+
+A second web UI for qBittorrent at `flood.<domain>`, beside qBittorrent's
+own rather than replacing it. Both drive the same daemon, so a torrent
+added in one appears in the other.
+
+It sits in the Swarm stack, not the download compose, because it needs no
+VPN: it calls qBittorrent's HTTP API and never talks to trackers or peers.
+Behind gluetun it would route UI traffic through the tunnel for nothing and
+tie its uptime to the VPN. It reaches the client through the `qbittorrent`
+network alias that vpn-client registers on `edge`, since the four apps
+behind the VPN have no network identity of their own.
+
+Three things that cost time here:
+
+**No credentials are stored, deliberately.** qBittorrent's
+`WebUI\AuthSubnetWhitelist` is `10.0.1.0/24`, the edge overlay, so requests
+from there are already authorised by source address. `FLOOD_OPTION_qbuser`
+and `qbpass` are still set because Flood's config schema requires the full
+triple; omitting them fails with an opaque `invalid_union` error naming
+Deluge, because Flood cannot tell which client was intended from a partial
+option set. The values are placeholders, not secrets.
+
+That whitelist cuts both ways: anything on `edge` can drive qBittorrent
+unauthenticated, so the gate that matters is `authentik@file` on the
+router. `FLOOD_OPTION_auth=none` means Flood keeps no user database, which
+is safe only because that middleware is there.
+
+**The image runs as uid 1001**, which owns nothing else in this stack and
+cannot write a freshly created volume. It is pinned to `COMMON_PUID`
+instead, and the volume chowned to match, or it restart-loops on
+`Failed to access runtime directory /config`.
+
+**The volume needs an explicit `name:`.** Without one Swarm creates
+`mediastack_flood_data`, and `scripts/backup-local.sh` lists volumes by
+name, so the prefix would quietly drop it from the backup set. That also
+wasted a debugging cycle: the chown was applied to the unprefixed volume
+while the service used the prefixed one.
+
+A new hostname needs its own CNAME, the wildcard ingress does not create
+one:
+
+```bash
+cloudflared tunnel route dns mediastack flood.yourdomain.com
+```
+
 ## Backups
 
 - **Local** (`scripts/backup-local.sh`): tars every app's config volume
