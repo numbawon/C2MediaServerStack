@@ -43,10 +43,12 @@
 #   afterwards with mkvpropedit, which players read in preference to the
 #   stream's own SEI.
 #
-# What is genuinely lost: Dolby Vision RPU and HDR10+ dynamic metadata.
-# Preserving those means demuxing the RPU with dovi_tool and re-injecting
-# it, which NVENC output cannot take. The result falls back to base HDR10
-# -- correct, just static rather than per-scene.
+# Dolby Vision and HDR10+ both survive when dovi_tool and hdr10plus_tool
+# are installed. They are extracted from the source and injected back into
+# the encoded stream, which costs no second encode -- both ride in SEI
+# units between slices. DV profile 7 is converted to single-layer 8.1;
+# see the dynamic-metadata section below for why that is safe here.
+# Pass --no-dv to skip the whole stage.
 #
 # THE GPU IS SHARED. Plex transcodes on this card and Ollama loads models
 # onto it. A long encode will compete with both, and Turing limits
@@ -56,6 +58,7 @@ set -uo pipefail
 CQ=28
 SCALE=""
 REPLACE=0
+NO_DV=0
 IN=""
 
 while [ $# -gt 0 ]; do
@@ -63,6 +66,7 @@ while [ $# -gt 0 ]; do
     --cq) CQ="$2"; shift 2 ;;
     --1080p) SCALE="scale_cuda=1920:-2"; shift ;;
     --replace) REPLACE=1; shift ;;
+    --no-dv) NO_DV=1; shift ;;
     -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) IN="$1"; shift ;;
   esac
@@ -218,7 +222,10 @@ elapsed=$(( $(date +%s) - start ))
 
 # --- put the HDR mastering metadata back -----------------------------------
 # hevc_nvenc has no option for these, so they go into the MKV container.
-if [ -n "${MD_MAXL:-}" ] && command -v mkvpropedit >/dev/null 2>&1; then
+# A function because the DV remux below rebuilds the container and drops
+# them again.
+apply_mastering() {
+  [ -n "${MD_MAXL:-}" ] && command -v mkvpropedit >/dev/null 2>&1 || return 1
   mkvpropedit "$OUT" --edit track:v1 \
     --set chromaticity-coordinates-red-x="$MD_RX"   --set chromaticity-coordinates-red-y="$MD_RY" \
     --set chromaticity-coordinates-green-x="$MD_GX" --set chromaticity-coordinates-green-y="$MD_GY" \
@@ -226,9 +233,121 @@ if [ -n "${MD_MAXL:-}" ] && command -v mkvpropedit >/dev/null 2>&1; then
     --set white-coordinates-x="$MD_WX"              --set white-coordinates-y="$MD_WY" \
     --set max-luminance="$MD_MAXL"                  --set min-luminance="$MD_MINL" \
     ${CLL_MAX:+--set max-content-light="$CLL_MAX"} \
-    ${CLL_FALL:+--set max-frame-light="$CLL_FALL"} >/dev/null \
-    && echo "    HDR mastering metadata restored" \
-    || echo "    WARNING: mkvpropedit failed; output is missing HDR mastering data" >&2
+    ${CLL_FALL:+--set max-frame-light="$CLL_FALL"} >/dev/null 2>&1
+}
+
+if apply_mastering; then
+  echo "    HDR mastering metadata restored"
+elif [ -n "${MD_MAXL:-}" ]; then
+  echo "    WARNING: mkvpropedit failed; output is missing HDR mastering data" >&2
+fi
+
+# --- dynamic HDR metadata (Dolby Vision, HDR10+) ----------------------------
+# NVENC discards both. They are lifted off the source and injected into the
+# encoded stream, which needs no re-encode -- the metadata rides in SEI NAL
+# units interleaved between slices.
+#
+# WHY PROFILE 8.1 AND NOT 7. UHD Blu-ray carries DV profile 7, which is
+# dual-layer: base layer, enhancement layer, RPU. A single-layer re-encode
+# has nowhere to put the enhancement layer, so the RPU is converted to
+# profile 8.1 (--mode 2): single-layer, and falls back to plain HDR10 on
+# players that do not read DV.
+#
+# That conversion is lossless only when the enhancement layer is MEL
+# ("minimal"), carrying no real residual -- which is what these remuxes
+# use. On an FEL source the enhancement layer holds actual picture data,
+# so the profile is checked and reported rather than assumed.
+#
+# Frame counts must match exactly or injection desyncs the metadata
+# against the picture, so they are compared before anything is kept.
+if [ "$NO_DV" != "1" ] && command -v mkvmerge >/dev/null 2>&1 \
+   && { command -v dovi_tool >/dev/null 2>&1 || command -v hdr10plus_tool >/dev/null 2>&1; }; then
+
+  RPU="$DIR/.${STEM}.rpu"
+  HP="$DIR/.${STEM}.hdr10plus.json"
+  BL="$DIR/.${STEM}.bl.hevc"
+  V1="$DIR/.${STEM}.v1.hevc"
+  V2="$DIR/.${STEM}.v2.hevc"
+  trap 'rm -f -- "$RPU" "$HP" "$BL" "$V1" "$V2"' EXIT
+
+  echo "==> dynamic HDR metadata"
+
+  # One pass over the source feeding both extractors through tee, rather
+  # than reading 69 GB twice. Matroska stores HEVC length-prefixed, hence
+  # hevc_mp4toannexb.
+  ex_dv=(cat); ex_hp=(cat)
+  command -v dovi_tool      >/dev/null 2>&1 && ex_dv=(dovi_tool --mode 2 extract-rpu - -o "$RPU")
+  command -v hdr10plus_tool >/dev/null 2>&1 && ex_hp=(hdr10plus_tool extract - -o "$HP")
+
+  run ffmpeg -hide_banner -loglevel error -i "/w/$BASE" -map 0:v:0 -c copy \
+      -bsf:v hevc_mp4toannexb -f hevc - 2>/dev/null \
+    | tee >("${ex_dv[@]}" >/dev/null 2>&1) >("${ex_hp[@]}" >/dev/null 2>&1) > /dev/null
+  wait
+
+  have_dv=0; have_hp=0
+  [ -s "$RPU" ] && have_dv=1
+  [ -s "$HP" ]  && have_hp=1
+
+  if [ "$have_dv" = 1 ]; then
+    el=$(dovi_tool info -i "$RPU" -s 2>/dev/null | grep -oE 'Profile: [0-9]+ \((MEL|FEL)\)')
+    echo "    Dolby Vision: source ${el:-unknown} converted to 8.1"
+    case "$el" in
+      *FEL*) echo "    NOTE: FEL source. Its enhancement layer carries picture data" >&2
+             echo "          that single-layer 8.1 cannot hold; some detail is lost." >&2 ;;
+    esac
+  fi
+  [ "$have_hp" = 1 ] && echo "    HDR10+: $(python3 -c "
+import json; print(len(json.load(open('$HP')).get('SceneInfo', [])))" 2>/dev/null) frames of dynamic metadata"
+
+  if [ "$have_dv" = 1 ] || [ "$have_hp" = 1 ]; then
+    # Frame counts, before touching anything.
+    src_frames=$(dovi_tool info -i "$RPU" -s 2>/dev/null | grep -oE 'Frames: [0-9]+' | grep -oE '[0-9]+')
+    [ -z "$src_frames" ] && [ "$have_hp" = 1 ] && src_frames=$(python3 -c "
+import json; print(len(json.load(open('$HP')).get('SceneInfo', [])))" 2>/dev/null)
+    enc_frames=$(probe -select_streams v:0 -count_frames -show_entries stream=nb_read_frames \
+                   -of csv=p=0 "/w/$(basename "$OUT")" 2>/dev/null | tr -d ',\r')
+
+    if [ -n "$src_frames" ] && [ "$src_frames" = "$enc_frames" ]; then
+      run ffmpeg -hide_banner -loglevel error -i "/w/$(basename "$OUT")" -map 0:v:0 -c copy \
+        -bsf:v hevc_mp4toannexb -f hevc -y "/w/$(basename "$BL")"
+
+      # HDR10+ first, then the RPU. Both end up as SEI between slices.
+      cur="$BL"
+      if [ "$have_hp" = 1 ]; then
+        hdr10plus_tool inject "$cur" -j "$HP" -o "$V1" >/dev/null 2>&1 && [ -s "$V1" ] \
+          && cur="$V1" || { echo "    WARNING: HDR10+ injection failed" >&2; have_hp=0; }
+      fi
+      if [ "$have_dv" = 1 ]; then
+        dovi_tool inject-rpu "$cur" --rpu-in "$RPU" -o "$V2" >/dev/null 2>&1 && [ -s "$V2" ] \
+          && cur="$V2" || { echo "    WARNING: RPU injection failed" >&2; have_dv=0; }
+      fi
+
+      if [ "$cur" != "$BL" ]; then
+        # Rejoin the new video with the audio and subtitles already chosen
+        # during the encode. --no-video takes everything but the old stream.
+        if mkvmerge -q -o "$OUT.dyn.mkv" "$cur" --no-video "$OUT" >/dev/null 2>&1 \
+           && [ -s "$OUT.dyn.mkv" ]; then
+          mv -f -- "$OUT.dyn.mkv" "$OUT"
+          echo "    injected over $src_frames frames:$([ "$have_dv" = 1 ] && echo ' DV')$([ "$have_hp" = 1 ] && echo ' HDR10+')"
+          # The remux rebuilt the container, so the mastering-display block
+          # written earlier is gone with it. Put it back on the new file.
+          apply_mastering && echo "    HDR mastering metadata reapplied"
+        else
+          rm -f -- "$OUT.dyn.mkv"
+          echo "    WARNING: remux failed; output keeps static HDR10 only" >&2
+        fi
+      fi
+    else
+      echo "    WARNING: frame count differs (source $src_frames, encode $enc_frames)." >&2
+      echo "             Injecting would desync the metadata against the picture," >&2
+      echo "             so it was skipped. Output is static HDR10." >&2
+    fi
+  else
+    echo "    none found in the source"
+  fi
+  rm -f -- "$RPU" "$HP" "$BL" "$V1" "$V2"; trap - EXIT
+elif [ "$NO_DV" != "1" ]; then
+  echo "==> dynamic HDR metadata skipped (needs mkvmerge plus dovi_tool or hdr10plus_tool)"
 fi
 
 # --- verify before anything replaces anything -----------------------------
