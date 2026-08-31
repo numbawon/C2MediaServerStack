@@ -15,10 +15,13 @@ library: /config/library.db
 # No path formats are defined on purpose. Even with move disabled, leaving
 # a `paths:` block invites a future `beet move` to reorganise everything.
 
+# NOTHING HERE MAY MODIFY AUDIO. copy/move keep files in place; write:no
+# keeps their bytes untouched. Turning write back on makes this a tag
+# editor, which is a different operation with a different risk profile.
 import:
   copy: no             # never duplicate into a new tree
   move: no             # never relocate
-  write: yes           # DO write corrected tags into the files
+  write: no            # artwork pass must not rewrite audio; see below
   incremental: yes     # remember what has been processed, so reruns are cheap
   # Anything beets is not confident about is skipped rather than guessed.
   # A wrong "fix" to a correct tag is worse than leaving a gap.
@@ -75,13 +78,19 @@ embedart:
 # chroma fingerprints audio via AcoustID, which is the only thing that can
 # identify the 84 files carrying no artist tag at all. Filename-based
 # matching has nothing to work from there.
+# Fingerprinting is expensive and irrelevant to fetching artwork, so it is
+# off by default. Enable it for a tag-repair pass, not an art pass.
 chroma:
-  auto: yes
+  auto: no
 
-# Strips leftover junk tags (release-group comments and similar) while
-# leaving the fields beets is about to write.
+# Strips leftover junk tags. auto:no is deliberate and load-bearing:
+# with auto:yes, scrub runs during import and REWRITES every audio file,
+# which turned an artwork-only pass into a full library rewrite. Measured:
+# mp3 mtimes changed on an import run that was only meant to index.
+# Run it explicitly when tag cleanup is actually wanted:
+#   beet scrub <query>
 scrub:
-  auto: yes
+  auto: no
 
 ui:
   color: yes

@@ -857,6 +857,29 @@ docker exec -it $B beet version          # confirm all 7 plugins load
 docker exec -it $B beet import -A /music # -A = do not autotag, artwork only
 ```
 
+### Two things that make the artwork pass safe
+
+**`scrub: auto: no` is load-bearing.** With `auto: yes`, scrub runs during
+import and rewrites every audio file, turning an artwork-only pass into a
+full library rewrite. Caught on a single test album whose mp3 mtimes
+changed during a run that was only supposed to index. Combined with
+`import.write: no`, the art pass cannot modify audio at all. Verified
+across 7,652 files with a size and mtime fingerprint taken before and
+after: zero changed.
+
+**Run it as the app user, not root.** `docker exec` defaults to root, and
+a cover written that way lands as `-rw------- root:...`, which Navidrome
+and Plex cannot read because both run as PUID 1000. The artwork exists and
+is invisible. Always:
+
+```bash
+docker exec -u abc $(docker ps -qf name=mediastack_beets) beet fetchart
+```
+
+Result of the first pass: album folders with art went 341 to 402, 316
+`cover.jpg` written, no audio touched. The remainder are mostly releases
+with no album tag to search on.
+
 One trap worth knowing: `fetchart`'s `sources` and `cover_names` must be
 YAML **lists**. Written as a space-separated string, beets 2.x reads the
 whole line as one source name and the plugin refuses to load. Nothing says
