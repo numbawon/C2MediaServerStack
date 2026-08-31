@@ -1058,6 +1058,13 @@ services:
       # this mount pointed at the empty one, so the library looked empty.
       - ${COMMON_MEDIA}/Audiobooks:/audiobooks
       - ${COMMON_MEDIA}/Podcasts:/podcasts
+      # Ebooks, read through the same app rather than a second service.
+      # Audiobookshelf has an ebook reader and can email a book to a
+      # Kindle, so a 14-file library does not justify standing up
+      # Calibre-Web or Kavita beside it. Revisit if this grows into comics
+      # or manga, which Kavita handles far better.
+      # LazyLibrarian already writes here: its ebook_dir is /books.
+      - ${COMMON_MEDIA}/EBooks:/books
       - audiobookshelf_config:/config
       - audiobookshelf_metadata:/metadata
     networks:
