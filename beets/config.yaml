@@ -1,0 +1,87 @@
+# beets, running in TAG-AND-ARTWORK-ONLY mode.
+#
+# THE THREE LINES THAT MATTER MOST ARE copy/move/write BELOW.
+#
+# beets' default behaviour is to take ownership of the library and impose
+# its own Artist/Album/Track layout. That would destroy the per-artist
+# Albums / Singles & EPs / Live / Compilations / Remixes structure in this
+# library, which is a human's work and is deliberately not something
+# Lidarr manages either (see the Music section of the README). With
+# copy:no and move:no beets edits tags and artwork in place and never
+# relocates or renames a single file.
+directory: /music
+library: /config/library.db
+
+# No path formats are defined on purpose. Even with move disabled, leaving
+# a `paths:` block invites a future `beet move` to reorganise everything.
+
+import:
+  copy: no             # never duplicate into a new tree
+  move: no             # never relocate
+  write: yes           # DO write corrected tags into the files
+  incremental: yes     # remember what has been processed, so reruns are cheap
+  # Anything beets is not confident about is skipped rather than guessed.
+  # A wrong "fix" to a correct tag is worse than leaving a gap.
+  quiet_fallback: skip
+  timid: no
+  resume: yes
+  # Do not let a bad match rewrite good data.
+  none_rec_action: skip
+
+# How sure beets must be before it applies a match unattended. The
+# defaults are lax for an interactive session; this library already has
+# mostly-good tags, so the bar is raised.
+match:
+  strong_rec_thresh: 0.04     # auto-accept only near-perfect matches
+  medium_rec_thresh: 0.25
+  max_rec:
+    missing_tracks: low       # an incomplete album is not a confident match
+    unmatched_tracks: low
+
+plugins: fetchart embedart scrub chroma mbsync info missing
+
+# --- artwork -------------------------------------------------------------
+# The measured gap: 411 album folders have no cover image at all, and 4733
+# files carry no embedded art. Navidrome and Plex both read a folder image
+# when there is no embedded one, so writing cover.jpg beside the tracks is
+# what actually fixes blank tiles.
+fetchart:
+  auto: yes
+  cautious: yes            # ignore vague filenames rather than grab junk
+  # These must be YAML lists. beets 2.x parses a space-separated string as
+  # ONE source name and the plugin then refuses to load at all, taking the
+  # artwork fix with it -- which is silent unless you run `beet version`.
+  cover_names:
+    - cover
+    - folder
+    - front
+    - album
+  sources:
+    - filesystem      # an image already beside the tracks wins
+    - coverart        # Cover Art Archive (MusicBrainz)
+    - itunes
+    - amazon
+    - albumart
+  minwidth: 400            # reject thumbnails
+  maxwidth: 1200
+  store_source: yes
+
+embedart:
+  auto: no                 # writing cover.jpg is enough; see README
+  maxwidth: 1200
+  remove_art_file: no      # keep the file on disk, Navidrome uses it
+
+# --- tags ----------------------------------------------------------------
+# chroma fingerprints audio via AcoustID, which is the only thing that can
+# identify the 84 files carrying no artist tag at all. Filename-based
+# matching has nothing to work from there.
+chroma:
+  auto: yes
+
+# Strips leftover junk tags (release-group comments and similar) while
+# leaving the fields beets is about to write.
+scrub:
+  auto: yes
+
+ui:
+  color: yes
