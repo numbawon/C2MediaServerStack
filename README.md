@@ -885,6 +885,32 @@ YAML **lists**. Written as a space-separated string, beets 2.x reads the
 whole line as one source name and the plugin refuses to load. Nothing says
 so at runtime; the only symptom is `fetchart` missing from `beet version`.
 
+### Ebooks
+
+LazyLibrarian collects them; **Audiobookshelf reads them**. It has had an
+ebook reader for some time and can email a book to a Kindle, so a second
+service is not warranted:
+
+```
+COMMON_MEDIA/EBooks  ->  /books   (Audiobookshelf)
+                     ->  /books   (LazyLibrarian, its ebook_dir)
+```
+
+Add it in Audiobookshelf as a second library of type **Books** pointing at
+`/books`.
+
+Revisit that choice if the shape of the collection changes. **Kavita** is
+markedly better once comics or manga are involved, and **Calibre-Web** is
+the one to pick if format conversion, heavy metadata editing or a proper
+OPDS catalogue start to matter. Neither is worth running for a handful of
+files that Audiobookshelf already serves.
+
+One thing worth fixing at the source: everything collected so far is PDF,
+which is the worst format to actually read on a phone or e-reader, since
+it has a fixed page size and cannot reflow. EPUB is the format to prefer
+in LazyLibrarian's search settings; the reader quality difference is
+larger than any server choice here.
+
 ## Metadata Plex should ignore
 
 Release groups leave things next to the video: `www.YTS.MX.jpg`,
