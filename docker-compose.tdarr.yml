@@ -1,0 +1,74 @@
+# Standalone (non-swarm) compose -- deployed with:
+#   ./scripts/deploy.sh tdarr
+#
+# Outside the Swarm stack for the same reason as Plex and Ollama: `docker
+# stack deploy` silently ignores GPU reservations. A Tdarr node deployed
+# into the stack would come up, take jobs, and encode every one on the CPU
+# -- which on this host means single-digit fps at 2160p and a feature film
+# measured in days, with nothing reporting that the GPU is idle.
+#
+# Server and node run in one container. Tdarr's usual shape splits them so
+# work can spread across machines; there is one machine and one GPU here,
+# so a second container buys nothing.
+#
+# Routing: Traefik's docker provider runs in swarmMode and cannot see these
+# labels, so tdarr is routed by a static entry in traefik/dynamic/dynamic.yml,
+# the same as plex, qbittorrent and open-webui.
+
+name: mediastack-tdarr
+
+services:
+  tdarr:
+    image: ghcr.io/haveagitgat/tdarr:latest
+    container_name: tdarr
+    environment:
+      - TZ=${COMMON_TZ}
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - UMASK_SET=002
+      - serverIP=0.0.0.0
+      - serverPort=8266
+      - webUIPort=8265
+      # One container, both roles. See the header.
+      - internalNode=true
+      - inContainer=true
+      - nodeName=C2Storage
+      # Turing has a hard cap on concurrent NVENC sessions and this card is
+      # already shared with Plex transcoding and Ollama. One worker means a
+      # library scan cannot starve a running stream.
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      - tdarr_server:/app/server
+      - tdarr_configs:/app/configs
+      - tdarr_logs:/app/logs
+      # Media is read-write: the whole point is replacing oversized files.
+      - ${COMMON_MEDIA}:/media
+      # Scratch space for in-progress encodes. Deliberately on the array
+      # rather than the OS SSD, which has under 80 GB free -- a single 4K
+      # remux transcode would fill it.
+      - ${COMMON_APPDATA}/tdarr/transcode:/temp
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - edge
+    restart: unless-stopped
+
+networks:
+  edge:
+    external: true   # the attachable overlay created by the swarm stack
+
+volumes:
+  # Explicit names so Swarm/compose do not prefix them and
+  # scripts/backup-local.sh keeps finding them by name.
+  tdarr_server:
+    name: tdarr_server
+  tdarr_configs:
+    name: tdarr_configs
+  tdarr_logs:
+    name: tdarr_logs
