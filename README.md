@@ -722,6 +722,52 @@ follows that redirect arrives with its body dropped and fails as an opaque
 400. The script reads `UrlBase` out of `config.xml` rather than assuming
 it is empty; anything else talking to these APIs needs to do the same.
 
+### Music
+
+```
+Artist Name/
+  Albums/ Singles & EPs/ Live/ Compilations/ Remixes/ Other/
+    Album folder/
+      tracks
+```
+
+The category level is a human's work, not Lidarr's. Lidarr's format is a
+flat `{Artist Name}/{Album Title} ({Release Year})/`, so enabling its
+renaming and sweeping the library would delete the Albums / Live / Singles
+split on the artists that have one. `renameTracks` is therefore off, and
+this level is maintained by hand.
+
+Category names were normalised to that one vocabulary. They had been
+inconsistent per artist: `-- Studio Albums --`, `01. Studio albums`,
+`1 - Studio Albums` and `Albums` all meant the same thing.
+
+Not every artist has categories, and that is fine. Artists with albums
+directly underneath were left alone rather than having a structure
+invented for them.
+
+**Tags are what actually matter here.** Navidrome and Plex build their
+libraries from `artist`, `album`, `title`, `track` and `date`, not from
+paths. Folder layout is for browsing the filesystem. That is also why
+imports were filed by reading tags rather than trusting folder names,
+which is how `Rolling Stones, The` became `The Rolling Stones` and
+`PEARL JAM - STUDIO DISCOGRAPHY (1991-13) [CHANNEL NEO]` became
+`Pearl Jam`.
+
+Three folder shapes look identical from outside and need telling apart:
+
+| Shape | Looks like | Correct handling |
+| --- | --- | --- |
+| discography | folder of album folders | move the contents up |
+| album with parts | `CD1`, `CD2`, `Cover`, or split by composer | move the folder whole |
+| release wrapper | one album folder inside a `[Hunter] Mp3 320kbps` shell | move the contents, which strips the wrapper |
+
+Treating the second as the first scatters `CD1` and `Beethoven` into the
+library as if they were albums.
+
+**Cover art is kept in the music library**, unlike Movies and TV. Plex's
+music section still has `useLocalAssets` on and Navidrome reads folder
+images, so `folder.jpg` is wanted here. Only text junk is removed.
+
 ## Metadata Plex should ignore
 
 Release groups leave things next to the video: `www.YTS.MX.jpg`,
