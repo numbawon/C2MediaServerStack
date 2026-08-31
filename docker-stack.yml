@@ -89,6 +89,12 @@ volumes:
   recyclarr_config:
     name: recyclarr_config
   beets_config:
+  flood_data:
+    # Explicit name so Swarm does not prefix it to mediastack_flood_data.
+    # Same reason as the other pinned names here: scripts/backup-local.sh
+    # lists volumes by name, and a prefix would silently drop this one from
+    # the backup set.
+    name: flood_data
   cleanuparr_config:
     name: cleanuparr_config
   audiobookshelf_config:
@@ -998,6 +1004,71 @@ services:
         - "traefik.http.routers.cleanuparr.entrypoints=web"
         # No authentik@file -- see the block comment above.
         - "traefik.http.services.cleanuparr.loadbalancer.server.port=11011"
+
+  # ---------------------------------------------------------------------
+  # Flood -- alternative web UI for qBittorrent. Media-management tier.
+  #
+  # Does not replace qBittorrent's own UI, it sits beside it. Both talk to
+  # the same daemon, so a torrent added in one appears in the other.
+  #
+  # Lives in the Swarm stack rather than the download compose because it
+  # needs no VPN: it is a UI that calls qBittorrent's HTTP API, not
+  # something that talks to trackers or peers. Putting it behind gluetun
+  # would route its traffic through the tunnel for no benefit and tie its
+  # uptime to the VPN.
+  #
+  # It reaches qbittorrent by the network alias vpn-client registers on
+  # `edge` (see docker-compose.download.yml), not by container name -- the
+  # four apps behind the VPN have no network identity of their own.
+  #
+  # No credentials are configured, and that is not an oversight:
+  # qBittorrent's WebUI\AuthSubnetWhitelist is 10.0.1.0/24, the edge
+  # overlay, so anything on that network already reaches its API
+  # unauthenticated. Storing a password here would add a secret without
+  # adding a barrier. Worth knowing that this cuts both ways: every
+  # container on `edge` can drive qBittorrent, which is why the gate that
+  # matters is Traefik's, below.
+  # ---------------------------------------------------------------------
+  flood:
+    image: jesec/flood:latest
+    # The image ships uid 1001 ("download"), which owns nothing else here
+    # and cannot write a freshly created named volume. Running it as the
+    # stack's own PUID keeps one uid across every service and matches the
+    # volume, which is chowned to the same. Without this it restart-loops
+    # on "Failed to access runtime directory /config".
+    user: "${COMMON_PUID}:${COMMON_PGID}"
+    environment:
+      - TZ=${COMMON_TZ}
+      - HOME=/config
+      # auth=none means Flood keeps no user database of its own. Safe ONLY
+      # because authentik@file is in front of it; without that middleware
+      # this is an unauthenticated torrent client on the internet.
+      - FLOOD_OPTION_auth=none
+      - FLOOD_OPTION_host=0.0.0.0
+      - FLOOD_OPTION_port=3000
+      - FLOOD_OPTION_rundir=/config
+      - FLOOD_OPTION_qburl=http://qbittorrent:8080
+      # qbuser and qbpass are required by Flood's config schema even though
+      # they are not used: qBittorrent's AuthSubnetWhitelist covers the
+      # edge overlay, so the request is already authorised by source
+      # address. Omitting them fails validation with an opaque
+      # "invalid_union" listing Deluge, because Flood cannot tell which
+      # client was meant from an incomplete option set. The value is a
+      # placeholder, not a credential.
+      - FLOOD_OPTION_qbuser=admin
+      - FLOOD_OPTION_qbpass=subnet-whitelisted
+    volumes:
+      - flood_data:/config
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.flood.rule=Host(`flood.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.flood.entrypoints=web"
+        # Load-bearing, see the auth=none note above.
+        - "traefik.http.routers.flood.middlewares=authentik@file"
+        - "traefik.http.services.flood.loadbalancer.server.port=3000"
 
   # ---------------------------------------------------------------------
   # beets -- music tag and artwork repair. Admin tier.

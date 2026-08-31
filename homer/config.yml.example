@@ -118,6 +118,11 @@ services:
   - name: "Downloads"
     icon: "fas fa-download"
     items:
+      - name: "Flood"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/flood.svg"
+        url: "https://flood.example.com"
+        subtitle: "Alternative UI for the same qBittorrent"
+        target: "_blank"
       - name: "qBittorrent"
         logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/qbittorrent.svg"
         url: "https://qbittorrent.example.com"
