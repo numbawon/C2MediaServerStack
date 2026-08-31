@@ -1,0 +1,15 @@
+[Unit]
+Description=Check the VPN public IP every two minutes
+
+[Timer]
+# Two minutes. The failure it catches is silent -- downloads simply stop
+# while everything still looks healthy -- so the cost of noticing late is
+# hours of nothing happening. One outbound request per run is cheap.
+OnBootSec=2min
+OnUnitActiveSec=2min
+# Deliberately NOT Persistent=true. A missed run only means the IP was not
+# checked for a while; replaying it after a reboot adds nothing, and the
+# first post-boot run re-reads the IP anyway.
+
+[Install]
+WantedBy=timers.target

@@ -88,6 +88,7 @@ volumes:
     name: node_exporter_textfile
   recyclarr_config:
     name: recyclarr_config
+  beets_config:
   cleanuparr_config:
     name: cleanuparr_config
   audiobookshelf_config:
@@ -997,6 +998,46 @@ services:
         - "traefik.http.routers.cleanuparr.entrypoints=web"
         # No authentik@file -- see the block comment above.
         - "traefik.http.services.cleanuparr.loadbalancer.server.port=11011"
+
+  # ---------------------------------------------------------------------
+  # beets -- music tag and artwork repair. Admin tier.
+  #
+  # Runs as a long-lived container doing nothing until told to, because
+  # every useful beets operation is a one-off command. There is no web UI
+  # and no schedule: retagging a library on a timer is how good tags get
+  # silently overwritten by a bad match at 3am.
+  #
+  #   docker exec -it $(docker ps -qf name=mediastack_beets) beet stats
+  #   docker exec -it $(docker ps -qf name=mediastack_beets) beet import -A /music
+  #
+  # CONFIGURED FOR TAGS AND ARTWORK ONLY. beets/config.yaml sets copy:no
+  # and move:no, so it never relocates or renames a file. That matters
+  # here: the Artist/Albums/Live/Singles structure is hand-built, and
+  # beets' default behaviour is to replace it with its own layout. Lidarr
+  # is held off the same structure for the same reason.
+  #
+  # The music mount is read-WRITE, unavoidably -- writing tags means
+  # writing the files. Navidrome's stays read-only.
+  # ---------------------------------------------------------------------
+  beets:
+    image: lscr.io/linuxserver/beets:latest
+    environment:
+      - TZ=${COMMON_TZ}
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+    volumes:
+      - beets_config:/config
+      # Read-write: tag repair rewrites the audio files themselves.
+      - ${COMMON_MEDIA}/Music:/music
+      # The config is version-controlled rather than living in the volume,
+      # so the copy:no / move:no guard is visible in git rather than being
+      # a setting somebody could change without leaving a trace.
+      - ./beets/config.yaml:/config/config.yaml:ro
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=false"
 
   # ---------------------------------------------------------------------
   # Audiobookshelf -- audiobooks and podcasts. Household tier.
