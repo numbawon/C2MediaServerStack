@@ -771,9 +771,21 @@ Category names were normalised to that one vocabulary. They had been
 inconsistent per artist: `-- Studio Albums --`, `01. Studio albums`,
 `1 - Studio Albums` and `Albums` all meant the same thing.
 
-Not every artist has categories, and that is fine. Artists with albums
-directly underneath were left alone rather than having a structure
-invented for them.
+Every artist with more than a handful of albums now has this structure.
+The five that lacked it -- Bob Marley, Iron Maiden, Metallica, Pink Floyd,
+The Beatles -- were categorised from their folder names by a local model
+via the `foundry-delegate` skill, then reviewed line by line before
+anything moved: 110 items in 7.1s, all clean, 109 filed and one skipped
+because it turned out to be a folder of `.m3u` playlists rather than an
+album.
+
+Worth recording about that run, because the instinct is to read it
+backwards. The skill scored it 78% against hand-written expected labels
+and returned `reassign`, meaning "fix the prompt or routing". Reviewing
+all 24 disagreements showed the model was right in roughly 20 of them and
+the *labels* were wrong. A labelled pilot measures agreement with the
+labeller, not accuracy, so a sub-threshold score is a reason to check the
+labels first.
 
 **Tags are what actually matter here.** Navidrome and Plex build their
 libraries from `artist`, `album`, `title`, `track` and `date`, not from
