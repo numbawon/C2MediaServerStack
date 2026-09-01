@@ -1,46 +1,61 @@
 name: mediastack/app-noise
-description: "Normal application behaviour that looks like probing"
+description: "Don't ban people Authentik has already authenticated"
 #
 # WHY THIS EXISTS
 #
-# CrowdSec banned the owner of the stack within hours of going live, from
-# a corporate network, while fully authenticated. Nothing malicious
-# happened: modern web apps probe their own capabilities on every page
-# load, and a 403 or 404 from that is routine, not reconnaissance.
+# CrowdSec banned the owner of the stack within hours of going live, while
+# fully authenticated and doing nothing unusual. Modern web apps probe
+# their own capabilities constantly -- Authentik websocket 403s, Grafana
+# asking every user for a team list, Portainer CE checking for licence
+# endpoints it does not have, browsers requesting PWA manifests that do
+# not exist. To a generic scenario that is indistinguishable from
+# reconnaissance.
 #
-# Observed in one browsing session: 40x Authentik websocket 403,
-# Grafana /api/teams/search 403 (a permissions quirk of the OIDC user),
-# Grafana live-socket 403, Homer asked for a PWA manifest that does not
-# exist, Portainer CE probed for licence endpoints it does not have.
+# THE PRINCIPLE
 #
-# THE FEEDBACK LOOP IS THE DANGEROUS PART
+# Auth is already handled, and handled earlier in the chain than CrowdSec.
+# 25 of the 34 routers sit behind authentik@file, and forward-auth answers
+# an unauthenticated request itself: Traefik returns a 302 and never
+# proxies. So a request that REACHED A BACKEND on one of those routers was
+# authenticated by definition, and banning its source IP punishes a known
+# signed-in person for their browser's routine chatter.
 #
-# Once an IP is banned, the bouncer answers 403 to everything it touches.
-# Those 403s land in the same access log and re-trigger the very scenario
-# that caused the ban, which renews it. The ban becomes self-sustaining
-# and the user cannot recover by waiting -- which is exactly the symptom
-# reported: a 403 that only cleared briefly after wiping browser state.
+# Traefik omits ServiceName when it answers a request without proxying, so
+# its presence is the signal that auth succeeded. It cannot be read from
+# a request header: the access log snapshots headers as received from the
+# client, before forward-auth adds X-authentik-username, so that field is
+# always empty and cannot be used here.
 #
-# The first expression cuts that loop. Traefik omits ServiceName when it
-# answers a request itself instead of proxying to a backend, so a 403
-# with no ServiceName is the bouncer's own output. Enforcement must never
-# feed detection.
+# What this deliberately does NOT cover:
+#
+#   - The nine routers with their own auth (Immich, Audiobookshelf,
+#     Open WebUI, Cleanuparr do their own OIDC; Plex and ntfy have their
+#     own accounts). Those stay fully watched, listed below.
+#   - Unauthenticated traffic to protected routers. A scanner probing
+#     grafana.<domain> gets a 302 and never reaches a backend, so it has
+#     no ServiceName and is still counted. Probing is still detected.
+#   - An authenticated user behaving badly. That is the accepted trade:
+#     they are a known identity, so the answer is revoking their Authentik
+#     account, not an IP ban that also catches everyone behind their NAT.
+#
+# KEEP THE LIST BELOW IN SYNC. If a router loses its authentik middleware
+# it must be added here, or its traffic silently stops being watched.
 whitelist:
-  reason: "app-internal endpoints and the bouncer's own responses"
+  reason: "authenticated via Authentik, or the bouncer's own response"
   expression:
-    # The loop-breaker. Keep this first and keep it.
+    # The feedback loop. Once an IP is banned the bouncer answers 403 to
+    # everything it touches; those land in this same access log and renew
+    # the ban that caused them, so it never expires. Enforcement must
+    # never feed detection. Keep this first.
     - 'evt.Meta.http_status == "403" && not (evt.Line.Raw contains "ServiceName")'
 
-    # Websockets that 403 on upgrade for authenticated users.
-    - 'evt.Meta.http_path startsWith "/ws/client"'
-    - 'evt.Meta.http_path startsWith "/api/live/ws"'
+    # Reached a backend behind forward-auth => Authentik let them through.
+    - >-
+      evt.Line.Raw contains "ServiceName" &&
+      not (evt.Meta.traefik_router_name matches
+      "^(audiobookshelf|authentik|cleanuparr|immich|navidrome-api|ntfy|open-webui|overseerr-to-seerr|plex)@")
 
-    # Grafana asks every user for the team list; non-admins get 403.
-    - 'evt.Meta.http_path startsWith "/api/teams/search"'
-
-    # Browsers ask every site for a PWA manifest and favicons.
+    # Browsers ask every site for these regardless of auth, including on
+    # the routers above that are still watched.
     - 'evt.Meta.http_path endsWith "/manifest.json"'
-    - 'evt.Meta.http_path startsWith "/locales/"'
-
-    # Portainer CE probing for endpoints only the paid edition serves.
-    - 'evt.Meta.target_fqdn startsWith "portainer." && evt.Meta.http_path startsWith "/api/"'
+    - 'evt.Meta.http_path endsWith "/favicon.ico"'
