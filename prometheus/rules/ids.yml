@@ -1,0 +1,94 @@
+# Dead-man switch for the IDS/IPS.
+#
+# The point of these rules is that a security tool failing silently is
+# worse than not having one: you stop looking, because the absence of
+# alerts reads as "nothing is happening" rather than "nothing is being
+# watched". Every rule here answers "would I find out?".
+#
+# The specific failure that motivated them: Suricata ran for half an hour
+# with ZERO rules loaded, because suricata-update wrote them into a
+# directory the engine could not read. It logged flows, answered health
+# checks and detected nothing. A container-liveness alert would have
+# stayed green the whole time.
+
+groups:
+  - name: ids
+    rules:
+      # --- Suricata is gone entirely ---------------------------------
+      - alert: SuricataExporterDown
+        expr: up{job="suricata"} == 0 or absent(up{job="suricata"})
+        for: 10m
+        labels:
+          severity: critical
+          service: suricata
+        annotations:
+          summary: "Suricata exporter is unreachable"
+          description: "No metrics from the IDS for 10 minutes. Network intrusion detection is not running, and its silence should not be read as 'no attacks'."
+
+      # --- Running, but wedged ----------------------------------------
+      - alert: SuricataStale
+        expr: suricata_up == 0
+        for: 10m
+        labels:
+          severity: critical
+          service: suricata
+        annotations:
+          summary: "Suricata is not emitting stats"
+          description: "The process is up but has written no stats event for over two minutes. It is wedged rather than working."
+
+      # --- Running, healthy-looking, and completely blind -------------
+      # This is the one that actually happened.
+      - alert: SuricataNoRulesLoaded
+        expr: suricata_rules_loaded == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: suricata
+        annotations:
+          summary: "Suricata has ZERO detection rules loaded"
+          description: "The engine is running and will look healthy in every other check, but it can detect nothing. Usually means suricata-update wrote rules the engine cannot read (ownership), or a failed reload."
+
+      - alert: SuricataRulesFailed
+        expr: suricata_rules_failed > 0
+        for: 15m
+        labels:
+          severity: warning
+          service: suricata
+        annotations:
+          summary: "{{ $value }} Suricata rules failed to load"
+          description: "Some signatures were rejected at load. Coverage is lower than the rule count suggests."
+
+      # --- Running, rules loaded, but not seeing the wire -------------
+      - alert: SuricataNotCapturing
+        expr: rate(suricata_kernel_packets_total[15m]) == 0
+        for: 20m
+        labels:
+          severity: critical
+          service: suricata
+        annotations:
+          summary: "Suricata is capturing no packets"
+          description: "No packets seen for 20 minutes on a live network. The interface is wrong, down, or not in promiscuous mode."
+
+      # --- Seeing the wire, but missing some of it --------------------
+      - alert: SuricataDroppingPackets
+        expr: >
+          rate(suricata_kernel_drops_total[15m])
+            / clamp_min(rate(suricata_kernel_packets_total[15m]), 1) > 0.05
+        for: 30m
+        labels:
+          severity: warning
+          service: suricata
+        annotations:
+          summary: "Suricata dropping {{ $value | humanizePercentage }} of packets"
+          description: "Traffic is arriving faster than it can inspect, so detection has gaps. Consider trimming rules or raising capture buffers."
+
+      # --- The enforcement half ---------------------------------------
+      - alert: CrowdSecDown
+        expr: up{job="crowdsec"} == 0 or absent(up{job="crowdsec"})
+        for: 10m
+        labels:
+          severity: critical
+          service: crowdsec
+        annotations:
+          summary: "CrowdSec is unreachable"
+          description: "No metrics for 10 minutes. Nothing is parsing Traefik logs or issuing bans, and the Traefik bouncer is serving a stale decision list."
