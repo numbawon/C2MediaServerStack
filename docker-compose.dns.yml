@@ -25,10 +25,20 @@
 # It is reached at the docker_gwbridge gateway instead, via a static entry
 # in traefik/dynamic/dynamic.yml. Same approach as ttyd (see that file).
 
+# Log rotation, same reasoning as docker-stack.yml: the json-file driver
+# defaults to unlimited size with no rotation, and a container writing to
+# stdout filled the root disk once already.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 name: mediastack-dns
 
 services:
   pihole:
+    logging: *logging
     image: pihole/pihole:latest
     container_name: pihole
     hostname: C2-Pihole
