@@ -121,21 +121,15 @@ services:
         target: "_blank"
         subtitle: "Admins only -- it rewrites library files"
 
-      - name: "Files"
-        icon: "fas fa-folder-open"
-        url: "https://files.example.com"
-        target: "_blank"
-        subtitle: "Admins only -- read/write on Media and Storage"
-
+  - name: "Downloads"
+    icon: "fas fa-download"
+    items:
       - name: "Browse"
         icon: "fas fa-download"
         url: "https://browse.example.com"
         target: "_blank"
         subtitle: "Media library, read-only downloads"
 
-  - name: "Downloads"
-    icon: "fas fa-download"
-    items:
       - name: "Flood"
         logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/flood.svg"
         url: "https://flood.example.com"
@@ -150,6 +144,12 @@ services:
   - name: "Infrastructure"
     icon: "fas fa-server"
     items:
+      - name: "Files"
+        icon: "fas fa-folder-open"
+        url: "https://files.example.com"
+        target: "_blank"
+        subtitle: "Admins only -- read/write on Media and Storage"
+
       - name: "Traefik"
         logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/traefik.svg"
         url: "https://traefik.example.com"
