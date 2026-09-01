@@ -189,6 +189,12 @@ services:
   - name: "Monitoring"
     icon: "fas fa-chart-line"
     items:
+      - name: "Intrusion detection"
+        icon: "fas fa-shield-halved"
+        url: "https://grafana.example.com/d/ids-overview"
+        target: "_blank"
+        subtitle: "Suricata + CrowdSec: rules, traffic, bans"
+
       - name: "Grafana"
         logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/grafana.svg"
         url: "https://grafana.example.com"
