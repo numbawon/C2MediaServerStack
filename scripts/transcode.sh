@@ -220,6 +220,11 @@ elapsed=$(( $(date +%s) - start ))
 
 [ "$rc" -eq 0 ] && [ -s "$OUT" ] || { echo "    ffmpeg failed (rc=$rc)" >&2; rm -f "$OUT"; exit 1; }
 
+# ffmpeg ran as root inside the container, so the output is root-owned and
+# mkvpropedit below cannot edit it in place. Hand it back before going on.
+docker run --rm -v "$DIR":/w alpine:latest \
+  chown "$(id -u):$(id -g)" "/w/$(basename "$OUT")" >/dev/null 2>&1
+
 # --- put the HDR mastering metadata back -----------------------------------
 # hevc_nvenc has no option for these, so they go into the MKV container.
 # A function because the DV remux below rebuilds the container and drops
@@ -316,7 +321,10 @@ import json; print(len(json.load(open('$HP')).get('SceneInfo', [])))" 2>/dev/nul
     src_frames=$(dovi_tool info -i "$RPU" -s 2>/dev/null | grep -oE 'Frames: [0-9]+' | grep -oE '[0-9]+')
     [ -z "$src_frames" ] && [ "$have_hp" = 1 ] && src_frames=$(python3 -c "
 import json; print(len(json.load(open('$HP')).get('SceneInfo', [])))" 2>/dev/null)
-    enc_frames=$(probe -select_streams v:0 -count_frames -show_entries stream=nb_read_frames \
+    # -count_packets, not -count_frames: the latter decodes the whole file
+    # and takes over ten minutes on a two-hour 2160p encode. Counting
+    # packets needs no decode, returns the same number, and takes 30s.
+    enc_frames=$(probe -select_streams v:0 -count_packets -show_entries stream=nb_read_packets \
                    -of csv=p=0 "/w/$(basename "$OUT")" 2>/dev/null | tr -d ',\r')
 
     if [ -n "$src_frames" ] && [ "$src_frames" = "$enc_frames" ]; then
