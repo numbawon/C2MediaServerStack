@@ -268,21 +268,33 @@ if [ "$NO_DV" != "1" ] && command -v mkvmerge >/dev/null 2>&1 \
   BL="$DIR/.${STEM}.bl.hevc"
   V1="$DIR/.${STEM}.v1.hevc"
   V2="$DIR/.${STEM}.v2.hevc"
-  trap 'rm -f -- "$RPU" "$HP" "$BL" "$V1" "$V2"' EXIT
-
   echo "==> dynamic HDR metadata"
 
-  # One pass over the source feeding both extractors through tee, rather
-  # than reading 69 GB twice. Matroska stores HEVC length-prefixed, hence
-  # hevc_mp4toannexb.
-  ex_dv=(cat); ex_hp=(cat)
-  command -v dovi_tool      >/dev/null 2>&1 && ex_dv=(dovi_tool --mode 2 extract-rpu - -o "$RPU")
-  command -v hdr10plus_tool >/dev/null 2>&1 && ex_hp=(hdr10plus_tool extract - -o "$HP")
+  # One pass over the source feeding both extractors, rather than reading
+  # 69 GB twice. Named pipes rather than `tee >(...)`: process
+  # substitutions cannot be waited on, so the RPU could be inspected while
+  # still being written. Real PIDs can be. Matroska stores HEVC
+  # length-prefixed, hence hevc_mp4toannexb.
+  FIFO_DIR=$(mktemp -d)
+  trap 'rm -rf -- "$FIFO_DIR"; rm -f -- "$RPU" "$HP" "$BL" "$V1" "$V2"' EXIT
+  pids=(); sinks=()
+  if command -v dovi_tool >/dev/null 2>&1; then
+    mkfifo "$FIFO_DIR/dv"
+    dovi_tool --mode 2 extract-rpu - -o "$RPU" < "$FIFO_DIR/dv" >/dev/null 2>&1 &
+    pids+=($!); sinks+=("$FIFO_DIR/dv")
+  fi
+  if command -v hdr10plus_tool >/dev/null 2>&1; then
+    mkfifo "$FIFO_DIR/hp"
+    hdr10plus_tool extract - -o "$HP" < "$FIFO_DIR/hp" >/dev/null 2>&1 &
+    pids+=($!); sinks+=("$FIFO_DIR/hp")
+  fi
 
   run ffmpeg -hide_banner -loglevel error -i "/w/$BASE" -map 0:v:0 -c copy \
       -bsf:v hevc_mp4toannexb -f hevc - 2>/dev/null \
-    | tee >("${ex_dv[@]}" >/dev/null 2>&1) >("${ex_hp[@]}" >/dev/null 2>&1) > /dev/null
-  wait
+    | tee "${sinks[@]}" > /dev/null
+  # Both extractors must finish before their output is looked at.
+  for pid in "${pids[@]}"; do wait "$pid" 2>/dev/null; done
+  rm -rf -- "$FIFO_DIR"
 
   have_dv=0; have_hp=0
   [ -s "$RPU" ] && have_dv=1
