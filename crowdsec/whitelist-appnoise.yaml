@@ -1,0 +1,46 @@
+name: mediastack/app-noise
+description: "Normal application behaviour that looks like probing"
+#
+# WHY THIS EXISTS
+#
+# CrowdSec banned the owner of the stack within hours of going live, from
+# a corporate network, while fully authenticated. Nothing malicious
+# happened: modern web apps probe their own capabilities on every page
+# load, and a 403 or 404 from that is routine, not reconnaissance.
+#
+# Observed in one browsing session: 40x Authentik websocket 403,
+# Grafana /api/teams/search 403 (a permissions quirk of the OIDC user),
+# Grafana live-socket 403, Homer asked for a PWA manifest that does not
+# exist, Portainer CE probed for licence endpoints it does not have.
+#
+# THE FEEDBACK LOOP IS THE DANGEROUS PART
+#
+# Once an IP is banned, the bouncer answers 403 to everything it touches.
+# Those 403s land in the same access log and re-trigger the very scenario
+# that caused the ban, which renews it. The ban becomes self-sustaining
+# and the user cannot recover by waiting -- which is exactly the symptom
+# reported: a 403 that only cleared briefly after wiping browser state.
+#
+# The first expression cuts that loop. Traefik omits ServiceName when it
+# answers a request itself instead of proxying to a backend, so a 403
+# with no ServiceName is the bouncer's own output. Enforcement must never
+# feed detection.
+whitelist:
+  reason: "app-internal endpoints and the bouncer's own responses"
+  expression:
+    # The loop-breaker. Keep this first and keep it.
+    - 'evt.Meta.http_status == "403" && not (evt.Line.Raw contains "ServiceName")'
+
+    # Websockets that 403 on upgrade for authenticated users.
+    - 'evt.Meta.http_path startsWith "/ws/client"'
+    - 'evt.Meta.http_path startsWith "/api/live/ws"'
+
+    # Grafana asks every user for the team list; non-admins get 403.
+    - 'evt.Meta.http_path startsWith "/api/teams/search"'
+
+    # Browsers ask every site for a PWA manifest and favicons.
+    - 'evt.Meta.http_path endsWith "/manifest.json"'
+    - 'evt.Meta.http_path startsWith "/locales/"'
+
+    # Portainer CE probing for endpoints only the paid edition serves.
+    - 'evt.Meta.target_fqdn startsWith "portainer." && evt.Meta.http_path startsWith "/api/"'
