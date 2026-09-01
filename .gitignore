@@ -22,3 +22,7 @@ backups/
 # and LAN IP. Prometheus does no env substitution, so these cannot be
 # templated inline. Regenerate rather than commit.
 prometheus/targets/*.json
+
+# Python bytecode
+__pycache__/
+*.pyc
