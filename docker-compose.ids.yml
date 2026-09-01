@@ -47,6 +47,31 @@ services:
       - edge
     restart: unless-stopped
 
+  # ---------------------------------------------------------------------
+  # suricata-exporter -- turns Suricata's own stats into Prometheus
+  # metrics so the IDS itself is monitored.
+  #
+  # A liveness check is not enough here. Suricata will run, log flows and
+  # look healthy while loading zero rules, which is exactly what happened
+  # during setup. rules_loaded and kernel_packets are what actually prove
+  # it is working.
+  #
+  # stdlib only, so a stock python image runs it: no image to build.
+  # ---------------------------------------------------------------------
+  suricata-exporter:
+    image: python:3-alpine
+    container_name: suricata-exporter
+    command: python /app/exporter.py
+    environment:
+      - TZ=${COMMON_TZ}
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./suricata-exporter:/app:ro
+      - suricata_logs:/var/log/suricata:ro
+    networks:
+      - edge
+    restart: unless-stopped
+
   suricata:
     image: jasonish/suricata:latest
     container_name: suricata

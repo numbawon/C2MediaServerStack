@@ -129,3 +129,14 @@ scrape_configs:
   - job_name: diun
     static_configs:
       - targets: ["diun:9090"]
+
+  # --- IDS/IPS -----------------------------------------------------------
+  # Both live in docker-compose.ids.yml (standalone, not the swarm stack)
+  # but attach to the edge overlay, so they resolve by container name.
+  - job_name: suricata
+    static_configs:
+      - targets: ["suricata-exporter:9101"]
+
+  - job_name: crowdsec
+    static_configs:
+      - targets: ["crowdsec:6060"]
