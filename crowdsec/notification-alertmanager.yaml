@@ -1,0 +1,43 @@
+type: http
+name: alertmanager
+# Security events join the SAME pipeline as everything else rather than
+# getting their own delivery path: CrowdSec -> Alertmanager -> alert-relay
+# -> ntfy. That buys dedup, grouping and silencing, which matters most
+# exactly when it hurts -- a scan produces hundreds of decisions a minute,
+# and a direct-to-ntfy wiring would push hundreds of phone notifications.
+#
+# Posting to Alertmanager rather than ntfy also avoids inventing a second
+# ntfy token: the existing one is a swarm secret this compose stack cannot
+# reach.
+
+log_level: info
+
+# group_wait lets a burst collapse into one notification.
+group_wait: 30s
+group_threshold: 20
+max_retry: 3
+timeout: 10s
+
+# The comma placement matters: a "{{range}}...,{{end}}" template leaves a
+# trailing comma before the closing bracket, which Alertmanager rejects
+# with a bare HTTP 400 and no explanation. Emitting the separator BEFORE
+# each element except the first is what keeps it valid JSON.
+format: |
+  [{{range $i, $a := .}}{{if $i}},{{end}}{
+    "labels": {
+      "alertname": "CrowdSecDecision",
+      "severity": "warning",
+      "service": "crowdsec",
+      "scenario": "{{$a.Scenario}}",
+      "source_ip": "{{$a.Source.IP}}"
+    },
+    "annotations": {
+      "summary": "CrowdSec: {{$a.Scenario}} from {{$a.Source.IP}}",
+      "description": "{{$a.Source.IP}} ({{$a.Source.Cn}} / {{$a.Source.AsName}}) triggered {{$a.Scenario}}"
+    }
+  }{{end}}]
+
+url: http://alertmanager:9093/api/v2/alerts
+method: POST
+headers:
+  Content-Type: application/json

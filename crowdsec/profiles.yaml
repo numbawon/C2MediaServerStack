@@ -1,0 +1,27 @@
+# Which alerts become decisions, and which of them notify.
+#
+# Same shape as the CrowdSec default, with the alertmanager notifier
+# attached. Without naming it here the plugin file is loaded and then
+# never used, which looks identical to working right up until the first
+# real attack produces silence.
+
+name: default_ip_remediation
+filters:
+ - Alert.Remediation == true && Alert.GetScope() == "Ip"
+decisions:
+ - type: ban
+   duration: 4h
+notifications:
+ - alertmanager
+on_success: break
+
+---
+name: default_range_remediation
+filters:
+ - Alert.Remediation == true && Alert.GetScope() == "Range"
+decisions:
+ - type: ban
+   duration: 4h
+notifications:
+ - alertmanager
+on_success: break

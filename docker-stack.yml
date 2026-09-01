@@ -43,6 +43,10 @@ networks:
     driver: overlay
 
 volumes:
+  traefik_plugins:
+    name: traefik_plugins
+  traefik_logs:
+    name: traefik_logs
   files_cfg:
     name: files_cfg
   browse_cfg:
@@ -144,6 +148,8 @@ secrets:
   # ntfy's first boot (`ntfy token add`), see README.
   ntfy_relay_token:
     external: true
+  crowdsec_bouncer_key:
+    external: true
 
 services:
 
@@ -207,10 +213,34 @@ services:
       - --providers.file.directory=/etc/traefik/dynamic
       - --providers.file.watch=true
       - --entrypoints.web.address=:80
-      - --entrypoints.web.http.middlewares=force-forwarded-proto@file
+      - --entrypoints.web.http.middlewares=force-forwarded-proto@file,crowdsec@file
+      # Trust X-Forwarded-For from the swarm overlay, which is where
+      # cloudflared sits. Without this every access-log line records the
+      # tunnel's own IP as the client, and CrowdSec would ban cloudflared
+      # on the first attack -- taking the whole site offline instead of the
+      # attacker. Scoped to the overlay: a LAN host cannot spoof through it.
+      - --entrypoints.web.forwardedheaders.trustedips=10.0.0.0/8
+      # Plugin is fetched at startup and cached in traefik_plugins, so a
+      # restart does not depend on the internet. Verified to load on
+      # v3.7.12 in a throwaway container before being put here: a plugin
+      # that fails to load stops Traefik from starting at all, which would
+      # take every web service down rather than just the bouncer.
+      - --experimental.plugins.crowdsec.modulename=github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin
+      - --experimental.plugins.crowdsec.version=v1.4.5
       - --api.dashboard=true
       - --metrics.prometheus=true
       - --log.level=INFO
+      # Access logs exist for CrowdSec, which reads them to decide who is
+      # attacking. JSON because the parser needs structured fields, and
+      # keepingRequestHeaders is limited to the two that matter: the real
+      # client IP arrives in Cf-Connecting-Ip since every request reaches
+      # Traefik from the tunnel, so without it every attacker looks like
+      # cloudflared and CrowdSec would ban the tunnel itself.
+      - --accesslog=true
+      - --accesslog.filepath=/logs/access.log
+      - --accesslog.format=json
+      - --accesslog.fields.headers.names.Cf-Connecting-Ip=keep
+      - --accesslog.fields.headers.names.User-Agent=keep
     environment:
       - TZ=${COMMON_TZ}
       # Traefik v3.1's swarm provider client defaults to a hardcoded old
@@ -228,9 +258,13 @@ services:
       - COMMON_DOMAIN=${COMMON_DOMAIN}
     volumes:
       - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      - traefik_logs:/logs
+      - traefik_plugins:/plugins-storage
     networks:
       - edge
       - internal
+    secrets:
+      - crowdsec_bouncer_key
     deploy:
       placement:
         constraints: [node.role == manager]
@@ -1085,6 +1119,22 @@ services:
       - Switch account
       - --idp-logout
       - https://files.${COMMON_DOMAIN}/outpost.goauthentik.io/sign_out
+      # Trust the overlay. copyparty's --xff-src defaults to loopback only
+      # (127.0.0.0/8, ::1/128), so every forwarded header from Traefik --
+      # which reaches it from 10.0.1.x -- was silently ignored. That made
+      # copyparty believe the request scheme was http while the browser sent
+      # Origin: https, and its CORS check rejected every write with
+      # "rejected by cors-check". Renames, uploads and deletes all failed.
+      # copyparty publishes no ports and is only reachable through Traefik,
+      # so trusting private IPs here is the same trust the route already has.
+      - --xff-src=lan
+      # TLS terminates at Cloudflare, so Traefik forwards plain HTTP and
+      # copyparty saw scheme "http" while the browser's Origin said https.
+      # Its CORS check then treats every write as cross-origin, and --acam
+      # defaults to GET,HEAD -- so renames, uploads and deletes were refused.
+      # These services are only reachable through the HTTPS tunnel, so https
+      # is the truthful assumption when the header does not survive.
+      - --xf-proto-fb=https
       - --http-only          # TLS terminates at Traefik
       - -e2dsa               # index for search and upload-undo
       - --no-robots
@@ -1130,6 +1180,22 @@ services:
       - Switch account
       - --idp-logout
       - https://browse.${COMMON_DOMAIN}/outpost.goauthentik.io/sign_out
+      # Trust the overlay. copyparty's --xff-src defaults to loopback only
+      # (127.0.0.0/8, ::1/128), so every forwarded header from Traefik --
+      # which reaches it from 10.0.1.x -- was silently ignored. That made
+      # copyparty believe the request scheme was http while the browser sent
+      # Origin: https, and its CORS check rejected every write with
+      # "rejected by cors-check". Renames, uploads and deletes all failed.
+      # copyparty publishes no ports and is only reachable through Traefik,
+      # so trusting private IPs here is the same trust the route already has.
+      - --xff-src=lan
+      # TLS terminates at Cloudflare, so Traefik forwards plain HTTP and
+      # copyparty saw scheme "http" while the browser's Origin said https.
+      # Its CORS check then treats every write as cross-origin, and --acam
+      # defaults to GET,HEAD -- so renames, uploads and deletes were refused.
+      # These services are only reachable through the HTTPS tunnel, so https
+      # is the truthful assumption when the header does not survive.
+      - --xf-proto-fb=https
       - --http-only
       - --no-robots
       - --no-del

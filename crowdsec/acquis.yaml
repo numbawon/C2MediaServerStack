@@ -1,0 +1,33 @@
+# What CrowdSec reads. Each source needs a `type` matching a parser from
+# an installed collection, or the lines are ingested and silently ignored.
+
+# Traefik access logs. This is the important one: every externally
+# reachable service goes through Traefik, so this is where brute-force,
+# path scanning and exploit attempts show up. ClientHost is the real
+# client IP (the entrypoint trusts X-Forwarded-For from the overlay),
+# not the tunnel's.
+filenames:
+  - /logs/access.log
+labels:
+  type: traefik
+
+---
+# Suricata's alerts, so network-layer detections join the same decision
+# engine as the HTTP ones instead of living in a separate silo.
+filenames:
+  - /var/log/suricata/eve.json
+labels:
+  type: suricata-evelogs
+
+---
+# NOT here: the host's SSH. Arch logs sshd to journald rather than
+# /var/log/auth.log, and the CrowdSec image ships no journalctl, so a
+# file source would silently match nothing -- which is how it was
+# configured at first, and CrowdSec warned "No matching files" while
+# looking perfectly healthy.
+#
+# It is a small gap: sshd is LAN-only (nothing external reaches it, every
+# internet request arrives through the Cloudflare tunnel) and accepts
+# publickey auth, and Suricata watches port 22 on the wire, so a
+# brute-force attempt still surfaces as scanning. Wiring journald in
+# would need a sidecar to export it to a file.

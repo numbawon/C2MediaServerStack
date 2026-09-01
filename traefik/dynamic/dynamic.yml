@@ -24,6 +24,38 @@ http:
         customRequestHeaders:
           X-Forwarded-Proto: "https"
 
+    # CrowdSec bouncer. Returns 403 to IPs CrowdSec has banned.
+    #
+    # stream mode, not live: Traefik pulls the decision list periodically
+    # and answers from a local cache instead of asking CrowdSec on every
+    # request. That keeps the hot path off the network, and -- more
+    # importantly -- means a CrowdSec outage degrades to "no new bans"
+    # rather than taking every web service down with it.
+    #
+    # The API key is a swarm secret read from disk, never inlined here:
+    # this file is in git.
+    crowdsec:
+      plugin:
+        crowdsec:
+          enabled: true
+          crowdsecMode: stream
+          crowdsecLapiHost: crowdsec:8080
+          crowdsecLapiScheme: http
+          crowdsecLapiKeyFile: /run/secrets/crowdsec_bouncer_key
+          # Trust the tunnel's forwarded client IP, or every ban would be
+          # evaluated against cloudflared's address instead of the attacker.
+          forwardedHeadersTrustedIPs:
+            - 10.0.0.0/8
+          # clientTrustedIPs are never blocked, and it must NOT contain the
+          # overlay: every external request reaches Traefik from cloudflared
+          # at 10.0.1.x, so trusting 10.0.0.0/8 here silently exempts the
+          # entire internet and the bouncer blocks nothing. Only the LAN
+          # belongs here. The overlay stays in forwardedHeadersTrustedIPs
+          # above, which is a different thing: it decides whose
+          # X-Forwarded-For is believed, not who is exempt.
+          clientTrustedIPs:
+            - 192.168.50.0/24
+
     # overseerr.<domain> still has a live DNS record pointing at this tunnel
     # (cloudflared's CLI has no "delete DNS route" command, and there's no
     # Cloudflare API token in this repo to do it directly) -- redirecting
