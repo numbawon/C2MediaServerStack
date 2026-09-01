@@ -17,6 +17,15 @@
 # back to the directory name and flag each other's containers as "orphans"
 # on every deploy (harmless today, but --remove-orphans would nuke the
 # other stack).
+# Log rotation, same reasoning as docker-stack.yml: the json-file driver
+# defaults to unlimited size with no rotation, and a container writing to
+# stdout filled the root disk once already.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 name: mediastack-download
 
 services:
@@ -31,6 +40,7 @@ services:
   # running NordLynx (TECHNOLOGY=NordLynx), so this swaps the wrapper around
   # the same WireGuard tunnel, reusing the very same private key.
   vpn-client:
+    logging: *logging
     # Four apps share this container's network namespace, so recreating it
     # takes all of them down with it. Diun will tell you when a new gluetun
     # image ships; do the bump by hand when you can watch it come back.
@@ -111,6 +121,7 @@ services:
     restart: unless-stopped
 
   qbittorrent:
+    logging: *logging
     image: linuxserver/qbittorrent:latest
     container_name: qbittorrent
     network_mode: "service:vpn-client"
@@ -134,6 +145,7 @@ services:
   # (see above) mean other apps still reach them as sonarr:8989/
   # radarr:7878/lazylibrarian:5299, same as if they had one.
   sonarr:
+    logging: *logging
     image: linuxserver/sonarr:latest
     container_name: sonarr
     network_mode: "service:vpn-client"
@@ -153,6 +165,7 @@ services:
     restart: unless-stopped
 
   radarr:
+    logging: *logging
     image: linuxserver/radarr:latest
     container_name: radarr
     network_mode: "service:vpn-client"
@@ -172,6 +185,7 @@ services:
     restart: unless-stopped
 
   lazylibrarian:
+    logging: *logging
     image: linuxserver/lazylibrarian:latest
     container_name: lazylibrarian
     network_mode: "service:vpn-client"

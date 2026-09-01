@@ -15,6 +15,22 @@
 # --attachable) so Traefik, which lives in this swarm stack, can still route
 # to them by service name.
 
+# Log rotation for every service below, via the &logging anchor.
+#
+# Docker's json-file driver defaults to UNLIMITED size with no rotation, so
+# a container's log grows until the disk fills. That is not hypothetical
+# here: a container writing a video stream to stdout produced a 147 GB log
+# and took the root filesystem to 64 KB free. `docker system df` does not
+# count container logs, so nothing reported it.
+#
+# 10 MB x 3 files caps each service at 30 MB, so all 37 together cannot
+# exceed about 1.1 GB no matter how noisy they get.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 networks:
   # Created once by scripts/bootstrap.sh (`docker network create --driver
   # overlay --attachable edge`) rather than inline here, so the standalone
@@ -132,6 +148,7 @@ services:
   # real docker.sock. Never publish this on a host port.
   # ---------------------------------------------------------------------
   docker-socket-proxy:
+    logging: *logging
     image: tecnativa/docker-socket-proxy:latest
     environment:
       TZ: ${COMMON_TZ}
@@ -171,6 +188,7 @@ services:
   # Tunnel below; no host ports published at all.
   # ---------------------------------------------------------------------
   traefik:
+    logging: *logging
     # Pinned to v3.7 deliberately -- see the go/no-go process for pinned
     # services in the README. Diun notifies when v3.8 ships; the bump is
     # a decision, not an automatic update.
@@ -227,6 +245,7 @@ services:
   # and `cloudflared tunnel route dns` (see README) before this deploys.
   # ---------------------------------------------------------------------
   cloudflared:
+    logging: *logging
     image: cloudflare/cloudflared:latest
     command: tunnel --config /etc/cloudflared/config.yml run
     # Same musl AAAA problem Seerr hit, and it takes the WHOLE STACK down
@@ -261,6 +280,7 @@ services:
   # This cannot be scripted via env vars -- see README.
   # ---------------------------------------------------------------------
   authentik-server:
+    logging: *logging
     image: ghcr.io/goauthentik/server:2026.8
     command: server
     environment:
@@ -296,6 +316,7 @@ services:
         - "traefik.http.services.authentik.loadbalancer.server.port=9000"
 
   authentik-worker:
+    logging: *logging
     image: ghcr.io/goauthentik/server:2026.8
     command: worker
     environment:
@@ -317,6 +338,7 @@ services:
       - internal
 
   postgres:
+    logging: *logging
     # Major-version jumps can break the on-disk data format -- pinned to
     # :16 (patches float), same reasoning as Traefik/Authentik above.
     image: postgres:16
@@ -333,6 +355,7 @@ services:
       - internal
 
   redis:
+    logging: *logging
     image: redis:7-alpine
     environment:
       - TZ=${COMMON_TZ}
@@ -357,6 +380,7 @@ services:
   # ---------------------------------------------------------------------
 
   portainer:
+    logging: *logging
     # Business Edition -- licensed. Preserves portainer_data/admin account
     # across the CE->EE image swap per Portainer's own upgrade docs; log
     # back in after this deploys and it'll prompt for the license key.
@@ -380,6 +404,7 @@ services:
         - "traefik.http.services.portainer.loadbalancer.server.port=9000"
 
   lidarr:
+    logging: *logging
     image: linuxserver/lidarr:latest
     environment:
       - PUID=${COMMON_PUID}
@@ -400,6 +425,7 @@ services:
         - "traefik.http.services.lidarr.loadbalancer.server.port=8686"
 
   bazarr:
+    logging: *logging
     image: linuxserver/bazarr:latest
     environment:
       - PUID=${COMMON_PUID}
@@ -420,6 +446,7 @@ services:
         - "traefik.http.services.bazarr.loadbalancer.server.port=6767"
 
   seerr:
+    logging: *logging
     image: ghcr.io/seerr-team/seerr:latest
     # No PUID/PGID -- unlike the LinuxServer images, this runs as the
     # baked-in `node` user (UID 1000), which happens to already match
@@ -454,6 +481,7 @@ services:
         - "traefik.http.services.seerr.loadbalancer.server.port=5055"
 
   prowlarr:
+    logging: *logging
     image: linuxserver/prowlarr:latest
     environment:
       - PUID=${COMMON_PUID}
@@ -487,6 +515,7 @@ services:
   # No Traefik labels on purpose: this is an internal API with no UI worth
   # exposing, so it stays reachable only from inside the overlay.
   flaresolverr:
+    logging: *logging
     image: ghcr.io/flaresolverr/flaresolverr:latest
     environment:
       - TZ=${COMMON_TZ}
@@ -508,6 +537,7 @@ services:
   # through Tautulli's own first-boot wizard (Plex account sign-in) -- can't
   # be scripted, same as every other app's first-boot in this stack.
   tautulli:
+    logging: *logging
     image: linuxserver/tautulli:latest
     environment:
       - PUID=${COMMON_PUID}
@@ -538,6 +568,7 @@ services:
   # instead.
   # ---------------------------------------------------------------------
   navidrome:
+    logging: *logging
     # Official image, not a LinuxServer one -- Navidrome ignores PUID/PGID
     # entirely (that's an LSIO-only convention); it wants the container's
     # actual user set instead, which is what `user:` below does.
@@ -586,6 +617,7 @@ services:
   # Admins-only Authentik application (see README), not the
   # any-authenticated-user default the rest of these apps use.
   organizarr:
+    logging: *logging
     image: ghcr.io/numbawon/organizarr:latest
     # CONTAINER label, not deploy.labels. Diun runs both a swarm provider
     # (reads service labels) and a docker provider (reads container
@@ -649,6 +681,7 @@ services:
         - "diun.enable=false"
 
   homer:
+    logging: *logging
     image: b4bz/homer:latest
     environment:
       - PUID=${COMMON_PUID}
@@ -674,6 +707,7 @@ services:
   # Traefik labels, internal network only.
   # ---------------------------------------------------------------------
   node-exporter:
+    logging: *logging
     image: prom/node-exporter:latest
     environment:
       - TZ=${COMMON_TZ}
@@ -706,6 +740,7 @@ services:
   # cAdvisor's per-container metrics need it directly, no way around that.
   # Kept read-only and internal-network-only to limit the blast radius.
   cadvisor:
+    logging: *logging
     image: gcr.io/cadvisor/cadvisor:latest
     environment:
       - TZ=${COMMON_TZ}
@@ -722,6 +757,7 @@ services:
         constraints: [node.role == manager]
 
   prometheus:
+    logging: *logging
     image: prom/prometheus:latest
     environment:
       - TZ=${COMMON_TZ}
@@ -745,6 +781,7 @@ services:
   # privileged action, so this is not a household-tier page.
   # ---------------------------------------------------------------------
   alertmanager:
+    logging: *logging
     image: prom/alertmanager:latest
     environment:
       - TZ=${COMMON_TZ}
@@ -782,6 +819,7 @@ services:
   # depend on. No ingress: only Alertmanager talks to it.
   # ---------------------------------------------------------------------
   alert-relay:
+    logging: *logging
     image: python:3-alpine
     command: python /app/relay.py
     environment:
@@ -810,6 +848,7 @@ services:
   # published port, ingress only via the tunnel. See ntfy/server.yml.
   # ---------------------------------------------------------------------
   ntfy:
+    logging: *logging
     image: binwiederhier/ntfy:latest
     command: serve
     environment:
@@ -841,6 +880,7 @@ services:
   # anything: every update is your decision.
   # ---------------------------------------------------------------------
   diun:
+    logging: *logging
     image: crazymax/diun:latest
     # --config passed explicitly rather than relying on an env var:
     # Diun has two separate config systems (kong CLI flags, which are
@@ -861,6 +901,7 @@ services:
         constraints: [node.role == manager]
 
   grafana:
+    logging: *logging
     image: grafana/grafana:latest
     environment:
       - TZ=${COMMON_TZ}
@@ -908,6 +949,7 @@ services:
   # `internal`, same trust boundary as the Prometheus datasource.
   # ---------------------------------------------------------------------
   loki:
+    logging: *logging
     image: grafana/loki:latest
     environment:
       - TZ=${COMMON_TZ}
@@ -937,6 +979,7 @@ services:
   # by the gluetun vpn-client container.
   # ---------------------------------------------------------------------
   recyclarr:
+    logging: *logging
     # Recyclarr publishes NO :latest tag at all, only major-version tags;
     # :latest gets "manifest unknown" and the task is rejected in a loop.
     #
@@ -987,6 +1030,7 @@ services:
   # produces a doubled URI that fails as redirect_uri mismatch.
   # ---------------------------------------------------------------------
   cleanuparr:
+    logging: *logging
     image: ghcr.io/cleanuparr/cleanuparr:latest
     environment:
       - TZ=${COMMON_TZ}
@@ -1030,6 +1074,7 @@ services:
   # matters is Traefik's, below.
   # ---------------------------------------------------------------------
   flood:
+    logging: *logging
     image: jesec/flood:latest
     # The image ships uid 1001 ("download"), which owns nothing else here
     # and cannot write a freshly created named volume. Running it as the
@@ -1091,6 +1136,7 @@ services:
   # writing the files. Navidrome's stays read-only.
   # ---------------------------------------------------------------------
   beets:
+    logging: *logging
     image: lscr.io/linuxserver/beets:latest
     environment:
       - TZ=${COMMON_TZ}
@@ -1120,6 +1166,7 @@ services:
   # in its own Settings -> Authentication after first boot (see README).
   # ---------------------------------------------------------------------
   audiobookshelf:
+    logging: *logging
     image: ghcr.io/advplyr/audiobookshelf:latest
     environment:
       - TZ=${COMMON_TZ}
@@ -1160,6 +1207,7 @@ services:
   # mobile app that cannot complete a browser redirect.
   # ---------------------------------------------------------------------
   immich-server:
+    logging: *logging
     image: ghcr.io/immich-app/immich-server:release
     environment:
       - TZ=${COMMON_TZ}
@@ -1201,6 +1249,7 @@ services:
         - "traefik.http.services.immich.loadbalancer.server.port=2283"
 
   immich-machine-learning:
+    logging: *logging
     image: ghcr.io/immich-app/immich-machine-learning:release
     environment:
       - TZ=${COMMON_TZ}
@@ -1217,6 +1266,7 @@ services:
           memory: 4096M
 
   immich-postgres:
+    logging: *logging
     # Pinned to the exact image Immich ships with. This is NOT
     # interchangeable with postgres:16 above -- it carries the vector
     # extensions Immich's search depends on, and Immich checks for them
@@ -1234,6 +1284,7 @@ services:
       - internal
 
   immich-redis:
+    logging: *logging
     image: docker.io/valkey/valkey:8-bookworm
     environment:
       - TZ=${COMMON_TZ}
@@ -1254,6 +1305,7 @@ services:
   # resolve would report an outage that is not happening.
   # ---------------------------------------------------------------------
   blackbox-exporter:
+    logging: *logging
     image: prom/blackbox-exporter:latest
     command:
       - --config.file=/etc/blackbox/blackbox.yml
@@ -1268,6 +1320,7 @@ services:
       - internal
 
   promtail:
+    logging: *logging
     image: grafana/promtail:latest
     environment:
       - TZ=${COMMON_TZ}
