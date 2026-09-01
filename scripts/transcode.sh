@@ -74,18 +74,24 @@ done
 
 [ -n "$IN" ] && [ -f "$IN" ] || { echo "usage: $0 <file> [--cq N] [--1080p] [--replace]" >&2; exit 1; }
 
-IMG=linuxserver/ffmpeg:latest
 DIR=$(cd "$(dirname "$IN")" && pwd)
 BASE=$(basename "$IN")
 STEM="${BASE%.*}"
 OUT="$DIR/${STEM}.__transcode__.mkv"
 
-run() { docker run --rm --device nvidia.com/gpu=all -v "$DIR":/w --entrypoint "$1" "$IMG" "${@:2}"; }
-
-probe() { run ffprobe -v error "$@"; }
+# Everything below runs from host binaries: ffmpeg 9 here is built with
+# hevc_nvenc and cuda hwaccel, and dovi_tool, hdr10plus_tool and mkvtoolnix
+# are installed. The earlier container version bought nothing and cost
+# something real: several steps pipe an HEVC elementary stream to stdout,
+# and Docker's json-file driver copies everything a container writes to
+# stdout into its log, JSON-escaped. Extracting from a 69 GB source that
+# way wrote a 147 GB log to the root filesystem and filled the disk. Native
+# calls also keep the output owned by the invoking user, so mkvpropedit can
+# edit it in place without a chown dance.
+probe() { ffprobe -v error "$@"; }
 
 echo "==> source"
-src_dur=$(probe -show_entries format=duration -of csv=p=0 "/w/$BASE")
+src_dur=$(probe -show_entries format=duration -of csv=p=0 "$IN")
 src_size=$(stat -c %s "$IN")
 printf '    %s\n    %.1f GB, %.0f min\n' "$BASE" "$(echo "$src_size/1000000000" | bc -l)" "$(echo "$src_dur/60" | bc -l)"
 
@@ -93,7 +99,7 @@ printf '    %s\n    %.1f GB, %.0f min\n' "$BASE" "$(echo "$src_size/1000000000" 
 # Highest channel count wins. A lossless track (TrueHD, DTS-HD) is
 # re-encoded to E-AC3 rather than copied: keeping it would leave several GB
 # of audio on a file whose whole point is being small.
-audio_json=$(probe -select_streams a -show_entries stream=index,codec_name,channels -of json "/w/$BASE")
+audio_json=$(probe -select_streams a -show_entries stream=index,codec_name,channels -of json "$IN")
 read -r A_IDX A_CODEC A_CH <<<"$(printf '%s' "$audio_json" | python3 -c "
 import sys, json
 st = json.load(sys.stdin).get('streams', [])
@@ -118,9 +124,9 @@ echo "    audio: stream $A_IDX $A_CODEC ${A_CH}ch -> $AMODE"
 # alone puts ffprobe into packets_and_frames mode and walks all 69 GB, so
 # the frame probe is pinned to the first frame with -read_intervals.
 hdr_stream=$(probe -select_streams v:0 -show_entries stream=color_primaries,color_transfer,color_space \
-               -of json "/w/$BASE")
+               -of json "$IN")
 hdr_frame=$(probe -select_streams v:0 -read_intervals '%+#1' -show_frames \
-               -show_entries frame=side_data_list -of json "/w/$BASE")
+               -show_entries frame=side_data_list -of json "$IN")
 hdr_json=$(printf '%s\n%s' "$hdr_stream" "$hdr_frame")
 
 eval "$(printf '%s' "$hdr_json" | python3 -c "
@@ -190,7 +196,7 @@ fi
 # copying every language of it is how a file ends up with 70 subtitle
 # tracks and most of a gigabyte of subtitles.
 sub_json=$(probe -select_streams s -show_entries stream=index,codec_name:stream_tags=language \
-             -of json "/w/$BASE")
+             -of json "$IN")
 mapfile -t SUB_MAPS < <(printf '%s' "$sub_json" | python3 -c "
 import sys, json
 TEXT = {'subrip', 'ass', 'ssa', 'mov_text', 'webvtt', 'text'}
@@ -204,9 +210,9 @@ echo "==> encoding (cq $CQ${SCALE:+, scaled to 1080p})"
 VF=(); [ -n "$SCALE" ] && VF=(-vf "$SCALE")
 
 start=$(date +%s)
-run ffmpeg -hide_banner -loglevel warning -stats \
+ffmpeg -hide_banner -loglevel warning -stats \
   -hwaccel cuda -hwaccel_output_format cuda \
-  -i "/w/$BASE" \
+  -i "$IN" \
   -map 0:v:0 -map "0:$A_IDX" "${SUB_MAPS[@]}" \
   "${VF[@]}" \
   -c:v hevc_nvenc -preset p6 -tune hq -rc vbr -cq "$CQ" -b:v 0 -spatial-aq 1 \
@@ -214,16 +220,12 @@ run ffmpeg -hide_banner -loglevel warning -stats \
   "${AUDIO_ARGS[@]}" \
   -c:s copy \
   -map_metadata 0 -metadata title= -metadata comment= \
-  -y "/w/$(basename "$OUT")"
+  -y "$OUT"
 rc=$?
 elapsed=$(( $(date +%s) - start ))
 
 [ "$rc" -eq 0 ] && [ -s "$OUT" ] || { echo "    ffmpeg failed (rc=$rc)" >&2; rm -f "$OUT"; exit 1; }
 
-# ffmpeg ran as root inside the container, so the output is root-owned and
-# mkvpropedit below cannot edit it in place. Hand it back before going on.
-docker run --rm -v "$DIR":/w alpine:latest \
-  chown "$(id -u):$(id -g)" "/w/$(basename "$OUT")" >/dev/null 2>&1
 
 # --- put the HDR mastering metadata back -----------------------------------
 # hevc_nvenc has no option for these, so they go into the MKV container.
@@ -294,7 +296,7 @@ if [ "$NO_DV" != "1" ] && command -v mkvmerge >/dev/null 2>&1 \
     pids+=($!); sinks+=("$FIFO_DIR/hp")
   fi
 
-  run ffmpeg -hide_banner -loglevel error -i "/w/$BASE" -map 0:v:0 -c copy \
+  ffmpeg -hide_banner -loglevel error -i "$IN" -map 0:v:0 -c copy \
       -bsf:v hevc_mp4toannexb -f hevc - 2>/dev/null \
     | tee "${sinks[@]}" > /dev/null
   # Both extractors must finish before their output is looked at.
@@ -325,11 +327,11 @@ import json; print(len(json.load(open('$HP')).get('SceneInfo', [])))" 2>/dev/nul
     # and takes over ten minutes on a two-hour 2160p encode. Counting
     # packets needs no decode, returns the same number, and takes 30s.
     enc_frames=$(probe -select_streams v:0 -count_packets -show_entries stream=nb_read_packets \
-                   -of csv=p=0 "/w/$(basename "$OUT")" 2>/dev/null | tr -d ',\r')
+                   -of csv=p=0 "$OUT" 2>/dev/null | tr -d ',\r')
 
     if [ -n "$src_frames" ] && [ "$src_frames" = "$enc_frames" ]; then
-      run ffmpeg -hide_banner -loglevel error -i "/w/$(basename "$OUT")" -map 0:v:0 -c copy \
-        -bsf:v hevc_mp4toannexb -f hevc -y "/w/$(basename "$BL")"
+      ffmpeg -hide_banner -loglevel error -i "$OUT" -map 0:v:0 -c copy \
+        -bsf:v hevc_mp4toannexb -f hevc -y "$BL"
 
       # HDR10+ first, then the RPU. Both end up as SEI between slices.
       cur="$BL"
@@ -371,7 +373,7 @@ elif [ "$NO_DV" != "1" ]; then
 fi
 
 # --- verify before anything replaces anything -----------------------------
-out_dur=$(probe -show_entries format=duration -of csv=p=0 "/w/$(basename "$OUT")")
+out_dur=$(probe -show_entries format=duration -of csv=p=0 "$OUT")
 out_size=$(stat -c %s "$OUT")
 ok=$(python3 -c "
 try: print(1 if abs(float('$src_dur')-float('$out_dur')) < 2.0 else 0)
