@@ -241,6 +241,11 @@ services:
       - --accesslog.format=json
       - --accesslog.fields.headers.names.Cf-Connecting-Ip=keep
       - --accesslog.fields.headers.names.User-Agent=keep
+      # Authentik's forward-auth sets this on requests it has authenticated.
+      # Logging it lets CrowdSec tell a signed-in person from an anonymous
+      # scanner, which is the difference between a false positive and a
+      # real detection.
+      - --accesslog.fields.headers.names.X-Authentik-Username=keep
     environment:
       - TZ=${COMMON_TZ}
       # Traefik v3.1's swarm provider client defaults to a hardcoded old
