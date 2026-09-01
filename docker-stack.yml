@@ -181,6 +181,19 @@ services:
       # only CONTAINERS to discover which image refs are in use.
       IMAGES: 1
       DISTRIBUTION: 0
+      # Portainer cannot list stacks without /swarm: it checks whether the
+      # endpoint is a swarm manager before enumerating them, and the proxy
+      # answered 403. The UI reports only "Unable to retrieve stacks",
+      # which says nothing about which endpoint was refused -- same class
+      # of failure as the VOLUMES/INFO note above.
+      SWARM: 1
+      # Stack detail views read secret metadata. The Docker API never
+      # returns secret VALUES over the wire (they are write-only once
+      # created), so this exposes names and timestamps, not contents.
+      SECRETS: 1
+      # Deliberately left off: this stack defines no docker configs, and
+      # unlike secrets, config CONTENT is readable through the API.
+      CONFIGS: 0
       # Portainer/Watchtower need write access to manage stacks/containers;
       # keep this scoped to POST only (no full unrestricted socket access).
       POST: 1
