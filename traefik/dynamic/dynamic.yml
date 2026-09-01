@@ -155,6 +155,26 @@ http:
         - authentik
       service: tdarr
 
+    # Read-write over the whole library and Storage. Admin tier.
+    files:
+      rule: 'Host(`files.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+      middlewares:
+        - authentik
+      service: files
+
+    # Read-only view of the media library: browse and download, nothing
+    # else. Still behind authentik -- read-only is not the same as public,
+    # and the library should not be enumerable by anyone with the URL.
+    browse:
+      rule: 'Host(`browse.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+      middlewares:
+        - authentik
+      service: browse
+
     overseerr-to-seerr:
       rule: 'Host(`overseerr.{{ env "COMMON_DOMAIN" }}`)'
       entryPoints:
@@ -228,6 +248,16 @@ http:
       loadBalancer:
         servers:
           - url: "http://tdarr:8265"
+
+    files:
+      loadBalancer:
+        servers:
+          - url: "http://files:3923"
+
+    browse:
+      loadBalancer:
+        servers:
+          - url: "http://browse:3923"
 
     seerr-redirect-target:
       loadBalancer:
