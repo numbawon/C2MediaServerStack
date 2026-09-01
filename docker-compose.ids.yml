@@ -1,0 +1,94 @@
+# IDS/IPS. Standalone (non-swarm) compose, deployed with:
+#   ./scripts/deploy.sh ids
+#
+# Outside the swarm stack because Suricata needs host networking and
+# NET_ADMIN/NET_RAW to read packets off the physical NIC. Swarm services
+# cannot use network_mode: host, and a Suricata that cannot see eno1 is
+# not an IDS -- it would come up healthy and detect nothing.
+#
+# WHAT EACH HALF ACTUALLY SEES, because it is not symmetrical:
+#
+#   Suricata watches eno1. That covers the LAN and the ports genuinely
+#   exposed there (22, 53, 80, 443, 139/445, 32400): scanning, malware
+#   C2 beaconing, lateral movement. It is close to BLIND to attacks
+#   arriving over the internet, because those come through the Cloudflare
+#   tunnel as an outbound TLS connection from cloudflared and are only
+#   decrypted inside Traefik.
+#
+#   CrowdSec covers exactly that blind spot by reading Traefik's access
+#   log, where those requests are already plaintext and carry the real
+#   client IP. It also ingests Suricata's alerts, so both layers feed one
+#   decision engine rather than two disconnected alert streams.
+
+name: mediastack-ids
+
+services:
+  crowdsec:
+    image: crowdsecurity/crowdsec:latest
+    container_name: crowdsec
+    environment:
+      - TZ=${COMMON_TZ}
+      # Collections define which parsers and scenarios exist. Without the
+      # traefik one the access log is read and discarded.
+      - COLLECTIONS=crowdsecurity/traefik crowdsecurity/base-http-scenarios crowdsecurity/http-cve crowdsecurity/sshd crowdsecurity/linux crowdsecurity/suricata
+      - GID=1000
+    volumes:
+      - crowdsec_config:/etc/crowdsec
+      - crowdsec_data:/var/lib/crowdsec/data
+      - ./crowdsec/acquis.yaml:/etc/crowdsec/acquis.yaml:ro
+      - ./crowdsec/whitelist.yaml:/etc/crowdsec/parsers/s02-enrich/mediastack-whitelist.yaml:ro
+      - ./crowdsec/notification-alertmanager.yaml:/etc/crowdsec/notifications/alertmanager.yaml:ro
+      - ./crowdsec/profiles.yaml:/etc/crowdsec/profiles.yaml:ro
+      # Read-only: CrowdSec reads logs, it must never be able to alter them.
+      - traefik_logs:/logs:ro
+      - suricata_logs:/var/log/suricata:ro
+      - /var/log:/var/log/host:ro
+    networks:
+      - edge
+    restart: unless-stopped
+
+  suricata:
+    image: jasonish/suricata:latest
+    container_name: suricata
+    # Host networking is the whole point: it needs to see the real NIC.
+    network_mode: host
+    cap_add:
+      - NET_ADMIN      # put the interface into promiscuous mode
+      - NET_RAW        # read raw frames
+      - SYS_NICE
+    command: -i ${IDS_INTERFACE:-eno1}
+    environment:
+      - TZ=${COMMON_TZ}
+      # IDS only. Deliberately NOT inline/IPS: this host has one NIC
+      # carrying Plex, Samba, DNS and the tunnel, so an inline false
+      # positive would drop the household's traffic, and recovery needs
+      # console access. Blocking is done by CrowdSec at Traefik instead,
+      # where a bad decision costs one HTTP 403 and is undone in seconds.
+      - SURICATA_OPTIONS=--set stream.inline=no
+    volumes:
+      - suricata_logs:/var/log/suricata
+      # A named volume, not a bind mount of ./suricata: the image chowns
+      # /etc/suricata recursively on start, and a read-only bind there
+      # makes it crash-loop on "Read-only file system". Docker seeds the
+      # volume from the image on first run, so the default config and the
+      # rule tuning in disable.conf both live here and survive updates.
+      - suricata_config:/etc/suricata
+    restart: unless-stopped
+
+networks:
+  edge:
+    external: true
+
+volumes:
+  suricata_config:
+    name: suricata_config
+  crowdsec_config:
+    name: crowdsec_config
+  crowdsec_data:
+    name: crowdsec_data
+  suricata_logs:
+    name: suricata_logs
+  # Written by the swarm stack's traefik, read here.
+  traefik_logs:
+    name: traefik_logs
+    external: true

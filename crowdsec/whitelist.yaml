@@ -1,0 +1,12 @@
+name: mediastack/trusted
+description: "Never ban infrastructure or the local networks"
+# A false positive that bans one of these takes the stack off the internet
+# rather than stopping an attacker, so they are excluded before any
+# scenario gets to vote.
+whitelist:
+  reason: "local networks and container infrastructure"
+  cidr:
+    - 127.0.0.0/8
+    - 10.0.0.0/8          # swarm overlay, incl. cloudflared and traefik
+    - 172.16.0.0/12       # docker bridges
+    - 192.168.50.0/24     # your LAN -- change to match yours
