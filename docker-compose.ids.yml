@@ -37,6 +37,7 @@ services:
       - crowdsec_data:/var/lib/crowdsec/data
       - ./crowdsec/acquis.yaml:/etc/crowdsec/acquis.yaml:ro
       - ./crowdsec/whitelist.yaml:/etc/crowdsec/parsers/s02-enrich/mediastack-whitelist.yaml:ro
+      - ./crowdsec/whitelist-appnoise.yaml:/etc/crowdsec/parsers/s02-enrich/mediastack-appnoise.yaml:ro
       - ./crowdsec/notification-alertmanager.yaml:/etc/crowdsec/notifications/alertmanager.yaml:ro
       - ./crowdsec/profiles.yaml:/etc/crowdsec/profiles.yaml:ro
       # Read-only: CrowdSec reads logs, it must never be able to alter them.
