@@ -620,10 +620,17 @@ services:
       - navidrome_config:/data
       - ${COMMON_MEDIA}/Music:/music:ro
     networks:
+      # `internal`, not `edge`, for the same reason as grafana:
+      # ND_EXTAUTH_USERHEADER above makes navidrome trust
+      # X-authentik-username, so anything able to reach navidrome:4533
+      # directly could forge it and sign in as any user.
       - internal
     deploy:
       labels:
         - "traefik.enable=true"
+        # See grafana: overrides the global swarm provider network so
+        # Traefik stops warning and stops relying on a fallback.
+        - "traefik.docker.network=mediastack_internal"
         - "traefik.http.routers.navidrome.rule=Host(`navidrome.${COMMON_DOMAIN}`) && !PathPrefix(`/rest`)"
         - "traefik.http.routers.navidrome.entrypoints=web"
         - "traefik.http.routers.navidrome.middlewares=authentik@file"
@@ -976,6 +983,17 @@ services:
     deploy:
       labels:
         - "traefik.enable=true"
+        # Traefik's global --providers.swarm.network is `edge`, and grafana
+        # is deliberately not on it (see `networks:` above). Without this
+        # override Traefik logs "Could not find network edge" on every
+        # reconcile and falls back to whichever network it finds first --
+        # right today, and silently wrong if another network is ever added.
+        #
+        # It really is `traefik.docker.network`, not `traefik.swarm.network`:
+        # the v3 swarm provider still reads the docker-provider key, and the
+        # swarm-prefixed one is silently ignored. Verified by removing each
+        # in turn and watching whether the warning came back.
+        - "traefik.docker.network=mediastack_internal"
         - "traefik.http.routers.grafana.rule=Host(`grafana.${COMMON_DOMAIN}`)"
         - "traefik.http.routers.grafana.entrypoints=web"
         - "traefik.http.routers.grafana.middlewares=authentik@file"
