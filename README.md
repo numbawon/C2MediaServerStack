@@ -997,6 +997,85 @@ one:
 cloudflared tunnel route dns mediastack flood.yourdomain.com
 ```
 
+## Transcoding
+
+UHD remuxes are enormous and almost all of it is video. A 109-minute
+2160p remux in this library measures 69 GB: 64 GB of 78 Mbps HEVC, 3.4 GB
+of TrueHD, and around 70 subtitle tracks. Re-encoding to HEVC at cq 28
+brings it to roughly 5 GB.
+
+Two tools, for two different jobs.
+
+### Tdarr (the library)
+
+Server and node in one container at `tdarr.<domain>`, behind the authentik
+middleware with no exception: it rewrites files in place, and its own login
+is a paid feature, so forward-auth is the whole of its security.
+
+It lives in `docker-compose.tdarr.yml` rather than the Swarm stack for the
+same reason as Plex and Ollama: `docker stack deploy` silently ignores GPU
+reservations. A node deployed into the stack comes up, accepts jobs, and
+encodes every one on the CPU, with nothing reporting that the GPU is idle.
+On this hardware that is the difference between an hour and roughly a day
+per film.
+
+```bash
+./scripts/deploy.sh tdarr
+cloudflared tunnel route dns mediastack tdarr.yourdomain.com
+```
+
+The CNAME is not optional: the wildcard tunnel ingress routes the
+hostname but does not create DNS for it.
+
+The GPU is shared with Plex transcoding and Ollama, and Turing caps
+concurrent NVENC sessions, so the node is left at one worker. Scheduling
+long library sweeps outside streaming hours is worth doing.
+
+The scratch directory is on the media array rather than the OS SSD, which
+does not have room for a 4K remux in progress.
+
+### scripts/transcode.sh (one file)
+
+```bash
+scripts/transcode.sh <file> [--cq 28] [--1080p] [--replace] [--no-dv]
+```
+
+Keeps one audio track (highest channel count, re-encoded to E-AC3 if the
+source is lossless, since keeping TrueHD leaves several GB of audio on a
+file whose whole point is being small) and English text subtitles only.
+It verifies output duration against the source before anything replaces
+anything, and leaves the original alone unless `--replace` is passed.
+
+NVENC rather than CPU x265. x265 gives better quality per bit, but a
+6-core Xeon E5-1650 v3 manages single-digit fps at 2160p. For shrinking
+remuxes that trade is worth making; for archival masters it would not be.
+
+**HDR needs care, and none of it is automatic.** NVENC carries no HDR
+metadata through an encode:
+
+- Colour tags (bt2020 / smpte2084 / bt2020nc) are set explicitly. Without
+  them the output is tagged SDR and plays washed-out grey on an HDR
+  display.
+- Mastering-display and content-light values cannot be passed to
+  `hevc_nvenc` at all, which accepts no `master_display` or `max_cll`
+  option. They are read off the source and written into the MKV container
+  with `mkvpropedit` afterwards.
+- Dolby Vision and HDR10+ are extracted from the source and injected back
+  into the encoded stream, which costs no second encode: both ride in SEI
+  units between slices. Needs `dovi_tool` and `hdr10plus_tool` on PATH;
+  without them the output is static HDR10 and says so.
+
+DV profile 7 is dual-layer, and a single-layer re-encode has nowhere to
+put the enhancement layer, so the RPU is converted to profile 8.1. That is
+lossless only when the enhancement layer is MEL, carrying no real
+residual, which is what these remuxes use. An FEL source keeps picture
+data there; the profile is read from the RPU and reported rather than
+assumed.
+
+Frame counts are compared before injection. A mismatch does not fail
+loudly, it silently desyncs the metadata against the picture for the
+length of the film, so on a mismatch the stage is skipped.
+
 ## Backups
 
 - **Local** (`scripts/backup-local.sh`): tars every app's config volume
