@@ -43,6 +43,10 @@ networks:
     driver: overlay
 
 volumes:
+  files_cfg:
+    name: files_cfg
+  browse_cfg:
+    name: browse_cfg
   # Explicit `name:` on every volume so it doesn't get the `<stack-name>_`
   # prefix Swarm adds by default -- keeps scripts/backup-local.sh's volume
   # list stable regardless of what you name the stack at deploy time.
@@ -1048,6 +1052,86 @@ services:
         - "traefik.http.routers.cleanuparr.entrypoints=web"
         # No authentik@file -- see the block comment above.
         - "traefik.http.services.cleanuparr.loadbalancer.server.port=11011"
+
+  # ---------------------------------------------------------------------
+  # copyparty (files) -- ADMIN file manager. Read-write over Media and
+  # Storage, so it sits behind authentik with no exception.
+  #
+  # NOT Filebrowser: that project was archived on 2026-09-01 with known
+  # unfixed security advisories, which is disqualifying for something
+  # internet-reachable holding write access to the whole library.
+  #
+  # Permissions are enforced in two places that do not depend on each
+  # other. Authentik decides who reaches the route at all; the volume
+  # spec decides what they can do once inside. The read-only sibling
+  # below adds a third, the kernel.
+  # ---------------------------------------------------------------------
+  files:
+    image: copyparty/ac:latest
+    command:
+      - -v
+      - /w/media:media:A
+      - -v
+      - /w/storage:storage:A
+      - --http-only          # TLS terminates at Traefik
+      - -e2dsa               # index for search and upload-undo
+      - --no-robots
+    volumes:
+      - ${COMMON_MEDIA}:/w/media
+      - /mnt/Storage:/w/storage
+      - files_cfg:/cfg
+    environment:
+      - TZ=${COMMON_TZ}
+    networks:
+      - edge
+    logging: *logging
+    deploy:
+      replicas: 1
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.files.rule=Host(`files.${COMMON_DOMAIN}`)
+        - traefik.http.routers.files.entrypoints=web
+        - traefik.http.routers.files.middlewares=authentik@file
+        - traefik.http.services.files.loadbalancer.server.port=3923
+
+  # ---------------------------------------------------------------------
+  # copyparty (browse) -- READ-ONLY view of the media library, for people
+  # who should be able to find and download a file but never change one.
+  #
+  # Three independent things have to hold for that to be true, and the
+  # last one is the only one that cannot be misconfigured:
+  #   1. the volume grants "r" (read/list/download) and nothing else
+  #   2. Authentik still gates who reaches the route
+  #   3. the bind mount is :ro, so the kernel refuses writes even if
+  #      copyparty is compromised or the volume spec is wrong
+  #
+  # Storage is not mounted here at all. Absent beats read-only.
+  # ---------------------------------------------------------------------
+  browse:
+    image: copyparty/ac:latest
+    command:
+      - -v
+      - /w/media:media:r
+      - --http-only
+      - --no-robots
+      - --no-del
+      - --no-mv
+    volumes:
+      - ${COMMON_MEDIA}:/w/media:ro
+      - browse_cfg:/cfg
+    environment:
+      - TZ=${COMMON_TZ}
+    networks:
+      - edge
+    logging: *logging
+    deploy:
+      replicas: 1
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.browse.rule=Host(`browse.${COMMON_DOMAIN}`)
+        - traefik.http.routers.browse.entrypoints=web
+        - traefik.http.routers.browse.middlewares=authentik@file
+        - traefik.http.services.browse.loadbalancer.server.port=3923
 
   # ---------------------------------------------------------------------
   # Flood -- alternative web UI for qBittorrent. Media-management tier.
