@@ -1069,10 +1069,22 @@ services:
   files:
     image: copyparty/ac:latest
     command:
+      # copyparty has no accounts: Authentik is the login, and everyone
+      # arrives already authenticated. Left alone its UI still shows a
+      # "Login for more" button leading to a password form that nothing can
+      # satisfy, so both buttons are pointed at Authentik instead. Logout
+      # goes through the outpost so it ends the SSO session rather than a
+      # copyparty session that does not exist.
       - -v
       - /w/media:media:A
       - -v
       - /w/storage:storage:A
+      - --idp-login
+      - https://auth.${COMMON_DOMAIN}/
+      - --idp-login-t
+      - Switch account
+      - --idp-logout
+      - https://files.${COMMON_DOMAIN}/outpost.goauthentik.io/sign_out
       - --http-only          # TLS terminates at Traefik
       - -e2dsa               # index for search and upload-undo
       - --no-robots
@@ -1112,6 +1124,12 @@ services:
     command:
       - -v
       - /w/media:media:r
+      - --idp-login
+      - https://auth.${COMMON_DOMAIN}/
+      - --idp-login-t
+      - Switch account
+      - --idp-logout
+      - https://browse.${COMMON_DOMAIN}/outpost.goauthentik.io/sign_out
       - --http-only
       - --no-robots
       - --no-del
