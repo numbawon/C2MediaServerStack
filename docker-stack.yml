@@ -1666,3 +1666,19 @@ services:
       - ./promtail:/etc/promtail:ro
     networks:
       - internal
+    # Receives the router's syslog (see the router-syslog job in
+    # promtail-config.yml). mode: host for the same reason Traefik uses
+    # it -- the ingress mesh would SNAT the sender to the ingress gateway
+    # and every message would arrive labelled with the wrong source.
+    # 1514 rather than 514 so promtail needs no privileged port.
+    ports:
+      - target: 1514
+        published: 1514
+        protocol: tcp
+        mode: host
+    deploy:
+      # Pinned so the published port is always on this host. Without a
+      # constraint the task could be scheduled elsewhere and the router
+      # would be shipping logs at a closed port with nothing to say so.
+      placement:
+        constraints: [node.role == manager]

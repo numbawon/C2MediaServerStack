@@ -21,3 +21,37 @@ scrape_configs:
         target_label: "container"
       - source_labels: ["__meta_docker_container_label_com_docker_swarm_service_name"]
         target_label: "swarm_service"
+
+  # Router syslog, received over the network rather than read from a file.
+  #
+  # The router keeps its log in tmpfs (/opt/var/log/messages is a symlink
+  # to /tmp/syslog.log), so every reboot wipes it -- precisely when the
+  # contents matter most. After the 2026-09-02 reboot the network took 45
+  # minutes to come back and the boot sequence explaining why had already
+  # been flushed before anyone looked.
+  #
+  # RFC5424 over TCP because that is the only format promtail's syslog
+  # receiver parses; the router's stock BSD-format remote logging
+  # (nvram log_ipaddr) would NOT work here. syslog-ng's syslog() driver
+  # emits RFC5424, which is why this goes through scribe rather than the
+  # built-in setting. See router/syslog-ng-remote.conf.
+  #
+  # Caveat worth knowing: messages generated while the WAN is down can
+  # only arrive once it returns. syslog-ng holds them in its in-memory
+  # queue and flushes on reconnect, which covers a normal boot, but this
+  # is not a substitute for the router keeping its own local history.
+  - job_name: router-syslog
+    syslog:
+      listen_address: 0.0.0.0:1514
+      listen_protocol: tcp
+      idle_timeout: 120s
+      use_incoming_timestamp: true
+      labels:
+        job: router
+    relabel_configs:
+      - source_labels: ["__syslog_message_hostname"]
+        target_label: "host"
+      - source_labels: ["__syslog_message_app_name"]
+        target_label: "app"
+      - source_labels: ["__syslog_message_severity"]
+        target_label: "severity"
