@@ -5,9 +5,27 @@
 #
 # Copy this file to config.yml (git-ignored -- holds your real domain) and
 # swap example.com for yours.
+#
+# https, not http. Traefik redirects :80 -> :443, so an http origin here
+# would have the tunnel's own request answered with a 308 to https, which
+# Cloudflare follows back into the tunnel, which arrives on :80 again --
+# an infinite loop on every hostname at once. The origin scheme and that
+# redirect are one change; never add one without the other.
+#
+# originServerName is required because cloudflared connects to the host
+# named "traefik" and would otherwise send that as SNI, which the
+# Let's Encrypt certificate does not cover -- the TLS handshake fails
+# before any routing happens. Setting it to the apex presents a name the
+# wildcard certificate does cover. Traefik routes on the Host header,
+# which cloudflared preserves, so a single value works for every
+# hostname rather than needing one ingress rule each.
 ingress:
   - hostname: "*.example.com"
-    service: http://traefik:80
+    service: https://traefik:443
+    originRequest:
+      originServerName: example.com
   - hostname: "example.com"
-    service: http://traefik:80
+    service: https://traefik:443
+    originRequest:
+      originServerName: example.com
   - service: http_status:404

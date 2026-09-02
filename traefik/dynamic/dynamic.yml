@@ -24,6 +24,19 @@ http:
         customRequestHeaders:
           X-Forwarded-Proto: "https"
 
+    # Sends every plain-HTTP request to https. This is a middleware rather
+    # than `entryPoints.web.http.redirections`, which is the more obvious
+    # way to write it and does not work here: the redirection builds a
+    # catch-all router on the `web` entrypoint, and alongside
+    # `entryPoints.websecure.http.tls` Traefik treats that router as a TLS
+    # router reached without TLS and answers 418 to EVERY request on :80,
+    # matching hostname or not. Verified: with redirections configured,
+    # both a real hostname and a nonexistent one returned 418.
+    redirect-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
     # Rate limit. Deliberately generous: this exists to stop a flood, not
     # to police normal use. Plex streaming, Immich thumbnail grids and
     # Audiobookshelf all burst hard from a single client, and a limit
@@ -42,18 +55,26 @@ http:
         average: 100
         burst: 200
         period: 1s
-        # WITHOUT sourceCriterion THIS IS WORSE THAN NOTHING. Every request
-        # reaches Traefik from cloudflared's single IP, so the default
-        # (bucket per TCP source) puts the entire household -- and any
-        # attacker -- in ONE shared bucket. Verified: two different client
-        # IPs behind the tunnel drained the same allowance, so one noisy
-        # client would 429 everyone else, and a flood would deny service
-        # rather than absorb it.
+        # Left at the default (bucket per client address), which is
+        # correct here ONLY because both entrypoints set
+        # forwardedheaders.trustedips=10.0.0.0/8: Traefik resolves the
+        # tunnel's X-Forwarded-For into the client address before any
+        # middleware sees it. Verified in the access log -- on every
+        # tunnel request ClientHost equals Cf-Connecting-Ip exactly,
+        # including for distinct external clients.
         #
-        # Cf-Connecting-Ip is set by Cloudflare on every request and holds
-        # the true client address, so it gives each client its own bucket.
-        sourceCriterion:
-          requestHeaderName: Cf-Connecting-Ip
+        # This used to be `requestHeaderName: Cf-Connecting-Ip`, which was
+        # right when the tunnel was the only way in and wrong once :443
+        # was published. Requests arriving directly carry no such header,
+        # and Traefik groups every headerless request together: measured
+        # at 400 concurrent direct requests, 160 came back 429 while
+        # sharing one bucket. The default keys on an address that is
+        # correct on BOTH paths -- confirmed with a real external client
+        # (an Android phone on cellular) logged with its own public IP,
+        # not the router's, so the port forward preserves the source.
+        #
+        # If forwardedheaders.trustedips is ever removed, this silently
+        # becomes one shared bucket for everyone behind the tunnel.
 
     # Security headers.
     #
@@ -174,6 +195,7 @@ http:
       rule: 'Host(`terminal.{{ env "COMMON_DOMAIN" }}`)'
       entryPoints:
         - web
+        - websecure
       middlewares:
         - authentik
       service: terminal
@@ -188,6 +210,7 @@ http:
       rule: 'Host(`pihole.{{ env "COMMON_DOMAIN" }}`)'
       entryPoints:
         - web
+        - websecure
       middlewares:
         - authentik
       service: pihole
@@ -196,6 +219,7 @@ http:
       rule: 'Host(`qbittorrent.{{ env "COMMON_DOMAIN" }}`)'
       entryPoints:
         - web
+        - websecure
       middlewares:
         - authentik
       service: qbittorrent
@@ -207,6 +231,7 @@ http:
       rule: 'Host(`sonarr.{{ env "COMMON_DOMAIN" }}`)'
       entryPoints:
         - web
+        - websecure
       middlewares:
         - authentik
       service: sonarr
@@ -215,6 +240,7 @@ http:
       rule: 'Host(`radarr.{{ env "COMMON_DOMAIN" }}`)'
       entryPoints:
         - web
+        - websecure
       middlewares:
         - authentik
       service: radarr
@@ -223,6 +249,7 @@ http:
       rule: 'Host(`lazylibrarian.{{ env "COMMON_DOMAIN" }}`)'
       entryPoints:
         - web
+        - websecure
       middlewares:
         - authentik
       service: lazylibrarian
@@ -235,6 +262,7 @@ http:
       rule: 'Host(`plex.{{ env "COMMON_DOMAIN" }}`)'
       entryPoints:
         - web
+        - websecure
       service: plex
 
     # Open WebUI is NOT behind the authentik middleware, deliberately.
@@ -249,6 +277,7 @@ http:
       rule: 'Host(`ai.{{ env "COMMON_DOMAIN" }}`)'
       entryPoints:
         - web
+        - websecure
       service: open-webui
 
     # Tdarr rewrites files in the library, so it sits behind authentik with
@@ -258,6 +287,7 @@ http:
       rule: 'Host(`tdarr.{{ env "COMMON_DOMAIN" }}`)'
       entryPoints:
         - web
+        - websecure
       middlewares:
         - authentik
       service: tdarr
@@ -267,6 +297,7 @@ http:
       rule: 'Host(`files.{{ env "COMMON_DOMAIN" }}`)'
       entryPoints:
         - web
+        - websecure
       middlewares:
         - authentik
       service: files
@@ -278,6 +309,7 @@ http:
       rule: 'Host(`browse.{{ env "COMMON_DOMAIN" }}`)'
       entryPoints:
         - web
+        - websecure
       middlewares:
         - authentik
       service: browse
@@ -286,6 +318,7 @@ http:
       rule: 'Host(`overseerr.{{ env "COMMON_DOMAIN" }}`)'
       entryPoints:
         - web
+        - websecure
       middlewares:
         - overseerr-to-seerr
       # Never actually reached -- the redirectRegex middleware above returns
@@ -317,7 +350,10 @@ http:
     pihole:
       loadBalancer:
         servers:
-          - url: "http://172.20.0.1:80"
+          # :8053, not :80 -- Traefik publishes the host's 80/443 itself
+          # now, so FTL's admin webserver was moved off them. See
+          # FTLCONF_webserver_port in docker-compose.dns.yml.
+          - url: "http://172.20.0.1:8053"
 
     qbittorrent:
       loadBalancer:

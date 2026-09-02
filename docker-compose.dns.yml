@@ -42,7 +42,7 @@ services:
     image: pihole/pihole:latest
     container_name: pihole
     hostname: C2-Pihole
-    # Shares the host's network stack: binds :53 and :80 directly, sees
+    # Shares the host's network stack: binds :53 and :8053 directly, sees
     # real LAN source addresses. No `ports:` key -- publishing is
     # meaningless (and rejected) under host networking.
     network_mode: host
@@ -54,6 +54,23 @@ services:
       # and rewrites pwhash to match, so it actively clears any password
       # set previously, including one auto-generated on first boot.
       - FTLCONF_webserver_api_password=
+      # Move FTL's admin webserver off 80/443 so Traefik can publish them
+      # on the host for direct Let's Encrypt TLS. Pi-hole binds both by
+      # default and network_mode: host means it owns the real host ports,
+      # which is why `docker service update --publish-add 443` on Traefik
+      # would fail with "address already in use".
+      #
+      # Only the admin UI moves. dns.blocking.mode is NULL here, so blocked
+      # domains resolve to 0.0.0.0 and never reach this webserver at all --
+      # nothing was being served on 80/443 except the dashboard, which
+      # arrives through Traefik anyway (see traefik/dynamic/dynamic.yml,
+      # where the pihole service now points at :8053).
+      #
+      # Syntax is FTL's: <port><flags>, comma-separated. `o` = HTTP
+      # redirect-to-canonical off. The TLS listener is dropped entirely --
+      # FTL served it with a self-signed cert nothing trusted, and Traefik
+      # terminates TLS for this hostname now.
+      - FTLCONF_webserver_port=8053o,[::]:8053o
       # Suppresses AAAA at the resolver. Added when the router was
       # SERVFAILing every AAAA query and musl-based containers were
       # failing the whole lookup as a result. The router has since been

@@ -653,6 +653,220 @@ cloudflared tunnel route dns mediastack ai.yourdomain.com
 Without it the name simply does not resolve, which looks like the service
 being down rather than like a missing record.
 
+## TLS certificates (Let's Encrypt)
+
+Traefik holds one wildcard certificate for `<domain>` + `*.<domain>`,
+issued over the ACME DNS-01 challenge against Cloudflare. Every router is
+attached to both the `web` (:80) and `websecure` (:443) entrypoints, and
+the certificate is configured on the entrypoint rather than per-router, so
+a new service inherits TLS from the moment its labels land -- nothing
+per-hostname to remember.
+
+DNS-01 rather than HTTP-01 for two reasons: a wildcard can only be issued
+that way at all, and it needs no inbound port, so renewals keep working
+whether or not the router is forwarding anything.
+
+### The Cloudflare token
+
+Zone -> Zone -> Read and Zone -> DNS -> Edit, scoped to this zone only.
+The "Edit zone DNS" template in the Cloudflare UI grants exactly those two.
+It is stored as a Docker secret and handed to Traefik by path, not value:
+
+```bash
+printf %s '<token>' | docker secret create cloudflare_dns_token -
+```
+
+`CF_DNS_API_TOKEN_FILE` in `docker-stack.yml` points at
+`/run/secrets/cloudflare_dns_token`. lego (the ACME library Traefik
+embeds) accepts a `_FILE` suffix on any of its provider variables, which
+is what keeps the token out of the service's environment where
+`docker inspect` would print it.
+
+Do not use the Global API Key instead. It works, but it grants full
+account access, and a scoped token is the same amount of work.
+
+### Pi-hole had to move off 80/443 first
+
+Pi-hole runs `network_mode: host` and FTL's admin webserver binds `:80`
+and `:443` by default, so Traefik could not publish them. `docker service
+update --publish-add` fails with "address already in use", which reads
+like a Traefik problem and is not. `FTLCONF_webserver_port=8053o,[::]:8053o`
+in `docker-compose.dns.yml` moves it, and the `pihole` service in
+`traefik/dynamic/dynamic.yml` points at `:8053` to match.
+
+Nothing was lost in the move. `dns.blocking.mode` is NULL here, so blocked
+domains resolve to `0.0.0.0` and never reach that webserver -- it served
+the dashboard and nothing else, and the dashboard arrives through Traefik.
+
+Order matters when deploying this: Pi-hole first, so the ports are free,
+then the stack. The other way round leaves Traefik's task crash-looping on
+a port it cannot bind, which takes every web service down.
+
+### Staging before production
+
+`acme.caserver` points at Let's Encrypt's staging endpoint on first
+deploy. Staging issues an untrusted certificate but has effectively no
+rate limit, so a wrong token scope or a propagation timeout costs nothing.
+Production allows 5 duplicate certificates per week for the same set of
+names, and a wildcard covering 31 hostnames is one name set -- five failed
+attempts and it is a week's wait.
+
+Switch by changing two lines together in the `traefik` service:
+
+```yaml
+- --certificatesresolvers.letsencrypt.acme.caserver=https://acme-v02.api.letsencrypt.org/directory
+- --certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json
+```
+
+Both, not one. `acme-staging.json` holds the ACME *account key* as well as
+the certificates, and a staging account is not valid against production;
+reusing the file either errors or silently keeps serving the staging cert.
+Separate files also mean the switch is reversible.
+
+Confirm which one is live before trusting it:
+
+```bash
+docker exec $(docker ps -qf name=mediastack_traefik) \
+  sh -c 'ls -la /acme; wc -c /acme/*.json'
+echo | openssl s_client -connect localhost:443 -servername grafana.<domain> 2>/dev/null \
+  | openssl x509 -noout -issuer -dates
+```
+
+A staging certificate says `(STAGING) Pretend Pear` or similar in the
+issuer; production says `Let's Encrypt`.
+
+### The ISP blocks inbound 443, so the direct path uses 32443
+
+Plex needs to bypass Cloudflare (large media streams through the proxy
+are the reason mobile playback failed), which means reaching Traefik
+directly. The obvious way, forwarding 443, does not work on this
+connection: the ISP is Wave Broadband, and inbound 443 never arrives.
+
+The router is not at fault and neither is the host. The evidence, in the
+order that settles it:
+
+```bash
+# the rule exists and is installed
+ssh <router> 'nvram get vts_rulelist'
+ssh <router> 'iptables -t nat -L VSERVER -n -v'
+
+# the router holds the real public IP -- no CGNAT, no double NAT
+ssh <router> 'nvram get wan0_ipaddr'
+```
+
+Then watch the DNAT counters across an external connection attempt. On
+443 they do not move at all, so the packets never reach the router. On
+32443, forwarded to 192.168.50.10:443, they do:
+
+```
+0  DNAT tcp dpt:443   to:192.168.50.10
+3  DNAT tcp dpt:32443 to:192.168.50.10:443
+```
+
+So: `WAN 32443 -> 192.168.50.10:443`, and Plex's `customConnections` is
+`https://plex.<domain>:32443`. Traefik needs no change -- the client
+still asks for the same hostname, so the wildcard certificate is valid.
+The 443 forward is left in place; it costs nothing and starts working if
+the ISP policy ever changes. Do not use 8443, which the router's own
+admin UI listens on.
+
+### Plex's direct path depends on the router's DDNS record
+
+`plex.<domain>` is a DNS-only CNAME to the apex, and the apex is an A
+record holding the current WAN address. That indirection is deliberate:
+the router's DDNS keeps the apex current, so Plex follows a changing IP
+without anything else to update. A DNS-only CNAME resolves to its
+target's underlying address rather than Cloudflare's, which is what makes
+Plex bypass the proxy even though the apex itself is proxied.
+
+The coupling to know about: **the apex must stay an A record.** It was a
+CNAME to the tunnel until the DDNS script rewrote it, which it does
+because `ddns_hostname_x` on the router is set to the bare domain. If the
+apex is ever pointed back at the tunnel, Plex's direct path breaks with
+it, and the DDNS script will fight the change on its next run anyway.
+
+Two consequences worth remembering:
+
+- `https://<domain>/` (the bare apex) no longer routes through the
+  tunnel. Cloudflare proxies it to the origin on 443, which is not
+  reachable, so it returns 522. Nothing is lost, because Traefik has no
+  router for the bare apex and would answer 404 through the tunnel
+  either way, but it is not a fault to go chasing.
+- Because the apex is proxied to the origin, Cloudflare's edge can be
+  borrowed as an outside client to test origin reachability:
+  `curl --resolve <domain>:443:104.21.62.130 https://<domain>/`. A 522
+  means the edge could not open a TCP connection to the origin.
+
+The DDNS script itself runs from the `ddns-start` hook on WAN-up events,
+not on a timer, plus a forced refresh every `ddns_refresh_x` days (21).
+In practice it runs at least daily, because the router is on a scheduled
+3 a.m. reboot.
+
+### Rate limiting keys on the client address, and why that is safe
+
+`ratelimit` uses the default source criterion, the client address, which
+is correct on both paths only because both entrypoints set
+`forwardedheaders.trustedips=10.0.0.0/8`. Traefik resolves the tunnel's
+`X-Forwarded-For` into the client address before any middleware runs;
+verified in the access log, where every tunnel request has `ClientHost`
+exactly equal to `Cf-Connecting-Ip`, including for distinct clients.
+
+Do NOT set `sourceCriterion.requestHeaderName: Cf-Connecting-Ip` here.
+That header only exists on requests that came through Cloudflare;
+requests arriving directly on :443 have none, and Traefik groups every
+headerless request into a single bucket. Measured: 400 concurrent direct
+requests produced 160 x 429 while sharing one allowance.
+
+Measured with the default in place: a burst from one address drew
+163 x 429 while a request from a different address returned 200
+immediately, so the buckets are genuinely per client. A real external
+client (a phone on cellular) is logged with its own public address
+rather than the router's, so the port forward preserves the source and
+this holds on the direct path too.
+
+If `forwardedheaders.trustedips` is ever removed, this silently collapses
+into one shared bucket for everyone behind the tunnel.
+
+### The HTTP -> HTTPS redirect is not independent
+
+The `web` -> `websecure` redirect and the tunnel's origin scheme are a
+single change. Adding the redirect on its own breaks the whole site.
+
+If cloudflared's ingress still sends hostnames to `http://traefik:80`, a
+redirect on the `web` entrypoint answers the tunnel's own request with a
+302 to `https://`, which Cloudflare follows back into the tunnel, which
+arrives on `:80` again. That is an infinite loop on all 31 hostnames at
+once, and the fix is not reachable through the site it just broke.
+
+The redirect and the tunnel origin change are one change, and both are
+now in place:
+
+1. `cloudflared/config.yml` sends every hostname to
+   `https://traefik:443`, with `originRequest.originServerName` set to
+   the apex. Without that, cloudflared sends `traefik` as SNI -- a name
+   the certificate does not cover -- and the handshake fails before any
+   routing happens. Traefik routes on the Host header, which cloudflared
+   preserves, so one value serves every hostname.
+2. The `web` entrypoint runs the `redirect-https@file` middleware and
+   nothing else.
+
+The redirect is deliberately NOT
+`entryPoints.web.http.redirections.entrypoint`, which is the obvious way
+to write it. Alongside `entryPoints.websecure.http.tls`, that builds a
+catch-all router on `web` which Traefik then treats as a TLS router
+reached without TLS, and answers **418 I'm a teapot** to every request on
+:80 -- a real hostname and a nonexistent one alike. A `redirectScheme`
+middleware has no such interaction.
+
+The emergency tunnel is unaffected either way: it serves `ssh://`, not
+http, so the recovery path never depended on this.
+
+Inbound :80 and :443 do not reach this connection (see the 32443 section
+above), so the redirect serves LAN clients and tunnel traffic rather than
+anything arriving directly. Nothing needs :80 open regardless -- DNS-01
+uses no HTTP validation -- though it does mean a bare `http://` URL typed
+from outside fails to connect rather than redirecting.
+
 ## When the VPN reconnects
 
 `qbittorrent`, `sonarr`, `radarr` and `lazylibrarian` run with
@@ -1200,211 +1414,6 @@ router keeps the ordinary `authentik@file` middleware, and the outpost
 picks the most specific matching application by hostname.
 
 ## Monitoring & logs
-
-Every service sets `TZ=${COMMON_TZ}` so logs read in local time rather
-than a mix of local and UTC, which matters when correlating an incident
-across Loki. Containers cannot drift from the host clock -- they share
-the host kernel's clock and no time namespace is in use -- so the host's
-NTP sync is the only thing that ever needs to be right, and `TZ` only
-ever affects *display*. The one exception is Diun, whose watch schedule
-is genuinely interpreted in the container's timezone -- `TZ` is not
-cosmetic there.
-
-A handful of images hardcode UTC in their own log output regardless of
-`TZ` (Loki, cloudflared, Portainer, Navidrome). That is not worth
-fighting: Loki in particular stores every ingested timestamp in UTC
-internally by design, which is correct, and Grafana renders it back in
-whatever timezone you are viewing from.
-
-
-- **Prometheus** scrapes itself, `node-exporter` (host metrics),
-  `cadvisor` (per-container metrics), and Traefik's own metrics
-  endpoint -- see `prometheus/prometheus.yml`.
-- **Grafana** is provisioned with Prometheus and Loki as datasources
-  out of the box (`grafana/provisioning/`) and uses the header-trust
-  pattern above instead of its own login.
-- **Loki + Promtail** aggregate logs from every container, discovered
-  through the socket proxy's existing `CONTAINERS` permission -- no raw
-  socket mount, no host log-directory bind mount, just the same trust
-  boundary as everything else. If you add services later, their logs
-  show up automatically; nothing per-service to configure.
-- **Alertmanager** routes what Prometheus fires; **alert-relay**
-  (in-repo, `alert-relay/relay.py`) turns Alertmanager's fixed JSON
-  webhook into a readable notification; **ntfy** pushes it to a phone.
-  Alert rules live in `prometheus/rules/`. See "Alerting" below.
-- **Diun** replaced Watchtower. See "Updates" below for why.
-
-## The apps that are not forward-auth gated
-
-Four services deliberately carry no `authentik@file` middleware, and it
-is the same reason every time: **each has a native client that cannot
-complete a browser login redirect.**
-
-| service | why | what protects it instead |
-|---|---|---|
-| Plex | its own TV/mobile apps | Plex's own account system |
-| Navidrome `/rest/*` | Subsonic API clients | per-person Subsonic password |
-| ntfy | Android app holds a persistent connection | Cloudflare Access service token + ntfy tokens |
-| Audiobookshelf | mobile app | native OIDC against Authentik |
-| Immich | mobile app | native OIDC against Authentik |
-| Open WebUI | has real OIDC, gate would be a second login | native OIDC, `Admin`/`Contributor`/`Family` via groups claim |
-| Cleanuparr | has real OIDC, gate would be a second login | native OIDC, `Admin` binding on the Authentik application |
-
-Putting the forward-auth gate in front of any of them does not "add
-security", it breaks the app: every API call gets bounced to a login
-page the client cannot render. **Do not add `authentik@file` to these
-routers for consistency.**
-
-Audiobookshelf and Immich are pattern 3 (real OIDC), not pattern 1. The
-Authentik side is already created (`Audiobookshelf OIDC`, `Immich OIDC`
-providers plus their applications); the app side is configured in each
-app's own UI after first boot, because neither accepts OIDC settings as
-environment variables:
-
-- **Cleanuparr**: Settings -> Authentication -> OIDC. One field is a
-  trap: its "redirect url" wants the app's BASE url
-  (`https://cleanuparr.<domain>`), not a callback path. Cleanuparr
-  appends `/api/auth/oidc/callback` itself, so pasting the full callback
-  produces `.../oidc/callback/api/auth/oidc/callback` and fails as a
-  redirect_uri mismatch with nothing in the logs explaining why. The way
-  to see what it actually sends is to POST to `/api/auth/oidc/start`,
-  which returns the authorization URL it built.
-
-  After enabling OIDC it asks you to *link* the account. That is not
-  access control, Authentik's group binding already handles that; it
-  ties the OIDC identity to the existing local account so they are one
-  user. Do it before turning on `oidcExclusiveMode`.
-
-  `oidcExclusiveMode` is **on** here, which means the local password path
-  is gone. Cleanuparr is now reachable only while Authentik can complete
-  an authorization, so an Authentik outage or the linked identity losing
-  its `Admin` binding locks the app entirely. That is the intended trade
-  (one identity, no second credential to leak), but it means recovery is
-  a host-level job: stop the container and clear the flag in
-  `cleanuparr_config`'s SQLite, or fix Authentik. There is no in-app back
-  door, by design.
-
-  Organizarr reads this state from `/api/auth/status` and shows it on the
-  Cleanuparr card, so "OIDC, exclusive" is visible without opening the app.
-
-- **Audiobookshelf**: Settings -> Authentication -> enable OpenID
-  Connect. Paste the issuer URL and click Auto-populate, then fill in
-  the client ID and secret. Add the mobile redirect URI under *Allowed
-  Mobile Redirect URIs*.
-- **Immich**: Administration -> Settings -> OAuth Authentication.
-
-Client IDs and secrets are in `secrets/oidc-clients.env` (git-ignored).
-Issuer URL for both:
-`https://auth.<domain>/application/o/<app-slug>/.well-known/openid-configuration`
-
-## Recyclarr
-
-Recyclarr is the complement to Organizarr: Organizarr centralizes auth
-and download-client settings, Recyclarr owns quality profiles and custom
-formats from the TRaSH Guides.
-
-Three things about it are easy to get wrong, all of which cost time here:
-
-- **There is no `:latest` tag.** Only major-version tags. `:latest` gets
-  `manifest unknown` and Swarm rejects the task in a loop.
-- **It must be version 8, not 7.** The official config templates track
-  the v8 schema and use `quality_profiles: - trash_id:`, which v7 cannot
-  parse; on 7 the sync dies with a bare `Exception at line 30`.
-- **The templates are complete configs, not includes.** There is no
-  `includes` directory in the template repo, so
-  `include: - template: <name>` never resolves and fails with "unable to
-  find config include with name". `recyclarr/configs/*.yml` are copies of
-  the official templates with `base_url` and `api_key` filled in, which
-  is exactly what `recyclarr config create --template` would produce.
-
-`reset_unmatched_scores` is turned **off**, against the template default.
-The template ships it as `true`, which zeroes the score of every custom
-format the guide does not explicitly set, including anything tuned by
-hand. A daily cron should not quietly undo manual work.
-
-The first sync created new profiles rather than modifying existing ones
-(37 custom formats and a `WEB-1080p` profile in Sonarr, 40 and
-`HD Bluray + WEB` in Radarr), so pre-existing profiles were untouched.
-
-## DNS
-
-Four moving parts, three of which live outside this repo. Written down
-because a silent change to any of them breaks something that looks
-unrelated.
-
-```
-LAN device ---> asks the router (DHCP tells it to)
-                  |
-                  +-- DNS Director DNATs :53 to Pi-hole
-                          |
-this server ------------> Pi-hole (blocklists)         [127.0.0.1]
-                          |
-                          +-- forwards to the router   [MAC-exempt, no loop]
-                                  |
-                                  +-- stubby -> DNS-over-TLS -> Cloudflare
-```
-
-**Router (nvram, not in this repo).** `dnsfilter_enable_x=1`,
-`dnsfilter_mode=8` ("User Defined 1"), `dnsfilter_custom1` = Pi-hole.
-`dnspriv_enable=1` with `dnspriv_profile=1` (opportunistic) and
-Cloudflare's IPv4 DoT servers. IPv6 upstreams are deliberately omitted:
-this host has no IPv6 route and they fail with "Network unreachable".
-
-**The MAC exemption is load-bearing.** DNS Director's client list holds
-this server's MAC set to "No Redirection", solely so Pi-hole's own
-upstream queries can reach the router instead of being DNAT'd back to
-Pi-hole. Remove it and DNS dies house-wide immediately.
-
-**The DHCP lease says the ROUTER, and that is correct.** Asuswrt
-suppresses DHCP option 6 whenever DNS Director is enabled, so
-`dhcp_dns1_x` is stored but never emitted. Clients are told to use the
-router and then silently redirected. A lease showing the router's address
-is not a symptom of anything.
-
-**This server needs its own resolver pinned.** It is MAC-exempt, so
-without intervention its own browsing skips Pi-hole entirely -- encrypted
-by DoT, but unfiltered. NetworkManager is set to
-`ipv4.dns "127.0.0.1 <router>"` with `ipv4.ignore-auto-dns yes`. Pi-hole
-runs with `network_mode: host`, so loopback reaches it directly. Without
-`ignore-auto-dns`, a DHCP renewal silently reverts this and the desktop
-stops being filtered.
-
-**Pi-hole settings are NOT locked via FTLCONF_ env vars**, apart from
-`misc_dnsmasq_lines`. Anything set that way becomes read-only in the web
-UI, which is a worse trade than declaring it here. The consequence is
-that `dns.listeningMode` and `dns.upstreams` live only in the
-`pihole_config` volume; both backup scripts cover it.
-
-`filter-AAAA` is deliberate policy, not a leftover workaround. It was
-originally added because the router SERVFAILed every AAAA query and
-musl-based containers fail the entire lookup when either half fails. The
-router has since been fixed, so that reason is gone -- but a second,
-better reason replaced it.
-
-**This network has no IPv6 at all.** Not "IPv6 is disabled": there is no
-prefix and no route, end to end.
-
-```
-host: 0 global v6 addresses, 0 default v6 routes, curl -6 -> HTTP 000
-router: ipv6_service=ipv6pt (passthrough), ipv6_prefix empty,
-        ipv6_wan_addr empty, ping6 -> Network is unreachable
-```
-
-Handing out AAAA records on a v4-only network means clients try IPv6
-first (RFC 6724 / Happy Eyeballs), fail to connect, and fall back.
-Browsers absorb that in roughly 250ms. Plain-socket clients without Happy
-Eyeballs -- the *arr apps, qBittorrent -- can stall on a full connect
-timeout first. Suppressing AAAA is the correct configuration here, and
-removing it would trade a cosmetic oddity for real latency.
-
-The only visible artifact is that a blocked domain returns `::` for AAAA
-instead of `0.0.0.0`. Both mean blocked.
-
-If IPv6 is ever enabled, the order matters: switch the router off
-passthrough, confirm the ISP actually delegates a prefix, verify gluetun
-blocks IPv6 egress (`FIREWALL_OUTBOUND_SUBNETS` is IPv4-only, so the
-*arr apps sharing its namespace could leak around the VPN), and only
-then remove this.
 
 ### Blocklists
 
