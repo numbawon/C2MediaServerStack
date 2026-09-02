@@ -112,6 +112,25 @@ http:
           clientTrustedIPs:
             - 192.168.50.0/24
 
+          # --- AppSec (WAF), DETECT ONLY -------------------------------
+          # Inspects individual request payloads (SQLi, XSS, traversal,
+          # CVE strings), which is a different question from the scenarios
+          # above: those ask whether an IP misbehaves over time, this asks
+          # whether one request is an attack.
+          #
+          # Both Block flags are OFF deliberately. FailureBlock=false means
+          # a rule match is recorded and NOT acted on, so this is a trial
+          # that cannot lock anyone out. UnreachableBlock=false means a
+          # CrowdSec outage degrades to "no inspection" rather than
+          # 403-ing every request on the site -- the same fail-open choice
+          # as stream mode above, and the reason the earlier bouncer key
+          # deletion took the whole site down was precisely that the
+          # default is to fail closed.
+          crowdsecAppsecEnabled: true
+          crowdsecAppsecHost: crowdsec:7422
+          crowdsecAppsecFailureBlock: false
+          crowdsecAppsecUnreachableBlock: false
+
     # overseerr.<domain> still has a live DNS record pointing at this tunnel
     # (cloudflared's CLI has no "delete DNS route" command, and there's no
     # Cloudflare API token in this repo to do it directly) -- redirecting
