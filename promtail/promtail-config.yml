@@ -19,6 +19,21 @@ scrape_configs:
       - source_labels: ["__meta_docker_container_name"]
         regex: "/(.*)"
         target_label: "container"
+      # Strip Swarm's ".<replica>.<task-id>" suffix off the container
+      # label. Without this every redeploy mints a brand new label value
+      # -- 40 services had produced 143 distinct `container` values -- and
+      # that is both the main way Loki gets slow and fat, and the reason a
+      # saved `{container="..."}` query silently stops matching after any
+      # deploy.
+      #
+      # The regex only matches names containing a dot, so standalone
+      # containers (plex, pihole, sonarr, tdarr, suricata...) keep their
+      # names untouched. They have no swarm_service label at all, so this
+      # is the only way to query them and it must not be dropped.
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/([^.]+)\\..*"
+        target_label: "container"
+        replacement: "$1"
       - source_labels: ["__meta_docker_container_label_com_docker_swarm_service_name"]
         target_label: "swarm_service"
 
