@@ -43,6 +43,14 @@ networks:
     driver: overlay
 
 volumes:
+  crowdsec_config:
+    name: crowdsec_config
+  crowdsec_data:
+    name: crowdsec_data
+  # created by docker-compose.ids.yml, where suricata writes it
+  suricata_logs:
+    name: suricata_logs
+    external: true
   traefik_plugins:
     name: traefik_plugins
   traefik_logs:
@@ -1122,6 +1130,48 @@ services:
         - "traefik.http.routers.cleanuparr.entrypoints=web"
         # No authentik@file -- see the block comment above.
         - "traefik.http.services.cleanuparr.loadbalancer.server.port=11011"
+
+  # ---------------------------------------------------------------------
+  # CrowdSec -- log analysis and ban decisions for the IDS/IPS.
+  #
+  # IN THE SWARM STACK, NOT docker-compose.ids.yml, AND THAT IS THE POINT.
+  # As a plain compose container it got a new overlay IP every time it was
+  # recreated, and Traefik's bouncer plugin caches the address it first
+  # resolved. The result was every host on the site returning 403 until
+  # Traefik was manually restarted -- twice in one evening. A swarm
+  # service gets a stable virtual IP that survives task replacement, so
+  # the address Traefik resolved stays correct.
+  #
+  # Suricata stays in the compose file because it needs host networking
+  # and NET_ADMIN to read the wire, which Swarm cannot express. CrowdSec
+  # needs neither, so nothing kept it there.
+  # ---------------------------------------------------------------------
+  crowdsec:
+    logging: *logging
+    image: crowdsecurity/crowdsec:latest
+    environment:
+      - TZ=${COMMON_TZ}
+      - COLLECTIONS=crowdsecurity/traefik crowdsecurity/base-http-scenarios crowdsecurity/http-cve crowdsecurity/sshd crowdsecurity/linux crowdsecurity/suricata crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules
+      - GID=1000
+    volumes:
+      - crowdsec_config:/etc/crowdsec
+      - crowdsec_data:/var/lib/crowdsec/data
+      - ./crowdsec/acquis.yaml:/etc/crowdsec/acquis.yaml:ro
+      - ./crowdsec/acquis-appsec.yaml:/etc/crowdsec/acquis.d/appsec.yaml:ro
+      - ./crowdsec/appsec-config.yaml:/etc/crowdsec/appsec-configs/mediastack-appsec.yaml:ro
+      - ./crowdsec/whitelist.yaml:/etc/crowdsec/parsers/s02-enrich/mediastack-whitelist.yaml:ro
+      - ./crowdsec/whitelist-appnoise.yaml:/etc/crowdsec/parsers/s02-enrich/mediastack-appnoise.yaml:ro
+      - ./crowdsec/notification-alertmanager.yaml:/etc/crowdsec/notifications/alertmanager.yaml:ro
+      - ./crowdsec/profiles.yaml:/etc/crowdsec/profiles.yaml:ro
+      # Read-only: CrowdSec reads logs, it must never be able to alter them.
+      - traefik_logs:/logs:ro
+      - suricata_logs:/var/log/suricata:ro
+    networks:
+      - edge
+      - internal
+    deploy:
+      placement:
+        constraints: [node.role == manager]
 
   # ---------------------------------------------------------------------
   # copyparty (files) -- ADMIN file manager. Read-write over Media and
