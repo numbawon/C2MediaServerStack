@@ -23,33 +23,6 @@
 name: mediastack-ids
 
 services:
-  crowdsec:
-    image: crowdsecurity/crowdsec:latest
-    container_name: crowdsec
-    environment:
-      - TZ=${COMMON_TZ}
-      # Collections define which parsers and scenarios exist. Without the
-      # traefik one the access log is read and discarded.
-      - COLLECTIONS=crowdsecurity/traefik crowdsecurity/base-http-scenarios crowdsecurity/http-cve crowdsecurity/sshd crowdsecurity/linux crowdsecurity/suricata crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules
-      - GID=1000
-    volumes:
-      - crowdsec_config:/etc/crowdsec
-      - crowdsec_data:/var/lib/crowdsec/data
-      - ./crowdsec/acquis.yaml:/etc/crowdsec/acquis.yaml:ro
-      - ./crowdsec/acquis-appsec.yaml:/etc/crowdsec/acquis.d/appsec.yaml:ro
-      - ./crowdsec/appsec-config.yaml:/etc/crowdsec/appsec-configs/mediastack-appsec.yaml:ro
-      - ./crowdsec/whitelist.yaml:/etc/crowdsec/parsers/s02-enrich/mediastack-whitelist.yaml:ro
-      - ./crowdsec/whitelist-appnoise.yaml:/etc/crowdsec/parsers/s02-enrich/mediastack-appnoise.yaml:ro
-      - ./crowdsec/notification-alertmanager.yaml:/etc/crowdsec/notifications/alertmanager.yaml:ro
-      - ./crowdsec/profiles.yaml:/etc/crowdsec/profiles.yaml:ro
-      # Read-only: CrowdSec reads logs, it must never be able to alter them.
-      - traefik_logs:/logs:ro
-      - suricata_logs:/var/log/suricata:ro
-      - /var/log:/var/log/host:ro
-    networks:
-      - edge
-    restart: unless-stopped
-
   # ---------------------------------------------------------------------
   # suricata-exporter -- turns Suricata's own stats into Prometheus
   # metrics so the IDS itself is monitored.
