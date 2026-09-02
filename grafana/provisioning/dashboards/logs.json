@@ -1,0 +1,432 @@
+{
+  "uid": "logs-catalogue",
+  "title": "Logs (what exists, and where to look)",
+  "tags": [
+    "mediastack",
+    "logs",
+    "loki"
+  ],
+  "schemaVersion": 39,
+  "timezone": "",
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Datasource",
+        "type": "datasource",
+        "query": "loki",
+        "current": {},
+        "hide": 0,
+        "refresh": 1
+      },
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "label": "swarm_service",
+          "refId": "svc",
+          "type": 1
+        },
+        "refresh": 1,
+        "includeAll": true,
+        "multi": true,
+        "allValue": "mediastack_.*",
+        "current": {}
+      },
+      {
+        "name": "search",
+        "label": "Search",
+        "type": "textbox",
+        "query": "",
+        "current": {},
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Where the logs come from",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Lines per service",
+      "description": "Query by swarm_service, not container: every Swarm task ID becomes its own container label and they churn on redeploy, so container queries go stale.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "logs/s",
+          "custom": {
+            "fillOpacity": 35,
+            "showPoints": "never",
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (swarm_service) (rate({swarm_service=~\"mediastack_.*\"}[5m]))",
+          "queryType": "range",
+          "refId": "A",
+          "legendFormat": "{{swarm_service}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Router lines per app",
+      "description": "The router ships via syslog-ng. BLOCKED - INBOUND scan noise is filtered at the router, so this is real events only.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "logs/s",
+          "custom": {
+            "fillOpacity": 35,
+            "showPoints": "never",
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (app) (rate({job=\"router\"}[5m]))",
+          "queryType": "range",
+          "refId": "A",
+          "legendFormat": "{{app}}"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Things that usually matter",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Errors across the stack",
+      "description": "Case-insensitive error/fatal/panic. Noisy by nature -- use it to spot a service that suddenly starts shouting, not as an alert.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 11
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "logs/s",
+          "custom": {
+            "fillOpacity": 35,
+            "showPoints": "never",
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (swarm_service) (rate({swarm_service=~\"mediastack_.*\"} |~ \"(?i)(error|fatal|panic)\"[5m]))",
+          "queryType": "range",
+          "refId": "A",
+          "legendFormat": "{{swarm_service}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Traefik responses by status",
+      "description": "Access logs are JSON, so status is a parsed field. 401/403 in bulk usually means Authentik is redirecting, not that something is broken.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 11
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqs/s",
+          "custom": {
+            "fillOpacity": 35,
+            "showPoints": "never",
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (DownstreamStatus) (rate({swarm_service=\"mediastack_traefik\"} | json | __error__=\"\" [5m]))",
+          "queryType": "range",
+          "refId": "A",
+          "legendFormat": "{{DownstreamStatus}}"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Router",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "panels": []
+    },
+    {
+      "type": "logs",
+      "title": "Wireless events (wlceventd / hostapd)",
+      "description": "Client join/leave and auth. Deauth reasons here are what distinguish a radar eviction from a client-side or signal problem.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "expr": "{job=\"router\", app=~\"wlceventd|hostapd\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Radar / DFS and channel changes",
+      "description": "5GHz is pinned to a non-DFS channel, so this should stay empty. Anything here means the radio moved onto DFS spectrum again.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "expr": "{job=\"router\"} |~ \"(?i)(radar|dfs|chanspec|CSA)\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Free-text search",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "panels": []
+    },
+    {
+      "type": "logs",
+      "title": "Search: $search across everything",
+      "description": "Set the service and search variables at the top. Leave search empty to see everything from the selected services.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${datasource}"
+          },
+          "expr": "{swarm_service=~\"$service\"} |~ \"(?i)$search\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
