@@ -24,6 +24,62 @@ http:
         customRequestHeaders:
           X-Forwarded-Proto: "https"
 
+    # Rate limit. Deliberately generous: this exists to stop a flood, not
+    # to police normal use. Plex streaming, Immich thumbnail grids and
+    # Audiobookshelf all burst hard from a single client, and a limit
+    # tight enough to catch a slow scanner would break them -- the scanner
+    # that hit this host managed 102 requests over several minutes, which
+    # no sane rate limit would catch anyway. CrowdSec handles that shape;
+    # this handles the fast one.
+    #
+    # sourceCriterion is left at the default remote address, which Traefik
+    # has already resolved to the real client IP via the entrypoint's
+    # forwardedheaders.trustedips -- otherwise every request would be
+    # attributed to cloudflared and the whole household would share one
+    # bucket.
+    ratelimit:
+      rateLimit:
+        average: 100
+        burst: 200
+        period: 1s
+        # WITHOUT sourceCriterion THIS IS WORSE THAN NOTHING. Every request
+        # reaches Traefik from cloudflared's single IP, so the default
+        # (bucket per TCP source) puts the entire household -- and any
+        # attacker -- in ONE shared bucket. Verified: two different client
+        # IPs behind the tunnel drained the same allowance, so one noisy
+        # client would 429 everyone else, and a flood would deny service
+        # rather than absorb it.
+        #
+        # Cf-Connecting-Ip is set by Cloudflare on every request and holds
+        # the true client address, so it gives each client its own bucket.
+        sourceCriterion:
+          requestHeaderName: Cf-Connecting-Ip
+
+    # Security headers.
+    #
+    # NOT frameDeny: that sends X-Frame-Options DENY, which breaks any
+    # legitimate embedding. SAMEORIGIN allows a service to frame its own
+    # pages while still blocking third-party clickjacking.
+    #
+    # HSTS without includeSubDomains or preload on purpose. Browsers cache
+    # HSTS for the full max-age and it cannot be revoked early, so a
+    # subdomain that is ever served over plain HTTP would become
+    # unreachable with no quick way back. One year on the exact hosts
+    # served here is the safe half of the trade.
+    security-headers:
+      headers:
+        # HSTS is sent as a literal response header, not via stsSeconds.
+        # Traefik only emits stsSeconds on a TLS connection, and TLS
+        # terminates at Cloudflare -- Traefik sees plain HTTP and silently
+        # omits it. The header was missing entirely until this was checked.
+        # The client leg is always HTTPS via the tunnel, so asserting it
+        # here is truthful.
+        customResponseHeaders:
+          Strict-Transport-Security: "max-age=31536000"
+        contentTypeNosniff: true
+        customFrameOptionsValue: "SAMEORIGIN"
+        referrerPolicy: "strict-origin-when-cross-origin"
+
     # CrowdSec bouncer. Returns 403 to IPs CrowdSec has banned.
     #
     # stream mode, not live: Traefik pulls the decision list periodically
