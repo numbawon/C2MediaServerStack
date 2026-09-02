@@ -2,7 +2,19 @@
 Description=Run mediastack off-site backup daily
 
 [Timer]
-OnCalendar=*-*-* 03:30:00
+# 04:30, not 03:30. The router runs a scheduled reboot at 03:00 (amtm
+# RebootScheduler), and on 2026-09-02 the network did not come back for
+# 45 minutes -- external probes were down 03:05 to 03:40. The 03:30 run
+# landed in the middle of that and died pulling the restic image, and
+# would have failed at the B2 upload even with the image cached.
+#
+# Every other night that week recovered fast enough that 03:30 worked,
+# so this is a collision that bites occasionally rather than nightly.
+# 04:30 clears even the slow case, stays clear of the 02:00 local
+# backup, and does not collide with the Sunday 05:00 verify job.
+OnCalendar=*-*-* 04:30:00
+# Missed runs still catch up on next boot, which is how the 2026-09-01
+# backup completed at 05:50 with no 03:30 entry in the journal.
 Persistent=true
 
 [Install]
