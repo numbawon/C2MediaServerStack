@@ -9,7 +9,7 @@
 # looked obviously right, and a WAF sitting in front of Immich uploads is
 # exactly the shape of thing that breaks legitimate use quietly.
 listen_addr: 0.0.0.0:7422
-appsec_config: crowdsecurity/appsec-default
+appsec_config: mediastack/appsec
 name: appsec
 source: appsec
 labels:
