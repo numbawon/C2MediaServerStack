@@ -53,6 +53,11 @@ volumes:
     external: true
   traefik_plugins:
     name: traefik_plugins
+  # ACME account key + issued certificates. Backed up by
+  # scripts/backup-local.sh with the rest; losing it is not fatal (Traefik
+  # re-issues) but it does burn a duplicate-certificate rate limit slot.
+  traefik_acme:
+    name: traefik_acme
   traefik_logs:
     name: traefik_logs
   files_cfg:
@@ -158,6 +163,11 @@ secrets:
     external: true
   crowdsec_bouncer_key:
     external: true
+  # Cloudflare API token for the ACME DNS-01 challenge. Zone:Read +
+  # DNS:Edit, scoped to this zone. Created out of band:
+  #   printf %s '<token>' | docker secret create cloudflare_dns_token -
+  cloudflare_dns_token:
+    external: true
 
 services:
 
@@ -234,7 +244,55 @@ services:
       - --providers.file.directory=/etc/traefik/dynamic
       - --providers.file.watch=true
       - --entrypoints.web.address=:80
-      - --entrypoints.web.http.middlewares=force-forwarded-proto@file,ratelimit@file,security-headers@file,crowdsec@file
+      # The web entrypoint's only remaining job is to send callers to
+      # https: cloudflared now arrives on :443, and nothing internal talks
+      # to traefik:80 any more (checked -- prometheus scrapes :8080 for
+      # metrics and that is all). So the chain here is the redirect alone,
+      # and the real middleware chain lives on websecure below, where the
+      # redirected request lands a moment later.
+      #
+      # Not `entryPoints.web.http.redirections`: see redirect-https in
+      # traefik/dynamic/dynamic.yml for why that returns 418 here.
+      - --entrypoints.web.http.middlewares=redirect-https@file
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.websecure.http.middlewares=force-forwarded-proto@file,ratelimit@file,security-headers@file,crowdsec@file
+      - --entrypoints.websecure.forwardedheaders.trustedips=10.0.0.0/8
+      # One wildcard cert for the whole entrypoint rather than a
+      # per-router certresolver: every router that gains `websecure` is
+      # then covered without touching it again, and Let's Encrypt sees a
+      # single order instead of 31 -- which matters, because the
+      # "5 duplicate certificates per week" rate limit counts the exact
+      # SAN set, and 31 separate orders would also each need their own
+      # _acme-challenge round trip.
+      - --entrypoints.websecure.http.tls=true
+      - --entrypoints.websecure.http.tls.certresolver=letsencrypt
+      - --entrypoints.websecure.http.tls.domains[0].main=${COMMON_DOMAIN}
+      - --entrypoints.websecure.http.tls.domains[0].sans=*.${COMMON_DOMAIN}
+      # DNS-01, not HTTP-01: a wildcard can only be issued via DNS-01, and
+      # DNS-01 needs no inbound port open, so certificates keep renewing
+      # even if the router forward is ever withdrawn.
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge=true
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge.provider=cloudflare
+      # Check propagation against Cloudflare's and Google's resolvers
+      # directly. The container's own resolver path ends at Pi-hole, which
+      # would cache the NXDOMAIN for _acme-challenge from the first failed
+      # lookup and then keep serving it for the whole negative TTL -- the
+      # check would time out on a record that had in fact published.
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}
+      # PRODUCTION. Staging was verified first (see the README): it issued
+      # the same apex + wildcard pair cleanly, which is what proves the
+      # token scope and the propagation check before spending a production
+      # rate-limit slot. To go back, swap this line and the storage path
+      # below together -- both, never one.
+      - --certificatesresolvers.letsencrypt.acme.caserver=https://acme-v02.api.letsencrypt.org/directory
+      # Separate file per CA. acme.json holds the ACME *account key* as
+      # well as the certificates, and a staging account is not valid
+      # against production -- reusing one file means the switch either
+      # errors or silently keeps serving the staging cert. acme-staging.json
+      # is deliberately left in the volume so the rollback is a two-line
+      # edit with nothing to re-issue.
+      - --certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json
       # Trust X-Forwarded-For from the swarm overlay, which is where
       # cloudflared sits. Without this every access-log line records the
       # tunnel's own IP as the client, and CrowdSec would ban cloudflared
@@ -282,22 +340,45 @@ services:
       # Host(`plex.example.com`)), so the plex/qbittorrent static routes
       # never matched any real request.
       - COMMON_DOMAIN=${COMMON_DOMAIN}
+      # lego (the ACME library Traefik embeds) accepts a _FILE suffix on
+      # any of its provider variables and reads the value out of the file,
+      # so the Cloudflare token stays a Docker secret instead of sitting
+      # in this file's environment where `docker inspect` would print it.
+      # Token scope is Zone:Read + DNS:Edit on this zone only.
+      - CF_DNS_API_TOKEN_FILE=/run/secrets/cloudflare_dns_token
     volumes:
       - ./traefik/dynamic:/etc/traefik/dynamic:ro
       - traefik_logs:/logs
       - traefik_plugins:/plugins-storage
+      - traefik_acme:/acme
     networks:
       - edge
       - internal
     secrets:
       - crowdsec_bouncer_key
+      - cloudflare_dns_token
+    # mode: host, NOT the default ingress. Swarm's routing mesh SNATs every
+    # connection to the ingress network's gateway, so the real client IP
+    # would be lost before Traefik ever saw it -- the rate limiter would
+    # put the entire internet in one bucket and CrowdSec would ban the
+    # gateway. host mode is safe here because this service is pinned to
+    # the manager node below, so there is exactly one publisher.
+    ports:
+      - target: 80
+        published: 80
+        protocol: tcp
+        mode: host
+      - target: 443
+        published: 443
+        protocol: tcp
+        mode: host
     deploy:
       placement:
         constraints: [node.role == manager]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.traefik.rule=Host(`traefik.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.traefik.entrypoints=web"
+        - "traefik.http.routers.traefik.entrypoints=web,websecure"
         - "traefik.http.routers.traefik.service=api@internal"
         - "traefik.http.routers.traefik.middlewares=authentik@file"
         - "traefik.http.services.traefik-dummy.loadbalancer.server.port=8080"
@@ -376,7 +457,7 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.authentik.rule=Host(`auth.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.authentik.entrypoints=web"
+        - "traefik.http.routers.authentik.entrypoints=web,websecure"
         - "traefik.http.services.authentik.loadbalancer.server.port=9000"
 
   authentik-worker:
@@ -463,7 +544,7 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.portainer.rule=Host(`portainer.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.portainer.entrypoints=web"
+        - "traefik.http.routers.portainer.entrypoints=web,websecure"
         - "traefik.http.routers.portainer.middlewares=authentik@file"
         - "traefik.http.services.portainer.loadbalancer.server.port=9000"
 
@@ -484,7 +565,7 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.lidarr.rule=Host(`lidarr.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.lidarr.entrypoints=web"
+        - "traefik.http.routers.lidarr.entrypoints=web,websecure"
         - "traefik.http.routers.lidarr.middlewares=authentik@file"
         - "traefik.http.services.lidarr.loadbalancer.server.port=8686"
 
@@ -505,7 +586,7 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.bazarr.rule=Host(`bazarr.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.bazarr.entrypoints=web"
+        - "traefik.http.routers.bazarr.entrypoints=web,websecure"
         - "traefik.http.routers.bazarr.middlewares=authentik@file"
         - "traefik.http.services.bazarr.loadbalancer.server.port=6767"
 
@@ -540,7 +621,7 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.seerr.rule=Host(`seerr.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.seerr.entrypoints=web"
+        - "traefik.http.routers.seerr.entrypoints=web,websecure"
         - "traefik.http.routers.seerr.middlewares=authentik@file"
         - "traefik.http.services.seerr.loadbalancer.server.port=5055"
 
@@ -559,7 +640,7 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.prowlarr.rule=Host(`prowlarr.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.prowlarr.entrypoints=web"
+        - "traefik.http.routers.prowlarr.entrypoints=web,websecure"
         - "traefik.http.routers.prowlarr.middlewares=authentik@file"
         - "traefik.http.services.prowlarr.loadbalancer.server.port=9696"
 
@@ -615,7 +696,7 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.tautulli.rule=Host(`tautulli.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.tautulli.entrypoints=web"
+        - "traefik.http.routers.tautulli.entrypoints=web,websecure"
         - "traefik.http.routers.tautulli.middlewares=authentik@file"
         - "traefik.http.services.tautulli.loadbalancer.server.port=8181"
 
@@ -658,10 +739,10 @@ services:
         # Traefik stops warning and stops relying on a fallback.
         - "traefik.docker.network=mediastack_internal"
         - "traefik.http.routers.navidrome.rule=Host(`navidrome.${COMMON_DOMAIN}`) && !PathPrefix(`/rest`)"
-        - "traefik.http.routers.navidrome.entrypoints=web"
+        - "traefik.http.routers.navidrome.entrypoints=web,websecure"
         - "traefik.http.routers.navidrome.middlewares=authentik@file"
         - "traefik.http.routers.navidrome-api.rule=Host(`navidrome.${COMMON_DOMAIN}`) && PathPrefix(`/rest`)"
-        - "traefik.http.routers.navidrome-api.entrypoints=web"
+        - "traefik.http.routers.navidrome-api.entrypoints=web,websecure"
         - "traefik.http.services.navidrome.loadbalancer.server.port=4533"
 
   # ---------------------------------------------------------------------
@@ -732,7 +813,7 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.organizarr.rule=Host(`organizarr.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.organizarr.entrypoints=web"
+        - "traefik.http.routers.organizarr.entrypoints=web,websecure"
         # Ordinary authentik@file middleware, but the gate behind it is
         # NOT the ordinary one: organizarr has its own single-application
         # Authentik provider bound to the Admins group, so this host
@@ -769,7 +850,7 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.homer.rule=Host(`homer.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.homer.entrypoints=web"
+        - "traefik.http.routers.homer.entrypoints=web,websecure"
         - "traefik.http.routers.homer.middlewares=authentik@file"
         - "traefik.http.services.homer.loadbalancer.server.port=8080"
 
@@ -842,7 +923,7 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.prometheus.rule=Host(`prometheus.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.prometheus.entrypoints=web"
+        - "traefik.http.routers.prometheus.entrypoints=web,websecure"
         - "traefik.http.routers.prometheus.middlewares=authentik@file"
         - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
 
@@ -878,7 +959,7 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.alertmanager.rule=Host(`alertmanager.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.alertmanager.entrypoints=web"
+        - "traefik.http.routers.alertmanager.entrypoints=web,websecure"
         - "traefik.http.routers.alertmanager.middlewares=authentik@file"
         - "traefik.http.services.alertmanager.loadbalancer.server.port=9093"
 
@@ -937,7 +1018,7 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.ntfy.rule=Host(`ntfy.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.ntfy.entrypoints=web"
+        - "traefik.http.routers.ntfy.entrypoints=web,websecure"
         # NO authentik@file middleware, and that is deliberate -- adding
         # it breaks push delivery to the mobile app entirely. Do not
         # "fix" this by making it consistent with the other routers.
@@ -1021,7 +1102,7 @@ services:
         # in turn and watching whether the warning came back.
         - "traefik.docker.network=mediastack_internal"
         - "traefik.http.routers.grafana.rule=Host(`grafana.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.grafana.entrypoints=web"
+        - "traefik.http.routers.grafana.entrypoints=web,websecure"
         - "traefik.http.routers.grafana.middlewares=authentik@file"
         - "traefik.http.services.grafana.loadbalancer.server.port=3000"
 
@@ -1127,7 +1208,7 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.cleanuparr.rule=Host(`cleanuparr.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.cleanuparr.entrypoints=web"
+        - "traefik.http.routers.cleanuparr.entrypoints=web,websecure"
         # No authentik@file -- see the block comment above.
         - "traefik.http.services.cleanuparr.loadbalancer.server.port=11011"
 
@@ -1238,7 +1319,7 @@ services:
       labels:
         - traefik.enable=true
         - traefik.http.routers.files.rule=Host(`files.${COMMON_DOMAIN}`)
-        - traefik.http.routers.files.entrypoints=web
+        - traefik.http.routers.files.entrypoints=web,websecure
         - traefik.http.routers.files.middlewares=authentik@file
         - traefik.http.services.files.loadbalancer.server.port=3923
 
@@ -1299,7 +1380,7 @@ services:
       labels:
         - traefik.enable=true
         - traefik.http.routers.browse.rule=Host(`browse.${COMMON_DOMAIN}`)
-        - traefik.http.routers.browse.entrypoints=web
+        - traefik.http.routers.browse.entrypoints=web,websecure
         - traefik.http.routers.browse.middlewares=authentik@file
         - traefik.http.services.browse.loadbalancer.server.port=3923
 
@@ -1364,7 +1445,7 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.flood.rule=Host(`flood.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.flood.entrypoints=web"
+        - "traefik.http.routers.flood.entrypoints=web,websecure"
         # Load-bearing, see the auth=none note above.
         - "traefik.http.routers.flood.middlewares=authentik@file"
         - "traefik.http.services.flood.loadbalancer.server.port=3000"
@@ -1445,7 +1526,7 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.audiobookshelf.rule=Host(`audiobookshelf.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.audiobookshelf.entrypoints=web"
+        - "traefik.http.routers.audiobookshelf.entrypoints=web,websecure"
         - "traefik.http.services.audiobookshelf.loadbalancer.server.port=80"
 
   # ---------------------------------------------------------------------
@@ -1498,7 +1579,7 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.immich.rule=Host(`immich.${COMMON_DOMAIN}`)"
-        - "traefik.http.routers.immich.entrypoints=web"
+        - "traefik.http.routers.immich.entrypoints=web,websecure"
         # No authentik@file -- see the block comment above.
         - "traefik.http.services.immich.loadbalancer.server.port=2283"
 
