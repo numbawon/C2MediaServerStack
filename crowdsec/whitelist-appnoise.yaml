@@ -50,10 +50,25 @@ whitelist:
     - 'evt.Meta.http_status == "403" && not (evt.Line.Raw contains "ServiceName")'
 
     # Reached a backend behind forward-auth => Authentik let them through.
+    # Covers the 403s these apps emit for their own permission checks.
     - >-
       evt.Line.Raw contains "ServiceName" &&
       not (evt.Meta.traefik_router_name matches
       "^(audiobookshelf|authentik|cleanuparr|immich|navidrome-api|ntfy|open-webui|overseerr-to-seerr|plex)@")
+
+    # The services with their OWN auth need the same treatment, or normal
+    # use gets them banned: Plex streaming alone produced 684 requests in
+    # one session and tripped http-crawl-non_statics, banning the owner's
+    # home IP. Excluding them from the rule above was not enough -- they
+    # authenticate too, just not through Authentik.
+    #
+    # The signal there is the app ACCEPTING the request: a backend that
+    # answers 2xx/3xx has decided the caller is allowed. An unauthenticated
+    # request to Plex reaches the backend but comes back 401, so "reached a
+    # backend" alone is not proof of auth for these -- the status is.
+    - >-
+      evt.Line.Raw contains "ServiceName" &&
+      (evt.Meta.http_status startsWith "2" || evt.Meta.http_status startsWith "3")
 
     # Browsers ask every site for these regardless of auth, including on
     # the routers above that are still watched.
