@@ -239,7 +239,7 @@ services:
       # that fails to load stops Traefik from starting at all, which would
       # take every web service down rather than just the bouncer.
       - --experimental.plugins.crowdsec.modulename=github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin
-      - --experimental.plugins.crowdsec.version=v1.4.5
+      - --experimental.plugins.crowdsec.version=v1.7.1
       - --api.dashboard=true
       - --metrics.prometheus=true
       - --log.level=INFO
