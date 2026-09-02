@@ -1461,6 +1461,47 @@ picks the most specific matching application by hostname.
 
 ## Monitoring & logs
 
+### Reading the logs
+
+Everything lands in Loki and is read through Grafana at
+`grafana.<domain>` -> **Explore** -> Loki, or the
+**Logs (what exists, and where to look)** dashboard, which exists so the
+answer to "what have we got?" is not "remember the label names".
+
+Query by `swarm_service` for anything in the Swarm stack, and by
+`container` for the standalone ones (plex, pihole, sonarr, radarr, tdarr,
+suricata, ollama), which have no `swarm_service` label at all.
+
+```logql
+{swarm_service="mediastack_traefik"}                  one service
+{swarm_service=~"mediastack_.*"} |~ "(?i)error"       errors everywhere
+{container="plex"}                                    a standalone container
+{job="router", app="wlceventd"}                       wifi client events
+{job="router"} |~ "(?i)(radar|dfs)"                   DFS radar evictions
+```
+
+Traefik's access log is JSON, so its fields can be filtered on directly
+rather than by grepping text:
+
+```logql
+{swarm_service="mediastack_traefik"} | json | DownstreamStatus >= 400
+{swarm_service="mediastack_traefik"} | json | ClientHost = "1.2.3.4"
+```
+
+The label set is the catalogue, and it is queryable without Grafana --
+which matters when Grafana is the thing that is broken:
+
+```bash
+L=$(docker ps -qf name=mediastack_prometheus)   # any container with wget
+docker exec $L wget -qO- 'http://loki:3100/loki/api/v1/labels'
+docker exec $L wget -qO- 'http://loki:3100/loki/api/v1/label/swarm_service/values'
+docker exec $L wget -qO- 'http://loki:3100/loki/api/v1/query_range?query={job="router"}&limit=50'
+```
+
+Retention is 720h (30 days), applied by the compactor -- see
+`loki/loki-config.yaml`. Anything older is gone, so a question about last
+month needs asking this month.
+
 ### Router logs are shipped, because the router cannot keep them
 
 The router's log lives in tmpfs -- `/opt/var/log/messages` is a symlink
