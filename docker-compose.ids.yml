@@ -30,12 +30,13 @@ services:
       - TZ=${COMMON_TZ}
       # Collections define which parsers and scenarios exist. Without the
       # traefik one the access log is read and discarded.
-      - COLLECTIONS=crowdsecurity/traefik crowdsecurity/base-http-scenarios crowdsecurity/http-cve crowdsecurity/sshd crowdsecurity/linux crowdsecurity/suricata
+      - COLLECTIONS=crowdsecurity/traefik crowdsecurity/base-http-scenarios crowdsecurity/http-cve crowdsecurity/sshd crowdsecurity/linux crowdsecurity/suricata crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules
       - GID=1000
     volumes:
       - crowdsec_config:/etc/crowdsec
       - crowdsec_data:/var/lib/crowdsec/data
       - ./crowdsec/acquis.yaml:/etc/crowdsec/acquis.yaml:ro
+      - ./crowdsec/acquis-appsec.yaml:/etc/crowdsec/acquis.d/appsec.yaml:ro
       - ./crowdsec/whitelist.yaml:/etc/crowdsec/parsers/s02-enrich/mediastack-whitelist.yaml:ro
       - ./crowdsec/whitelist-appnoise.yaml:/etc/crowdsec/parsers/s02-enrich/mediastack-appnoise.yaml:ro
       - ./crowdsec/notification-alertmanager.yaml:/etc/crowdsec/notifications/alertmanager.yaml:ro

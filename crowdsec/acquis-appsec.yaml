@@ -1,0 +1,16 @@
+# AppSec (WAF) listener. Traefik's bouncer forwards each request here for
+# payload inspection, which is a different question from the rest of
+# CrowdSec: the scenarios ask "is this IP behaving badly over time", this
+# asks "is this single request an attack".
+#
+# DETECT ONLY for now. appsec_config selects the rule set; the bouncer is
+# configured not to act on the verdict yet (see crowdsec middleware in
+# traefik/dynamic/dynamic.yml). Two lockouts already came from rules that
+# looked obviously right, and a WAF sitting in front of Immich uploads is
+# exactly the shape of thing that breaks legitimate use quietly.
+listen_addr: 0.0.0.0:7422
+appsec_config: crowdsecurity/appsec-default
+name: appsec
+source: appsec
+labels:
+  type: appsec
