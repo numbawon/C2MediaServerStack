@@ -38,6 +38,15 @@ VOLUMES=(
   recyclarr_config cleanuparr_config
   audiobookshelf_config audiobookshelf_metadata
   immich_db_data
+  # Added after an audit found them in no backup list at all. All small
+  # (~19 MB combined). traefik_acme holds the ACME account key and the
+  # issued wildcard: Traefik re-issues if it is lost, but that spends a
+  # slot against Let's Encrypt's 5-duplicate-certificates-per-week limit.
+  # crowdsec_config/crowdsec_data hold the bouncer and machine
+  # registrations -- deleting one of those registrations took the site
+  # down once already, so they are worth the few megabytes.
+  traefik_acme crowdsec_config crowdsec_data
+  files_cfg browse_cfg flood_data tdarr_configs tdarr_server
 )
 
 MOUNT_ARGS=()
