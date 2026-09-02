@@ -1415,6 +1415,252 @@ picks the most specific matching application by hostname.
 
 ## Monitoring & logs
 
+### Router logs are shipped, because the router cannot keep them
+
+The router's log lives in tmpfs -- `/opt/var/log/messages` is a symlink
+to `/tmp/syslog.log` -- so every reboot wipes it. That is exactly when it
+matters: after the 2026-09-02 reboot the network took 45 minutes to come
+back, and the boot sequence explaining why had already been flushed
+before anyone looked. It does not even survive a full day, because
+drop-packet logging (`fw_log_x`) writes a line every 5 to 20 seconds of
+internet background scanning and pushes everything else out.
+
+`promtail` therefore listens for syslog on **1514/tcp**, published
+`mode: host` so the sender's address is not rewritten by the ingress
+mesh, and the router ships to it. The receiving job is `router-syslog`
+in `promtail/promtail-config.yml`; query it in Grafana as `{job="router"}`.
+
+The router side is `router/syslog-ng-remote.conf`, kept in this repo
+because `/opt` and `/jffs` are covered by no backup here and a firmware
+update can discard them. Install and restart:
+
+```bash
+scp router/syslog-ng-remote.conf <router>:/opt/etc/syslog-ng.d/remote
+ssh <router> '/opt/etc/init.d/S01syslog-ng restart'
+```
+
+Two things that are easy to get wrong:
+
+**RFC5424, not the built-in setting.** The router's stock remote logging
+(`nvram log_ipaddr`) emits BSD-format syslog (RFC3164), and promtail's
+receiver parses only RFC5424. Shipping goes through scribe's syslog-ng,
+whose `syslog()` driver emits RFC5424. A hand-written test frame missing
+its structured-data field fails with `expecting a structured data
+section ... [col 72]` -- the field is required and is `-` when empty.
+
+**This does not replace the router's own log.** Messages produced while
+the WAN is down can only arrive once it returns; syslog-ng queues them
+in memory and flushes on reconnect, which covers a normal boot but not a
+router that never comes back. Turning `fw_log_x` off is the complementary
+fix: it stops the noise at source so the router's local log covers hours
+rather than minutes.
+
+
+Every service sets `TZ=${COMMON_TZ}` so logs read in local time rather
+than a mix of local and UTC, which matters when correlating an incident
+across Loki. Containers cannot drift from the host clock -- they share
+the host kernel's clock and no time namespace is in use -- so the host's
+NTP sync is the only thing that ever needs to be right, and `TZ` only
+ever affects *display*. The one exception is Diun, whose watch schedule
+is genuinely interpreted in the container's timezone -- `TZ` is not
+cosmetic there.
+
+A handful of images hardcode UTC in their own log output regardless of
+`TZ` (Loki, cloudflared, Portainer, Navidrome). That is not worth
+fighting: Loki in particular stores every ingested timestamp in UTC
+internally by design, which is correct, and Grafana renders it back in
+whatever timezone you are viewing from.
+
+
+- **Prometheus** scrapes itself, `node-exporter` (host metrics),
+  `cadvisor` (per-container metrics), and Traefik's own metrics
+  endpoint -- see `prometheus/prometheus.yml`.
+- **Grafana** is provisioned with Prometheus and Loki as datasources
+  out of the box (`grafana/provisioning/`) and uses the header-trust
+  pattern above instead of its own login.
+- **Loki + Promtail** aggregate logs from every container, discovered
+  through the socket proxy's existing `CONTAINERS` permission -- no raw
+  socket mount, no host log-directory bind mount, just the same trust
+  boundary as everything else. If you add services later, their logs
+  show up automatically; nothing per-service to configure.
+- **Alertmanager** routes what Prometheus fires; **alert-relay**
+  (in-repo, `alert-relay/relay.py`) turns Alertmanager's fixed JSON
+  webhook into a readable notification; **ntfy** pushes it to a phone.
+  Alert rules live in `prometheus/rules/`. See "Alerting" below.
+- **Diun** replaced Watchtower. See "Updates" below for why.
+
+## The apps that are not forward-auth gated
+
+Four services deliberately carry no `authentik@file` middleware, and it
+is the same reason every time: **each has a native client that cannot
+complete a browser login redirect.**
+
+| service | why | what protects it instead |
+|---|---|---|
+| Plex | its own TV/mobile apps | Plex's own account system |
+| Navidrome `/rest/*` | Subsonic API clients | per-person Subsonic password |
+| ntfy | Android app holds a persistent connection | Cloudflare Access service token + ntfy tokens |
+| Audiobookshelf | mobile app | native OIDC against Authentik |
+| Immich | mobile app | native OIDC against Authentik |
+| Open WebUI | has real OIDC, gate would be a second login | native OIDC, `Admin`/`Contributor`/`Family` via groups claim |
+| Cleanuparr | has real OIDC, gate would be a second login | native OIDC, `Admin` binding on the Authentik application |
+
+Putting the forward-auth gate in front of any of them does not "add
+security", it breaks the app: every API call gets bounced to a login
+page the client cannot render. **Do not add `authentik@file` to these
+routers for consistency.**
+
+Audiobookshelf and Immich are pattern 3 (real OIDC), not pattern 1. The
+Authentik side is already created (`Audiobookshelf OIDC`, `Immich OIDC`
+providers plus their applications); the app side is configured in each
+app's own UI after first boot, because neither accepts OIDC settings as
+environment variables:
+
+- **Cleanuparr**: Settings -> Authentication -> OIDC. One field is a
+  trap: its "redirect url" wants the app's BASE url
+  (`https://cleanuparr.<domain>`), not a callback path. Cleanuparr
+  appends `/api/auth/oidc/callback` itself, so pasting the full callback
+  produces `.../oidc/callback/api/auth/oidc/callback` and fails as a
+  redirect_uri mismatch with nothing in the logs explaining why. The way
+  to see what it actually sends is to POST to `/api/auth/oidc/start`,
+  which returns the authorization URL it built.
+
+  After enabling OIDC it asks you to *link* the account. That is not
+  access control, Authentik's group binding already handles that; it
+  ties the OIDC identity to the existing local account so they are one
+  user. Do it before turning on `oidcExclusiveMode`.
+
+  `oidcExclusiveMode` is **on** here, which means the local password path
+  is gone. Cleanuparr is now reachable only while Authentik can complete
+  an authorization, so an Authentik outage or the linked identity losing
+  its `Admin` binding locks the app entirely. That is the intended trade
+  (one identity, no second credential to leak), but it means recovery is
+  a host-level job: stop the container and clear the flag in
+  `cleanuparr_config`'s SQLite, or fix Authentik. There is no in-app back
+  door, by design.
+
+  Organizarr reads this state from `/api/auth/status` and shows it on the
+  Cleanuparr card, so "OIDC, exclusive" is visible without opening the app.
+
+- **Audiobookshelf**: Settings -> Authentication -> enable OpenID
+  Connect. Paste the issuer URL and click Auto-populate, then fill in
+  the client ID and secret. Add the mobile redirect URI under *Allowed
+  Mobile Redirect URIs*.
+- **Immich**: Administration -> Settings -> OAuth Authentication.
+
+Client IDs and secrets are in `secrets/oidc-clients.env` (git-ignored).
+Issuer URL for both:
+`https://auth.<domain>/application/o/<app-slug>/.well-known/openid-configuration`
+
+## Recyclarr
+
+Recyclarr is the complement to Organizarr: Organizarr centralizes auth
+and download-client settings, Recyclarr owns quality profiles and custom
+formats from the TRaSH Guides.
+
+Three things about it are easy to get wrong, all of which cost time here:
+
+- **There is no `:latest` tag.** Only major-version tags. `:latest` gets
+  `manifest unknown` and Swarm rejects the task in a loop.
+- **It must be version 8, not 7.** The official config templates track
+  the v8 schema and use `quality_profiles: - trash_id:`, which v7 cannot
+  parse; on 7 the sync dies with a bare `Exception at line 30`.
+- **The templates are complete configs, not includes.** There is no
+  `includes` directory in the template repo, so
+  `include: - template: <name>` never resolves and fails with "unable to
+  find config include with name". `recyclarr/configs/*.yml` are copies of
+  the official templates with `base_url` and `api_key` filled in, which
+  is exactly what `recyclarr config create --template` would produce.
+
+`reset_unmatched_scores` is turned **off**, against the template default.
+The template ships it as `true`, which zeroes the score of every custom
+format the guide does not explicitly set, including anything tuned by
+hand. A daily cron should not quietly undo manual work.
+
+The first sync created new profiles rather than modifying existing ones
+(37 custom formats and a `WEB-1080p` profile in Sonarr, 40 and
+`HD Bluray + WEB` in Radarr), so pre-existing profiles were untouched.
+
+## DNS
+
+Four moving parts, three of which live outside this repo. Written down
+because a silent change to any of them breaks something that looks
+unrelated.
+
+```
+LAN device ---> asks the router (DHCP tells it to)
+                  |
+                  +-- DNS Director DNATs :53 to Pi-hole
+                          |
+this server ------------> Pi-hole (blocklists)         [127.0.0.1]
+                          |
+                          +-- forwards to the router   [MAC-exempt, no loop]
+                                  |
+                                  +-- stubby -> DNS-over-TLS -> Cloudflare
+```
+
+**Router (nvram, not in this repo).** `dnsfilter_enable_x=1`,
+`dnsfilter_mode=8` ("User Defined 1"), `dnsfilter_custom1` = Pi-hole.
+`dnspriv_enable=1` with `dnspriv_profile=1` (opportunistic) and
+Cloudflare's IPv4 DoT servers. IPv6 upstreams are deliberately omitted:
+this host has no IPv6 route and they fail with "Network unreachable".
+
+**The MAC exemption is load-bearing.** DNS Director's client list holds
+this server's MAC set to "No Redirection", solely so Pi-hole's own
+upstream queries can reach the router instead of being DNAT'd back to
+Pi-hole. Remove it and DNS dies house-wide immediately.
+
+**The DHCP lease says the ROUTER, and that is correct.** Asuswrt
+suppresses DHCP option 6 whenever DNS Director is enabled, so
+`dhcp_dns1_x` is stored but never emitted. Clients are told to use the
+router and then silently redirected. A lease showing the router's address
+is not a symptom of anything.
+
+**This server needs its own resolver pinned.** It is MAC-exempt, so
+without intervention its own browsing skips Pi-hole entirely -- encrypted
+by DoT, but unfiltered. NetworkManager is set to
+`ipv4.dns "127.0.0.1 <router>"` with `ipv4.ignore-auto-dns yes`. Pi-hole
+runs with `network_mode: host`, so loopback reaches it directly. Without
+`ignore-auto-dns`, a DHCP renewal silently reverts this and the desktop
+stops being filtered.
+
+**Pi-hole settings are NOT locked via FTLCONF_ env vars**, apart from
+`misc_dnsmasq_lines`. Anything set that way becomes read-only in the web
+UI, which is a worse trade than declaring it here. The consequence is
+that `dns.listeningMode` and `dns.upstreams` live only in the
+`pihole_config` volume; both backup scripts cover it.
+
+`filter-AAAA` is deliberate policy, not a leftover workaround. It was
+originally added because the router SERVFAILed every AAAA query and
+musl-based containers fail the entire lookup when either half fails. The
+router has since been fixed, so that reason is gone -- but a second,
+better reason replaced it.
+
+**This network has no IPv6 at all.** Not "IPv6 is disabled": there is no
+prefix and no route, end to end.
+
+```
+host: 0 global v6 addresses, 0 default v6 routes, curl -6 -> HTTP 000
+router: ipv6_service=ipv6pt (passthrough), ipv6_prefix empty,
+        ipv6_wan_addr empty, ping6 -> Network is unreachable
+```
+
+Handing out AAAA records on a v4-only network means clients try IPv6
+first (RFC 6724 / Happy Eyeballs), fail to connect, and fall back.
+Browsers absorb that in roughly 250ms. Plain-socket clients without Happy
+Eyeballs -- the *arr apps, qBittorrent -- can stall on a full connect
+timeout first. Suppressing AAAA is the correct configuration here, and
+removing it would trade a cosmetic oddity for real latency.
+
+The only visible artifact is that a blocked domain returns `::` for AAAA
+instead of `0.0.0.0`. Both mean blocked.
+
+If IPv6 is ever enabled, the order matters: switch the router off
+passthrough, confirm the ISP actually delegates a prefix, verify gluetun
+blocks IPv6 egress (`FIREWALL_OUTBOUND_SUBNETS` is IPv4-only, so the
+*arr apps sharing its namespace could leak around the VPN), and only
+then remove this.
+
 ### Blocklists
 
 Three lists, deliberately few. Gravity holds ~2.4M domains.
