@@ -226,7 +226,7 @@ services:
       - --providers.file.directory=/etc/traefik/dynamic
       - --providers.file.watch=true
       - --entrypoints.web.address=:80
-      - --entrypoints.web.http.middlewares=force-forwarded-proto@file,crowdsec@file
+      - --entrypoints.web.http.middlewares=force-forwarded-proto@file,ratelimit@file,security-headers@file,crowdsec@file
       # Trust X-Forwarded-For from the swarm overlay, which is where
       # cloudflared sits. Without this every access-log line records the
       # tunnel's own IP as the client, and CrowdSec would ban cloudflared
