@@ -802,6 +802,52 @@ not on a timer, plus a forced refresh every `ddns_refresh_x` days (21).
 In practice it runs at least daily, because the router is on a scheduled
 3 a.m. reboot.
 
+### One hostname, three resolution paths
+
+The same URL works from inside the house and from outside it, and inside
+it deliberately does not leave the network. That is the point: a client
+on the LAN streaming from Plex should not go out to the ISP and back to
+reach a machine sitting on the same switch.
+
+From inside the LAN, hostnames resolve three different ways:
+
+| Hostname | Resolves to | Path taken |
+|---|---|---|
+| `<domain>` (apex) | `192.168.50.1` | the router itself, answering its own DDNS name |
+| `plex.<domain>` | the real WAN IP | out to the router, hairpinned straight back in |
+| everything else | Cloudflare addresses | out to Cloudflare, back through the tunnel |
+
+The middle row is the one that matters for latency. `plex.<domain>` is a
+DNS-only record, so it resolves to the real public address even on the
+LAN. A local client connects to it, the router recognises its own WAN
+address, and loops the connection back in through the 32443 forward
+without it ever reaching the ISP. Same hostname, same certificate, local
+speed.
+
+The apex behaves differently again: the router claims that name on the
+LAN and answers with itself, so `https://<domain>/` from inside reaches
+the router's admin server rather than anything in this stack.
+
+### Testing external reachability, given the above
+
+Hairpin is convenient and costs nothing, but it makes the obvious test
+useless. A request to `plex.<domain>` from any machine on this network
+returns a correct response from Traefik with a valid certificate whether
+or not the outside world can reach it, because it never left the
+network. Two tests that are genuinely external:
+
+- **Cloudflare's edge.** The proxied apex makes Cloudflare connect back
+  to the origin, so
+  `curl --resolve <domain>:443:104.21.62.130 https://<domain>/` borrows
+  the edge as an outside client. A 522 means the edge could not open a
+  TCP connection to the origin.
+- **A phone on cellular, wifi off.** The only easy way to reach a
+  non-standard port such as 32443 from outside.
+
+The tell is `ClientHost` in Traefik's access log. A private address such
+as `192.168.50.1` means the request came from inside, whatever hostname
+it used; a genuine external client shows its own public address.
+
 ### Rate limiting keys on the client address, and why that is safe
 
 `ratelimit` uses the default source criterion, the client address, which
