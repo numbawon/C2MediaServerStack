@@ -1,0 +1,16 @@
+[Unit]
+Description=Trim runaway log files hourly
+
+[Timer]
+# Hourly, not daily. eve.json ran at 3.67 GB/day before tuning and still
+# manages roughly 1 GB/day because `flow` cannot be disabled without
+# segfaulting Suricata 8.0.6. A daily check would let it reach several
+# times its ceiling between runs; hourly keeps the overshoot small.
+#
+# The script is a no-op when the files are under their limits, so running
+# it often costs nothing but three `stat` calls in throwaway containers.
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

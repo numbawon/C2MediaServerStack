@@ -1,0 +1,10 @@
+# Replace youruser with your actual repo path before installing.
+[Unit]
+Description=mediastack trim runaway log files (suricata eve.json, traefik access.log)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/youruser/C2MediaServerStack
+ExecStart=/home/youruser/C2MediaServerStack/scripts/trim-runaway-logs.sh
