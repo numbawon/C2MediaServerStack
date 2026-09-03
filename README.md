@@ -1571,6 +1571,18 @@ Retention is 720h (30 days), applied by the compactor -- see
 `loki/loki-config.yaml`. Anything older is gone, so a question about last
 month needs asking this month.
 
+Loki is deliberately not backed up, locally or off-site. It holds nothing
+but logs, and `loki-config.yaml` is in this repo, so a restored Loki
+rebuilds itself and starts empty. Logs are the instrument you triage
+with, not a record worth keeping: their value lives in the context that
+produced them and expires with it. Restoring last month's access logs
+tells you nothing useful about a host you have just rebuilt, and the
+compactor was deleting the oldest of them anyway.
+
+It was also the single largest thing in the backup at 7.8 GB, roughly
+60% of the off-site total. Oversized snapshots pushing past B2's cap is
+what silently broke that repo once before.
+
 ### Router logs are shipped, because the router cannot keep them
 
 The router's log lives in tmpfs -- `/opt/var/log/messages` is a symlink
