@@ -32,7 +32,23 @@ VOLUMES=(
   authentik_data pihole_config pihole_dnsmasq portainer_data postgres_data
   prometheus_data grafana_data sonarr_config radarr_config lidarr_config
   bazarr_config seerr_config lazylibrarian_config prowlarr_config
-  tautulli_config navidrome_config loki_data organizarr_data
+  tautulli_config navidrome_config organizarr_data
+  # loki_data is deliberately NOT here. It holds nothing but logs:
+  # chunks, their index, and a write-ahead log. loki-config.yaml lives
+  # in this repo, so a restored Loki rebuilds itself and simply starts
+  # empty.
+  #
+  # Logs are the instrument you triage WITH, not a record worth
+  # keeping: their value is in the live context that produced them,
+  # and it expires with that context. Restoring last month's access
+  # logs tells you nothing useful about a host you have just rebuilt.
+  # Retention is 30 days regardless, so the oldest of it was being
+  # deleted anyway.
+  #
+  # It was also 7.8 GB, about 60% of the off-site backup and the
+  # reason a run grew from 4.8 GiB to 13.0 GiB. Oversized snapshots
+  # pushing past B2's cap is what silently broke this repo once
+  # already -- see the exclusions note below.
   qbittorrent_config plex_config
   # ntfy_data holds every ntfy account and access token, including the
   # one configured in the phone's custom headers -- losing it means
