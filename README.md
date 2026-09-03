@@ -1530,6 +1530,51 @@ picks the most specific matching application by hostname.
 
 ## Monitoring & logs
 
+### What bounds each log, and the two that had nothing
+
+| Store | Ceiling | Enforced by |
+|---|---|---|
+| Loki | 720h / 30 days | its compactor, `retention_enabled: true` |
+| Container stdout | 30 MB each (10 MB x 3) | Docker `json-file`, the `x-logging` anchor |
+| Prometheus | 15 days | Prometheus default, no flag set |
+| journald | ~10% of the filesystem | systemd default |
+| suricata `eve.json` | 1 GB | `scripts/trim-runaway-logs.sh` |
+| traefik `access.log` | 512 MB | the same script |
+
+The last two had no ceiling at all. Both are written straight to a volume
+by the app, and neither Traefik nor Suricata rotates its own. Measured
+over 48.9 hours they were growing at 3.67 GB/day and 0.17 GB/day, and
+`eve.json` had reached 7.1 GB. The only reason it had not filled the disk
+was that a redeploy truncates them.
+
+Two things fix it, and both are needed.
+
+**Stop writing what nobody reads.** Only two consumers touch `eve.json`:
+CrowdSec parses `alert`, and suricata-exporter reads `stats`. Everything
+else was written for no one -- DNS was 35.6% of the bytes and Pi-hole
+already logs it, mdns 17.8% is LAN devices chattering, and `alert` was
+0.05%. CrowdSec had read 730k lines from the file and parsed 306 of them.
+The disables live in `docker-compose.ids.yml`; disabling a type does not
+weaken detection, since rules still evaluate against every packet.
+
+Two types **cannot** be disabled: `flow` and `quic` segfault Suricata
+8.0.6 (verified with `suricata -T`, exit 139, each on its own). `flow` is
+22.8% of the volume, which is why tuning alone cannot bound the file and
+the script below exists. Re-test if the image is bumped.
+
+**Then bound what is left.** `scripts/trim-runaway-logs.sh` truncates
+either file past its ceiling and signals the writer to reopen its handle
+-- SIGHUP for Suricata, SIGUSR1 for Traefik -- so a held descriptor
+cannot leave a sparse file behind. It runs hourly via
+`mediastack-trim-logs.timer` and is a no-op when both files are under
+their limits.
+
+It truncates rather than rotating and keeping. These logs are the
+instrument you triage with, not a record: anything that mattered is in
+Loki, and CrowdSec has already made its decisions from the alerts long
+before a file gets this big. Keeping `eve.json.1` would double the disk
+for data nobody reads.
+
 ### Reading the logs
 
 Everything lands in Loki and is read through Grafana at
