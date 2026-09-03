@@ -398,6 +398,70 @@ docker compose -f docker-compose.download.yml up -d
 docker compose -f docker-compose.plex.yml up -d
 ```
 
+## Configuration that only exists in a UI
+
+Most of this stack is declared in compose, and what is declared can be
+rebuilt from this repo. The items below cannot. They are set through a
+web UI or an external console, they live in a database or somebody else's
+service, and a rebuild that only replays this repo comes back missing
+them.
+
+The column that matters is the last one. Anything not backed up has to be
+rebuilt from memory.
+
+| What | Set where | Stored in | Off-site backup |
+|---|---|---|---|
+| Providers, applications, outposts, policy bindings, the Google source | Authentik UI | `postgres_data` | yes |
+| Audiobookshelf OIDC, users, libraries, per-user tag scoping | Audiobookshelf UI | `audiobookshelf_config` | yes |
+| Immich OIDC and admin account | Immich UI | `immich_db_data` | yes |
+| Cleanuparr OIDC (see the redirect-url trap below) | Cleanuparr UI | `cleanuparr_config` | yes |
+| Portainer admin account and OAuth | Portainer UI | `portainer_data` | yes |
+| Plex claim, libraries, custom access URLs | Plex UI / API | `plex_config` | yes |
+| Indexers, connections, root folders, quality profiles | each *arr UI | `<app>_config` | yes |
+| Seerr's Plex link and service connections | Seerr UI | `seerr_config` | yes |
+| qBittorrent WebUI credentials and settings | qBittorrent UI | `qbittorrent_config` | yes |
+| Navidrome users | Navidrome UI | `navidrome_config` | yes |
+| Pi-hole blocklists and groups | Pi-hole UI | `pihole_config` | yes |
+| Tdarr libraries and flows | Tdarr UI | `tdarr_configs`, `tdarr_server` | yes |
+| CrowdSec machine and bouncer registrations | `cscli` | `crowdsec_config`, `crowdsec_data` | yes |
+| ntfy accounts and tokens | `scripts/init-ntfy.sh` | `ntfy_data` | yes |
+| **Open WebUI accounts and conversations** | Open WebUI UI | `open_webui_data` | **no** |
+| **Cloudflare DNS records, tunnel routes, Access policies** | Cloudflare dashboard | Cloudflare | **no** |
+| **Google OAuth consent screen, test-user allowlist** | Google Cloud console | Google | **no** |
+| **Router: port forwards, DDNS, wifi channel, syslog target** | router UI / `nvram` | router nvram + `/jffs` | **no** |
+
+The four in bold are the real exposure. Three of them are not on this
+host at all, so no backup here can cover them, and the router's `/jffs`
+and `/opt` are not collected either -- which is why
+`router/syslog-ng-remote.conf` is kept in this repo rather than only on
+the device.
+
+Some of these are recoverable by rerunning something rather than by
+remembering: ntfy has `scripts/init-ntfy.sh`, and the *arr apps get much
+of their config from Recyclarr. The rest are genuinely manual.
+
+### Why some of it cannot be declared
+
+Three different reasons, worth telling apart:
+
+- **The app has no environment variables for it.** Audiobookshelf is the
+  clearest case: it reads no OIDC variables at all, so its OIDC settings
+  exist only in `absdatabase.sqlite` and can only be entered in the UI. A
+  compose block for it would be fiction. The same applies to Immich and
+  Cleanuparr.
+- **The state is created on first boot.** ntfy builds its user database
+  when it first starts, so accounts cannot exist before deployment. That
+  is why `init-ntfy.sh` is a separate post-deploy step and not part of
+  `init-secrets.sh`.
+- **It is somebody else's system.** Cloudflare, Google and the router are
+  configured where they live. The repo can record what the settings
+  should be, and does, but cannot apply them.
+
+Where a reconcile script is worth writing, the `init-ntfy.sh` pattern is
+the one to copy: values from the repo, credentials from `secrets/`,
+applied against the app's API after deploy, and a header that says
+plainly it is a step you run rather than something compose enforces.
+
 ## Authentik first boot
 
 Can't be scripted via env vars -- Authentik configures this through its
