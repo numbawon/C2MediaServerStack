@@ -54,6 +54,13 @@ VOLUMES=(
   recyclarr_config cleanuparr_config
   audiobookshelf_config audiobookshelf_metadata
   immich_db_data
+  # open_webui_data holds every account and saved conversation, but
+  # 2.2 GB of its 2.2 GB is cache/ -- re-downloadable embedding,
+  # whisper and tiktoken model weights. webui.db is 820 KB and
+  # vector_db 184 KB, so with cache/ excluded (restic-excludes.txt)
+  # the real content is under a megabyte. It was left out of this
+  # list while it looked like a 2.2 GB decision; it was never one.
+  open_webui_data
   # Added after an audit found them in no backup list at all. All small
   # (~19 MB combined). traefik_acme holds the ACME account key and the
   # issued wildcard: Traefik re-issues if it is lost, but that spends a
