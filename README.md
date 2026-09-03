@@ -2122,8 +2122,70 @@ iOS notification-service-extension fetch.
 
 ## Rotating a secret
 
+There are three shapes here, and only the first is a Docker secret.
+
+### Docker secrets
+
 ```bash
 docker secret rm <name>
 # update the services referencing it (docker service update, or redeploy the stack)
 ./scripts/init-secrets.sh   # re-creates it (skips ones that already exist otherwise)
 ```
+
+### OIDC client secrets held in two UIs
+
+Four apps do real OIDC against Authentik and keep their own copy of the
+client secret in their own database. Nothing enforces that the two copies
+match, because neither lives in compose or in this repo:
+
+| App | Authentik provider | App-side copy lives in |
+|---|---|---|
+| Audiobookshelf | `Audiobookshelf OIDC` | `audiobookshelf_config` (SQLite) |
+| Immich | `Immich OIDC` | `immich_db_data` |
+| Cleanuparr | `Cleanuparr OIDC` | `cleanuparr_config` |
+| Portainer | `Portainer OIDC` | `portainer_data` |
+
+Rotating is the same two steps for all four:
+
+1. **Authentik** -> Applications -> Providers -> the provider above ->
+   Edit. Clearing the Client Secret field regenerates it. Copy it before
+   saving. Update.
+2. **The app** -> its own authentication settings -> paste into Client
+   Secret -> Save.
+
+Do them back to back. Between the two, OIDC login fails with
+`invalid_client`: Authentik rejects the exchange because the app is still
+sending the old secret. You are not locked out, because every one of
+these keeps local login enabled alongside OIDC (Audiobookshelf's
+`authActiveAuthMethods` is `['local', 'openid']`, and the others behave
+the same way). Existing sessions are unaffected either way -- they are
+the app's own tokens, and the client secret is only used during a fresh
+exchange.
+
+The failure signature, if a rotation is half-applied:
+
+```bash
+docker service logs mediastack_authentik-server --since 5m 2>&1 \
+  | grep -i "invalid_client\|client_secret"
+```
+
+Worth knowing what this looks like when it goes wrong months later: OIDC
+logins fail while local logins keep working, which reads like an
+Authentik outage rather than two strings that no longer match.
+
+### OIDC client secrets held in .env
+
+Open WebUI is the exception: its secret is an environment variable
+(`OPENWEBUI_CLIENT_SECRET` in `.env`, provider `Open WebUI OIDC`), not a
+field in its UI. Rotate it in Authentik, update `.env`, then redeploy so
+the new value reaches the container:
+
+```bash
+./scripts/deploy.sh ai
+```
+
+The forward-auth providers -- the lowercase ones in Authentik's provider
+list (`grafana`, `sonarr`, `browse` and so on) -- have client secrets
+too, but nothing outside Authentik ever holds a copy. The outpost does
+the exchange, so those rotate in Authentik alone with nothing to keep in
+step.
