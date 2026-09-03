@@ -428,13 +428,18 @@ rebuilt from memory.
 | **Open WebUI accounts and conversations** | Open WebUI UI | `open_webui_data` | **no** |
 | **Cloudflare DNS records, tunnel routes, Access policies** | Cloudflare dashboard | Cloudflare | **no** |
 | **Google OAuth consent screen, test-user allowlist** | Google Cloud console | Google | **no** |
-| **Router: port forwards, DDNS, wifi channel, syslog target** | router UI / `nvram` | router nvram + `/jffs` | **no** |
+| Router: port forwards, DDNS, wifi channel, syslog target | router UI / `nvram` | router nvram + `/jffs` | no, by choice |
 
-The four in bold are the real exposure. Three of them are not on this
-host at all, so no backup here can cover them, and the router's `/jffs`
-and `/opt` are not collected either -- which is why
-`router/syslog-ng-remote.conf` is kept in this repo rather than only on
-the device.
+The three in bold are the real exposure, and none of them is on this host,
+so no backup here can cover them.
+
+The router is a deliberate exception rather than an oversight. Its
+settings are few and reconstructible from its own UI, and the one file
+that would be tedious to retype -- `router/syslog-ng-remote.conf` -- is
+kept in this repo. If the router is ever reset or replaced, the list to
+redo is: the WAN 32443 -> 192.168.50.10:443 forward that carries Plex,
+the Cloudflare DDNS script at `/jffs/scripts/ddns-start`, the 5GHz
+channel pinned to 149/80 to stay off DFS, and the syslog drop-in.
 
 Some of these are recoverable by rerunning something rather than by
 remembering: ntfy has `scripts/init-ntfy.sh`, and the *arr apps get much
