@@ -2148,8 +2148,18 @@ match, because neither lives in compose or in this repo:
 Rotating is the same two steps for all four:
 
 1. **Authentik** -> Applications -> Providers -> the provider above ->
-   Edit. Clearing the Client Secret field regenerates it. Copy it before
-   saving. Update.
+   Edit. **Paste a new value over the Client Secret field.** Do NOT clear
+   it: Authentik generates a secret only when the provider is created, so
+   clearing the field saves it *empty* and breaks OIDC with nothing in
+   the UI to say so. Verified the hard way -- a cleared field read back
+   as length 0 against 128 for an untouched provider.
+
+   Generate one in Authentik's own format (128 alphanumeric characters):
+
+   ```bash
+   python3 -c "import secrets,string; a=string.ascii_letters+string.digits; \
+     print(''.join(secrets.choice(a) for _ in range(128)))"
+   ```
 2. **The app** -> its own authentication settings -> paste into Client
    Secret -> Save.
 
@@ -2161,6 +2171,19 @@ these keeps local login enabled alongside OIDC (Audiobookshelf's
 the same way). Existing sessions are unaffected either way -- they are
 the app's own tokens, and the client secret is only used during a fresh
 exchange.
+
+To check what a provider currently holds without going through the UI:
+
+```bash
+docker exec $(docker ps -qf name=mediastack_postgres) \
+  psql -U authentik -d authentik -tAc \
+  "select p.name, length(o.client_secret)
+     from authentik_providers_oauth2_oauth2provider o
+     join authentik_core_provider p on p.id = o.provider_ptr_id;"
+```
+
+A length of 0 means the secret was cleared rather than replaced. 128 is
+what a healthy one looks like.
 
 The failure signature, if a rotation is half-applied:
 
