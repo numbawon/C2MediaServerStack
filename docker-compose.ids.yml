@@ -65,7 +65,34 @@ services:
       # positive would drop the household's traffic, and recovery needs
       # console access. Blocking is done by CrowdSec at Traefik instead,
       # where a bad decision costs one HTTP 403 and is undone in seconds.
-      - SURICATA_OPTIONS=--set stream.inline=no
+      # eve.json grew 3.67 GB/day with nothing rotating it, and almost
+      # none of it was actionable. Measured over a 150k-event sample:
+      # dns 35.6% of bytes, flow 22.8%, mdns 17.8%, stats 14.8%, tls 6.5%
+      # -- and alert 0.05%.
+      #
+      # Only two things read this file: CrowdSec (crowdsec/acquis.yaml,
+      # type suricata-evelogs) parses `alert`, and suricata-exporter reads
+      # `stats`. dns is already logged by Pi-hole; mdns is LAN chatter.
+      #
+      # Disabling a log type does NOT weaken detection -- rules still
+      # evaluate against every packet, it only stops writing a line per
+      # benign lookup. `anomaly` is kept: ~0 bytes, flags protocol abuse.
+      #
+      # NOT disabled, because doing so SEGFAULTS Suricata 8.0.6 (verified
+      # with `suricata -T`, exit 139, each reproduces on its own):
+      #   outputs.1.eve-log.types.33.flow.enabled=no
+      #   outputs.1.eve-log.types.22.quic.enabled=no
+      # flow is 22.8% of the volume, so this cannot bound the file by
+      # itself -- see scripts/trim-runaway-logs.sh, which does.
+      # Re-test both if the image is ever bumped.
+      #
+      # stats.interval 8 -> 30: at 8.75 KB per event that was ~95 MB/day.
+      # suricata-exporter's STALE_AFTER is 120s, so 30s is well inside it.
+      #
+      # Indices come from `suricata --dump-config` and are stable because
+      # suricata.yaml persists in the suricata_config volume rather than
+      # being rewritten by the image. Re-check them if that volume is wiped.
+      - SURICATA_OPTIONS=--set stream.inline=no --set stats.interval=30 --set outputs.1.eve-log.types.3.http.enabled=no --set outputs.1.eve-log.types.4.dns.enabled=no --set outputs.1.eve-log.types.5.mdns.enabled=no --set outputs.1.eve-log.types.6.tls.enabled=no --set outputs.1.eve-log.types.7.files.enabled=no --set outputs.1.eve-log.types.26.dhcp.enabled=no
     volumes:
       - suricata_logs:/var/log/suricata
       # A named volume, not a bind mount of ./suricata: the image chowns
