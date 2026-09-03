@@ -61,9 +61,9 @@ VOLUMES=(
   audiobookshelf_config audiobookshelf_metadata
   immich_db_data
   # open_webui_data holds every account and every saved conversation.
-  # docker-compose.ai.yml is parked, so this volume is near-empty today
-  # and tars in seconds -- listed now because the moment it stops being
-  # near-empty is exactly when nobody will think to add it.
+  # No longer near-empty: cache/ is now 2.2 GB of re-downloadable model
+  # weights (embedding, whisper, tiktoken), against 820 KB of webui.db
+  # and 184 KB of vector_db. See the exclusions below.
   open_webui_data
   # Added after an audit found them in no backup list at all. All small
   # (~19 MB combined). traefik_acme holds the ACME account key and the
@@ -107,6 +107,12 @@ exclusions_for() {
       printf '%s\n' --exclude=./logs --exclude=./Backups
       ;;
     navidrome_config)
+      printf '%s\n' --exclude=./cache
+      ;;
+    open_webui_data)
+      # cache/ is 2.2 GB of re-downloadable model weights (embedding,
+      # whisper, tiktoken) against 820 KB of webui.db and 184 KB of
+      # vector_db. Excluding it makes this volume a rounding error.
       printf '%s\n' --exclude=./cache
       ;;
     tautulli_config)

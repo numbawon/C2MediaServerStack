@@ -31,3 +31,4 @@
 /data/*/Backups
 /data/navidrome_config/cache
 /data/tautulli_config/cache
+/data/open_webui_data/cache
