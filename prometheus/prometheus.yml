@@ -78,6 +78,26 @@ scrape_configs:
   # SERVFAILing at the router while A resolved fine; separating them
   # names the fault directly instead of surfacing it as an unrelated
   # service failure several layers downstream.
+  # Origin certificate. Unlike the jobs above, the target is NOT the URL
+  # probed: it is passed as `hostname` (Host header + TLS SNI) while the
+  # URL is a constant pointing straight at Traefik. That is what makes
+  # this measure the Let's Encrypt certificate rather than Cloudflare's.
+  - job_name: blackbox-origin
+    metrics_path: /probe
+    params:
+      module: [https_origin]
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/blackbox-origin.json"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_hostname
+      - source_labels: [__address__]
+        target_label: instance
+      - target_label: __param_target
+        replacement: https://traefik:443/
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
   - job_name: blackbox-dns
     metrics_path: /probe
     params:

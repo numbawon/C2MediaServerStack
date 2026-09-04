@@ -39,6 +39,34 @@ modules:
   # Does the name resolve at all, independent of whether HTTP works.
   # Separates "DNS is broken" from "the app is down", which is precisely
   # the distinction that took hours to establish during the outage.
+  # Probes Traefik directly instead of going through Cloudflare, so the
+  # certificate it measures is the Let's Encrypt one Traefik serves, not
+  # Cloudflare's edge certificate.
+  #
+  # That distinction is the whole point. Every other https_* target
+  # resolves to Cloudflare, so probe_ssl_earliest_cert_expiry reports
+  # Cloudflare's cert (expiring 2026-10-20 when this was written) rather
+  # than the origin's (2026-12-01). If ACME renewal ever fails, those
+  # probes stay green while the origin certificate expires underneath,
+  # and cloudflared's https origin then fails TLS verification on every
+  # hostname at once.
+  #
+  # The hostname is deliberately not set here: it is the real domain and
+  # this file is tracked. Prometheus passes it per-target as the
+  # `hostname` parameter, which blackbox applies to BOTH the Host header
+  # and the TLS SNI, so Traefik routes the request and serves the
+  # matching certificate.
+  https_origin:
+    prober: http
+    timeout: 15s
+    http:
+      valid_status_codes: [200, 302, 401, 403]
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      method: GET
+      follow_redirects: false
+      preferred_ip_protocol: ip4
+      fail_if_not_ssl: true
+
   dns_a:
     prober: dns
     timeout: 8s

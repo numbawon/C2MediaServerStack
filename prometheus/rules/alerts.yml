@@ -355,6 +355,35 @@ groups:
           description: >-
             If this is Pi-hole, container DNS is about to break stack-wide.
 
+      - alert: OriginTlsCertExpiringSoon
+        expr: >-
+          probe_ssl_earliest_cert_expiry{job="blackbox-origin"} - time()
+          < 21 * 24 * 3600
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "Traefik's Let's Encrypt certificate expires in under 21 days"
+          description: >-
+            This is the ORIGIN certificate, not Cloudflare's. Traefik
+            renews it over ACME DNS-01 around 30 days out, so this firing
+            means renewal has failed -- check the cloudflare_dns_token
+            secret and Traefik's log for acme errors. If it does expire,
+            cloudflared's https origin fails TLS verification and every
+            hostname goes down at once, which is why 21 days is earlier
+            than the 14 used for the Cloudflare-facing probes.
+
+      - alert: OriginTlsProbeDown
+        expr: probe_success{job="blackbox-origin"} == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cannot reach Traefik directly to check its certificate"
+          description: >-
+            The origin certificate is unmonitored while this fires.
+            Expiry would not be noticed until it takes the site down.
+
       - alert: TlsCertExpiringSoon
         expr: >-
           probe_ssl_earliest_cert_expiry{job=~"blackbox-(gated|open)"} - time()
