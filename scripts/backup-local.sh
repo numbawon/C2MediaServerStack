@@ -73,6 +73,10 @@ VOLUMES=(
   # registrations -- deleting one of those registrations took the site
   # down once already, so they are worth the few megabytes.
   traefik_acme crowdsec_config crowdsec_data
+  # PinePods subscriptions, per-user progress and playlists. Its
+  # downloads/ and backups/ volumes are deliberately absent: the first
+  # is re-fetchable media, the second is its own export directory.
+  pinepods_db_data
   files_cfg browse_cfg flood_data tdarr_configs tdarr_server
 )
 
