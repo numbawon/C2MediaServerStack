@@ -57,6 +57,20 @@ JSON
 # Pi-hole is the resolver containers should be using; the router is the
 # one that broke on 2026-08-27. Probing both says which is at fault.
 ROUTER="${COMMON_LAN_SUBNET%%/*}"; ROUTER="${ROUTER%.*}.1"
+# Origin certificate probe. One target is enough: Traefik serves the same
+# wildcard for every hostname, so this measures the cert all of them use.
+# The value is used as the `hostname` parameter (Host header + TLS SNI),
+# not as the URL -- the URL is a constant pointing at Traefik directly.
+cat > "$OUT/blackbox-origin.json" <<JSON
+[
+  {
+    "targets": [
+      "grafana.${COMMON_DOMAIN}"
+    ],
+    "labels": { "tier": "origin" }
+  }
+]
+JSON
 cat > "$OUT/blackbox-dns.json" <<JSON
 [
   { "targets": ["${COMMON_LAN_IP}"], "labels": { "resolver": "pihole" } },
