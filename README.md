@@ -2120,6 +2120,29 @@ iOS notification-service-extension fetch.
   `docker run --rm -e RESTIC_REPOSITORY -e RESTIC_PASSWORD -e B2_ACCOUNT_ID -e B2_ACCOUNT_KEY restic/restic snapshots`,
   sourcing `secrets/restic.env` first).
 
+## Kernel tuning
+
+`sysctl/99-mediastack-tuning.conf`, installed the same way as the systemd
+units -- copied, not symlinked, so editing the repo copy changes nothing
+until you install it again:
+
+```bash
+sudo cp sysctl/99-mediastack-tuning.conf /etc/sysctl.d/
+sudo sysctl --system
+```
+
+Currently one setting. `vm.swappiness` drops from the default 60 to 10.
+The default assumes RAM is scarce and evicts idle anonymous pages eagerly
+to grow the page cache; this host has 62 GB with roughly 46 GB available
+and 16 GB committed, so that trade is backwards. It had pushed 3.3 GB of a
+4 GB swap file out -- including gnome-shell, on a headless machine --
+purely because nothing had touched those pages.
+
+Nothing was malfunctioning. This is latency, not capacity: a service whose
+pages were evicted while idle stalls coming back in, and the swap file had
+dropped to 765 MB of headroom for no benefit. 10 rather than 0 keeps
+swapping available under real pressure, which is the point of having it.
+
 ## Rotating a secret
 
 There are three shapes here, and only the first is a Docker secret.
