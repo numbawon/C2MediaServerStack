@@ -58,6 +58,14 @@ volumes:
   # re-issues) but it does burn a duplicate-certificate rate limit slot.
   traefik_acme:
     name: traefik_acme
+  # PinePods. Only the database is worth backing up: downloads/ is media
+  # it can re-fetch, and backups/ is its own export directory.
+  pinepods_db_data:
+    name: pinepods_db_data
+  pinepods_downloads:
+    name: pinepods_downloads
+  pinepods_backups:
+    name: pinepods_backups
   traefik_logs:
     name: traefik_logs
   files_cfg:
@@ -986,6 +994,94 @@ services:
       - ntfy_relay_token
     volumes:
       - ./alert-relay:/app:ro
+    networks:
+      - internal
+
+  # ---------------------------------------------------------------------
+  # PinePods -- podcast manager. Replaces using Audiobookshelf for
+  # podcasts, which it was never really built for.
+  #
+  # Chosen because it reads LOCAL media, not just RSS downloads: the
+  # /opt/pinepods/local-media mount below is the existing, hand-organised
+  # Podcasts tree (six shows, ~1460 episodes, "NNN. Title" naming). It
+  # reads ID3 tags for episode titles and finds cover art in the folder,
+  # so that work carries over rather than being re-downloaded.
+  #
+  # Pattern 3 in "Authentik integration patterns": real OIDC, configured
+  # in its own UI. Deliberately NO authentik@file middleware -- its mobile
+  # apps hold long-lived sessions and cannot complete a browser redirect,
+  # exactly like Audiobookshelf, Immich and Plex.
+  # ---------------------------------------------------------------------
+  pinepods:
+    logging: *logging
+    image: madeofpendletonwool/pinepods:latest
+    environment:
+      - TZ=${COMMON_TZ}
+      # PUID/PGID so downloaded episodes land as numbawon rather than
+      # root. Audiobookshelf runs as uid 0 and left 1204 root-owned
+      # entries under /mnt/Media/Audiobooks that had to be chowned by
+      # hand; this avoids repeating that.
+      - PUID=1000
+      - PGID=1000
+      - HOSTNAME=https://podcasts.${COMMON_DOMAIN}
+      - DB_TYPE=postgresql
+      - DB_HOST=pinepods-postgres
+      - DB_PORT=5432
+      - DB_USER=pinepods
+      - DB_NAME=pinepods
+      - DB_PASSWORD=${PINEPODS_DB_PASSWORD}
+      - VALKEY_HOST=pinepods-valkey
+      - VALKEY_PORT=6379
+      # Seeds the first admin account on initial boot only. Change the
+      # password in the UI afterwards; this value stays in .env.
+      - USERNAME=${PINEPODS_ADMIN_USER}
+      - PASSWORD=${PINEPODS_ADMIN_PASSWORD}
+      - FULLNAME=${PINEPODS_ADMIN_FULLNAME}
+      - EMAIL=${PINEPODS_ADMIN_EMAIL}
+      # Podcast search and host lookup are hosted services run by the
+      # PinePods project. Search terms leave this network when you use
+      # them; browsing and playback of what is already here do not.
+      - SEARCH_API_URL=https://search.pinepods.online/api/search
+      - PEOPLE_API_URL=https://people.pinepods.online
+      - DEBUG_MODE=false
+    volumes:
+      # The existing library, read-write so PinePods can manage episodes
+      # it downloads into the same tree.
+      - ${COMMON_MEDIA}/Podcasts:/opt/pinepods/local-media
+      - pinepods_downloads:/opt/pinepods/downloads
+      - pinepods_backups:/opt/pinepods/backups
+    networks:
+      - edge
+      - internal
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.pinepods.rule=Host(`podcasts.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.pinepods.entrypoints=web,websecure"
+        - "traefik.http.services.pinepods.loadbalancer.server.port=8040"
+
+  pinepods-postgres:
+    logging: *logging
+    # 18 as the project documents. PGDATA is set explicitly because the
+    # postgres:18 image moved its data directory, and mounting the volume
+    # at the old path produces overlay2 errors on Linux hosts.
+    image: postgres:18
+    environment:
+      - TZ=${COMMON_TZ}
+      - POSTGRES_USER=pinepods
+      - POSTGRES_DB=pinepods
+      - POSTGRES_PASSWORD=${PINEPODS_DB_PASSWORD}
+      - PGDATA=/var/lib/pgdata/pgdata
+    volumes:
+      - pinepods_db_data:/var/lib/pgdata
+    networks:
+      - internal
+
+  pinepods-valkey:
+    logging: *logging
+    image: docker.io/valkey/valkey:8-bookworm
+    environment:
+      - TZ=${COMMON_TZ}
     networks:
       - internal
 

@@ -398,6 +398,42 @@ docker compose -f docker-compose.download.yml up -d
 docker compose -f docker-compose.plex.yml up -d
 ```
 
+## Podcasts (PinePods)
+
+Podcasts live in PinePods rather than Audiobookshelf, which was never
+built for them. The deciding feature is that PinePods reads **local
+media**: `/mnt/Media/Podcasts` is mounted at
+`/opt/pinepods/local-media`, and a folder there can be added as a
+podcast. It reads ID3 tags for episode titles and picks up cover art
+from the folder, so the existing hand-organised tree carries over
+instead of being re-downloaded.
+
+That tree is six shows, ~1460 episodes, flat, named `NNN. Title` from
+each show's RSS feed (`itunes:episode`). See "Reading the logs" for how
+the numbering was derived and what deliberately went un-numbered.
+
+Three services, following the Immich pattern of an app with its own
+database and cache: `pinepods`, `pinepods-postgres` (18 -- `PGDATA` is
+set explicitly because that image moved its data directory and the old
+path produces overlay2 errors), and `pinepods-valkey`.
+
+`PUID`/`PGID` are set to 1000 deliberately. Audiobookshelf runs as uid 0
+and left 1204 root-owned entries under `/mnt/Media/Audiobooks` that had
+to be chowned by hand; anything writing into a media tree should run as
+the owning user.
+
+Pattern 3 in "Authentik integration patterns": real OIDC configured in
+its own UI, and **no** `authentik@file` middleware, because its mobile
+apps hold long-lived sessions and cannot complete a browser redirect.
+Same reasoning as Audiobookshelf, Immich and Plex.
+
+Only `pinepods_db_data` is backed up. `pinepods_downloads` is
+re-fetchable media and `pinepods_backups` is its own export directory.
+
+One thing worth knowing: `SEARCH_API_URL` and `PEOPLE_API_URL` point at
+services the PinePods project hosts. Podcast searches leave this network
+when you use them. Browsing and playing what is already here does not.
+
 ## Configuration that only exists in a UI
 
 Most of this stack is declared in compose, and what is declared can be
