@@ -63,7 +63,12 @@ services:
         logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/audiobookshelf.png"
         url: "https://audiobookshelf.example.com"
         target: "_blank"
-        subtitle: "Audiobooks and podcasts"
+        subtitle: "Audiobooks"
+      - name: "PinePods"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/pinepods.png"
+        url: "https://podcasts.example.com"
+        target: "_blank"
+        subtitle: "Podcasts"
 
       - name: "Immich"
         logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/immich.png"
