@@ -104,6 +104,12 @@ services:
       # on every start and logs everybody out on each restart.
       - WEBUI_SECRET_KEY=${OPENWEBUI_SECRET_KEY}
 
+      # Programmatic API access for automation clients. Keep Open WebUI auth
+      # enabled; callers must present a user-scoped API key/token.
+      - ENABLE_API_KEYS=true
+      - CUSTOM_API_KEY_HEADER=X-OpenWebUI-Key
+      - USER_PERMISSIONS_FEATURES_API_KEYS=true
+
       # --- Native OIDC, not forward-auth -------------------------------
       # Same choice as Immich and Audiobookshelf: Open WebUI has real
       # OIDC, so putting authentik@file in front as well would mean two
