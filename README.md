@@ -1720,8 +1720,12 @@ been seen reporting `0/0` while the container was still `Up`.
 
 ## Backups
 
-- **Local** (`scripts/backup-local.sh`): tars every app's config volume
-  to `<backup-root>/local/<timestamp>/`, keeps 14 days.
+- **Local** (`scripts/backup-local.sh`): tars every app's config
+  directory to `<backup-root>/local/<timestamp>/`, keeps 14 days.
+- **Databases** (`scripts/dump-databases.sh`, called by both jobs): a
+  logical `pg_dump` of Authentik's, PinePods' and Immich's Postgres,
+  written beside the tarballs and into the restic snapshot at
+  `/data/dbdumps`. See "Why the databases get dumped as well" below.
 - **Off-site** (`scripts/backup-offsite.sh`): same volumes, via
   `restic` to Backblaze B2, encrypted. Needs `secrets/restic.env`
   (git-ignored) first:
@@ -2261,6 +2265,62 @@ is inspecting content rather than reachability.
 
 Not covered: this server's own `resolv.conf` regressing. That is a
 NetworkManager setting no probe here can see.
+
+### Why the databases get dumped as well
+
+Their data directories are already backed up, by tarring them while
+Postgres is running. Every backup prints proof of the problem:
+
+```
+tar: ./base/16384/23654: file changed as we read it
+```
+
+That is Postgres writing while tar reads. Because the whole `PGDATA`
+including `pg_wal` is captured, restoring one behaves like recovery from an
+unclean shutdown, which Postgres normally handles. Normally is carrying a
+lot of weight there: a file torn mid-write can leave a cluster that will not
+start, and you would find out at restore time, which is the worst moment to
+find out anything.
+
+A logical dump has no such failure mode. It runs against a consistent
+snapshot and restores into any compatible server rather than needing a
+byte-identical one. Both are kept: the tarball is faster and preserves
+everything, the dump is the copy that is coherent by construction.
+
+It also closes a gap the restore test cannot reach. `verify-backups.sh`
+proves a *file tree* comes back, currently Prowlarr's config. Nothing was
+proving a database could.
+
+**`pg_dump` runs inside each container**, so its version always matches the
+server. This stack runs Postgres 16 (Authentik), 18 (PinePods) and 14
+(Immich) at once, and a single host-side `pg_dump` would fail against the
+newer two.
+
+**Each dump is verified, not assumed.** Valid gzip, and at least one
+`CREATE TABLE`. A dump that is valid gzip and contains no schema is the
+failure worth catching: it looks like a file and restores to nothing. A
+dump that fails verification is deleted rather than left looking like a
+backup.
+
+**Roles are dumped too** (`pg_dumpall --globals-only`, the
+`*-globals.sql.gz` files). Roles live outside any one database, so a
+table-only restore gives you tables that nothing has permission to read.
+
+**A failed dump is loud but not fatal.** Losing the whole backup because
+one database was unreachable is the wrong trade, so both jobs warn and
+continue, and the off-site job still ships whatever dumps did succeed
+rather than dropping all three.
+
+To restore one:
+
+```bash
+gzip -dc authentik.sql.gz | docker exec -i <postgres-container> \
+  psql -U authentik -d authentik
+```
+
+The dumps use `--clean --if-exists`, so they replay into a non-empty
+database without hand-editing. Restore the matching `*-globals.sql.gz`
+first if the roles are missing too.
 
 ## Backup verification
 

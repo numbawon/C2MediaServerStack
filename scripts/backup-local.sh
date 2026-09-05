@@ -190,6 +190,20 @@ if [ -n "${COMMON_APPDATA:-}" ] && [ -d "$COMMON_APPDATA" ]; then
   done
 fi
 
+# Logical dumps alongside the raw data directories. The tarballs above are
+# taken from LIVE Postgres data directories, which is where the "file
+# changed as we read it" warnings come from; a restore of one behaves like
+# recovery from an unclean shutdown, which usually works and is not
+# guaranteed. A pg_dump is consistent by construction and restores into any
+# compatible server. See scripts/dump-databases.sh.
+#
+# Not fatal if it fails: the rest of the backup is still worth having, and a
+# loud line here plus the missing files is how you find out.
+echo "dumping databases"
+if ! ./scripts/dump-databases.sh "$OUT"; then
+  echo "WARNING: one or more database dumps failed, see above" >&2
+fi
+
 docker secret ls --format '{{.Name}}' > "$OUT/swarm-secret-names.txt" 2>/dev/null || true
 
 echo "Local backup complete: $OUT"
