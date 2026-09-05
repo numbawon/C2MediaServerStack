@@ -43,10 +43,6 @@ networks:
     driver: overlay
 
 volumes:
-  crowdsec_config:
-    name: crowdsec_config
-  crowdsec_data:
-    name: crowdsec_data
   # created by docker-compose.ids.yml, where suricata writes it
   suricata_logs:
     name: suricata_logs
@@ -73,10 +69,6 @@ volumes:
   # list stable regardless of what you name the stack at deploy time.
   authentik_data:
     name: authentik_data
-  pihole_config:
-    name: pihole_config
-  pihole_dnsmasq:
-    name: pihole_dnsmasq
   postgres_data:
     name: postgres_data
   prometheus_data:
@@ -93,10 +85,6 @@ volumes:
   # on the next verification run.
   node_exporter_textfile:
     name: node_exporter_textfile
-  audiobookshelf_config:
-    name: audiobookshelf_config
-  audiobookshelf_metadata:
-    name: audiobookshelf_metadata
   # Immich runs its own Postgres (vector extensions the Authentik one does
   # not have) and its own Redis. immich_model_cache holds downloaded ML
   # models -- regenerable, but several GB, so not worth re-downloading.
@@ -1387,8 +1375,8 @@ services:
       - COLLECTIONS=crowdsecurity/traefik crowdsecurity/base-http-scenarios crowdsecurity/http-cve crowdsecurity/sshd crowdsecurity/linux crowdsecurity/suricata crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules
       - GID=1000
     volumes:
-      - crowdsec_config:/etc/crowdsec
-      - crowdsec_data:/var/lib/crowdsec/data
+      - ${COMMON_CONFIG}/crowdsec/config:/etc/crowdsec
+      - ${COMMON_CONFIG}/crowdsec/data:/var/lib/crowdsec/data
       - ./crowdsec/acquis.yaml:/etc/crowdsec/acquis.yaml:ro
       - ./crowdsec/acquis-appsec.yaml:/etc/crowdsec/acquis.d/appsec.yaml:ro
       - ./crowdsec/appsec-config.yaml:/etc/crowdsec/appsec-configs/mediastack-appsec.yaml:ro
@@ -1670,8 +1658,8 @@ services:
       # or manga, which Kavita handles far better.
       # LazyLibrarian already writes here: its ebook_dir is /books.
       - ${COMMON_MEDIA}/EBooks:/books
-      - audiobookshelf_config:/config
-      - audiobookshelf_metadata:/metadata
+      - ${COMMON_CONFIG}/audiobookshelf/config:/config
+      - ${COMMON_CONFIG}/audiobookshelf/metadata:/metadata
     networks:
       - edge
     deploy:

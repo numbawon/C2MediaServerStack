@@ -23,10 +23,8 @@ source "$ENV_FILE"
 set +a
 
 VOLUMES=(
-  authentik_data pihole_config pihole_dnsmasq portainer_data postgres_data
-  prometheus_data grafana_data sonarr_config radarr_config lidarr_config
-  bazarr_config seerr_config lazylibrarian_config prowlarr_config
-  tautulli_config organizarr_data
+  authentik_data postgres_data prometheus_data pinepods_db_data
+  immich_db_data traefik_acme
   # loki_data is deliberately NOT here. It holds nothing but logs:
   # chunks, their index, and a write-ahead log. loki-config.yaml lives
   # in this repo, so a restored Loki rebuilds itself and simply starts
@@ -43,24 +41,18 @@ VOLUMES=(
   # reason a run grew from 4.8 GiB to 13.0 GiB. Oversized snapshots
   # pushing past B2's cap is what silently broke this repo once
   # already -- see the exclusions note below.
-  qbittorrent_config plex_config
   # ntfy_data holds every ntfy account and access token, including the
   # one configured in the phone's custom headers -- losing it means
   # re-issuing and re-entering them by hand.
-  alertmanager_data ntfy_data diun_data
   # Stage 3. immich_db_data is the important one: it holds every photo's
   # metadata, albums, faces and search embeddings. The photo FILES live on
   # a media path and are not in here.
-  recyclarr_config cleanuparr_config
-  audiobookshelf_config audiobookshelf_metadata
-  immich_db_data
   # open_webui_data holds every account and saved conversation, but
   # 2.2 GB of its 2.2 GB is cache/ -- re-downloadable embedding,
   # whisper and tiktoken model weights. webui.db is 820 KB and
   # vector_db 184 KB, so with cache/ excluded (restic-excludes.txt)
   # the real content is under a megabyte. It was left out of this
   # list while it looked like a 2.2 GB decision; it was never one.
-  open_webui_data
   # Added after an audit found them in no backup list at all. All small
   # (~19 MB combined). traefik_acme holds the ACME account key and the
   # issued wildcard: Traefik re-issues if it is lost, but that spends a
@@ -68,12 +60,9 @@ VOLUMES=(
   # crowdsec_config/crowdsec_data hold the bouncer and machine
   # registrations -- deleting one of those registrations took the site
   # down once already, so they are worth the few megabytes.
-  traefik_acme crowdsec_config crowdsec_data
   # PinePods subscriptions, per-user progress and playlists. Its
   # downloads/ and backups/ volumes are deliberately absent: the first
   # is re-fetchable media, the second is its own export directory.
-  pinepods_db_data
-  files_cfg browse_cfg flood_data tdarr_configs tdarr_server
 )
 
 MOUNT_ARGS=()

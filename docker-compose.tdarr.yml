@@ -49,8 +49,8 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=all
       - NVIDIA_VISIBLE_DEVICES=all
     volumes:
-      - tdarr_server:/app/server
-      - tdarr_configs:/app/configs
+      - ${COMMON_CONFIG}/tdarr/server:/app/server
+      - ${COMMON_CONFIG}/tdarr/configs:/app/configs
       - tdarr_logs:/app/logs
       # Media is read-write: the whole point is replacing oversized files.
       - ${COMMON_MEDIA}:/media
@@ -76,9 +76,5 @@ networks:
 volumes:
   # Explicit names so Swarm/compose do not prefix them and
   # scripts/backup-local.sh keeps finding them by name.
-  tdarr_server:
-    name: tdarr_server
-  tdarr_configs:
-    name: tdarr_configs
   tdarr_logs:
     name: tdarr_logs

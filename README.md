@@ -1600,6 +1600,94 @@ Frame counts are compared before injection. A mismatch does not fail
 loudly, it silently desyncs the metadata against the picture for the
 length of the film, so on a mismatch the stage is skipped.
 
+## Where app config lives (.appdata)
+
+Every app's runtime config is a directory under `.appdata/` in this repo,
+bind-mounted into the container. It used to be Docker named volumes, which
+put everything under `/var/lib/docker/volumes/<name>/_data` owned by root:
+editing anything meant `docker exec`, and some things were simply not
+possible. Installing a Navidrome plugin means dropping a `.ndp` file into
+its `plugins/` folder, and there was no way to put a file there.
+
+`COMMON_CONFIG` in `.env` points at it. It must be an absolute path, since
+Swarm does not resolve bind paths relative to the compose file.
+
+### Why here and not COMMON_APPDATA
+
+The obvious home was `/mnt/Media/.appdata`, where immich, ollama and tdarr
+already keep theirs. It is the wrong place for anything an app trusts: the
+`files` service serves `/mnt/Media` **read-write**, and these directories
+hold an *arr's `config.xml` with its API key, Pi-hole's admin config,
+Portainer's store. A config an app trusts must not be editable from a file
+browser that other people can reach.
+
+The repo directory is served by nothing, so `.appdata` is reachable over
+SSH and nothing else. It is `chmod 700`, and gitignored: this is runtime
+state holding credentials, not declarative config.
+
+### Naming
+
+The directory drops the volume's redundant suffix, since the parent already
+says what these are: `navidrome_config` became `.appdata/navidrome`. Apps
+with more than one volume nest rather than collide, so CrowdSec is
+`crowdsec/config` and `crowdsec/data`, and Pi-hole is `pihole/config` and
+`pihole/dnsmasq`.
+
+### What is still a named volume, and why
+
+Six things, all of them stores you would never hand-edit:
+
+| Volume | Why it stays |
+|---|---|
+| `postgres_data`, `authentik_data` | Authentik's database. Bind-mounting a Postgres data directory invites permission and fsync problems for no benefit |
+| `immich_db_data`, `pinepods_db_data` | Same, for Immich and PinePods |
+| `prometheus_data`, `loki_data` | Metrics and logs, not config. Loki is excluded from backups entirely |
+| `traefik_acme` | `acme.json` must be mode 600 or Traefik refuses to start. Nothing here is worth hand-editing, and getting it wrong takes the whole site down |
+
+### What you can actually edit without sudo
+
+Not everything, and that is inherent to how the apps run rather than
+anything about the move. Each container writes as whatever uid it runs as,
+so the files it creates are owned by that uid.
+
+Fully yours (uid 1000, edit freely): sonarr, radarr, lidarr, bazarr,
+prowlarr, lazylibrarian, navidrome, qbittorrent, seerr, tautulli,
+cleanuparr, flood.
+
+Needs `sudo` for at least some files: portainer, ntfy, diun, organizarr,
+open_webui, files, browse (all root), grafana (472), alertmanager
+(nobody), and parts of plex, pihole, crowdsec, tdarr, audiobookshelf,
+beets, recyclarr, suricata.
+
+### Backups
+
+Both scripts cover `.appdata` and `COMMON_APPDATA` alongside the six
+remaining volumes. Two things worth knowing if you touch that code:
+
+The `.appdata` tarballs are made **inside a container as root**, not with
+the host's `tar`. Host tar runs as the invoking user and, combined with
+`--ignore-failed-read`, would skip every root-owned file and still exit 0,
+producing a tarball that looks complete and silently is not.
+
+Adding `COMMON_APPDATA` closed a gap that predated all of this: both
+scripts iterated named volumes only, so immich's ~270 MB of managed store
+and tdarr's config had never been backed up at all. ollama's subdirectory
+is the one thing skipped, being 12 GB of weights that come back with a
+single `ollama pull`.
+
+### Migrating another volume
+
+`scripts/migrate-volume-to-appdata.sh <volume>[:<dest>]` copies and
+verifies by file count and byte total; it does not touch the stack or
+redeploy, so the copy can be checked before the mount is switched. It
+refuses to run against a volume a container still holds open, because
+copying a live SQLite file gives you something that looks fine and is
+subtly torn.
+
+Stop the service first and **confirm the container is actually gone**.
+`docker service scale <svc>=0` returns before the container exits, and has
+been seen reporting `0/0` while the container was still `Up`.
+
 ## Backups
 
 - **Local** (`scripts/backup-local.sh`): tars every app's config volume

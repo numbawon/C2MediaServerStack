@@ -99,8 +99,8 @@ services:
     volumes:
       # Same named volumes the Swarm service used. Blocklists, settings
       # and query history carry over untouched.
-      - pihole_config:/etc/pihole
-      - pihole_dnsmasq:/etc/dnsmasq.d
+      - ${COMMON_CONFIG}/pihole/config:/etc/pihole
+      - ${COMMON_CONFIG}/pihole/dnsmasq:/etc/dnsmasq.d
     cap_add:
       # Pi-hole drops privileges after binding :53; without this it cannot
       # bind a port below 1024 under host networking.

@@ -140,7 +140,7 @@ services:
       - TZ=${COMMON_TZ}
       - WEBUI_PORT=8080
     volumes:
-      - qbittorrent_config:/config
+      - ${COMMON_CONFIG}/qbittorrent:/config
       - ${COMMON_DOWNLOADS}:/downloads
       - ${COMMON_COMPLETED}:/completed
     restart: unless-stopped
@@ -148,14 +148,6 @@ services:
 networks:
   edge:
     external: true   # the attachable overlay network created by the swarm stack
-
-volumes:
-  # Explicit name so it isn't prefixed by the compose project name (which
-  # defaults to the directory name) -- keeps scripts/backup-local.sh and
-  # backup-offsite.sh's volume list stable regardless of what directory
-  # this repo happens to live in.
-  qbittorrent_config:
-    name: qbittorrent_config
 
 secrets:
   # Names here are gluetun's expected /run/secrets/<name> filenames. The
