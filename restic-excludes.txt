@@ -43,15 +43,15 @@
 # per-volume rules above.
 /data/appdata/*/logs
 /data/appdata/*/Backups
-/data/appdata/sonarr_config/MediaCover
-/data/appdata/radarr_config/MediaCover
-/data/appdata/lidarr_config/MediaCover
-/data/appdata/navidrome_config/cache
-/data/appdata/tautulli_config/cache
-/data/appdata/open_webui_data/cache
-/data/appdata/plex_config/Library/Application Support/Plex Media Server/Metadata
-/data/appdata/plex_config/Library/Application Support/Plex Media Server/Media
-/data/appdata/plex_config/Library/Application Support/Plex Media Server/Cache
-/data/appdata/plex_config/Library/Application Support/Plex Media Server/Logs
-/data/appdata/plex_config/Library/Application Support/Plex Media Server/Crash Reports
-/data/appdata/plex_config/Library/Application Support/Plex Media Server/Scanners
+/data/appdata/sonarr/MediaCover
+/data/appdata/radarr/MediaCover
+/data/appdata/lidarr/MediaCover
+/data/appdata/navidrome/cache
+/data/appdata/tautulli/cache
+/data/appdata/open_webui/cache
+/data/appdata/plex/Library/Application Support/Plex Media Server/Metadata
+/data/appdata/plex/Library/Application Support/Plex Media Server/Media
+/data/appdata/plex/Library/Application Support/Plex Media Server/Cache
+/data/appdata/plex/Library/Application Support/Plex Media Server/Logs
+/data/appdata/plex/Library/Application Support/Plex Media Server/Crash Reports
+/data/appdata/plex/Library/Application Support/Plex Media Server/Scanners
