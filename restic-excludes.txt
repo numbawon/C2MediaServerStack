@@ -32,3 +32,26 @@
 /data/navidrome_config/cache
 /data/tautulli_config/cache
 /data/open_webui_data/cache
+
+# COMMON_APPDATA (/mnt/Media/.appdata), newly covered. ollama is 12 GB of
+# model weights that come back with one `ollama pull`, so it is the one
+# subdirectory not worth storing.
+/data/media-appdata/ollama
+
+# ./.appdata, where config migrated out of named volumes now lives. The
+# directory names match the volumes they replaced, so these mirror the
+# per-volume rules above.
+/data/appdata/*/logs
+/data/appdata/*/Backups
+/data/appdata/sonarr_config/MediaCover
+/data/appdata/radarr_config/MediaCover
+/data/appdata/lidarr_config/MediaCover
+/data/appdata/navidrome_config/cache
+/data/appdata/tautulli_config/cache
+/data/appdata/open_webui_data/cache
+/data/appdata/plex_config/Library/Application Support/Plex Media Server/Metadata
+/data/appdata/plex_config/Library/Application Support/Plex Media Server/Media
+/data/appdata/plex_config/Library/Application Support/Plex Media Server/Cache
+/data/appdata/plex_config/Library/Application Support/Plex Media Server/Logs
+/data/appdata/plex_config/Library/Application Support/Plex Media Server/Crash Reports
+/data/appdata/plex_config/Library/Application Support/Plex Media Server/Scanners

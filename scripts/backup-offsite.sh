@@ -26,7 +26,7 @@ VOLUMES=(
   authentik_data pihole_config pihole_dnsmasq portainer_data postgres_data
   prometheus_data grafana_data sonarr_config radarr_config lidarr_config
   bazarr_config seerr_config lazylibrarian_config prowlarr_config
-  tautulli_config navidrome_config organizarr_data
+  tautulli_config organizarr_data
   # loki_data is deliberately NOT here. It holds nothing but logs:
   # chunks, their index, and a write-ahead log. loki-config.yaml lives
   # in this repo, so a restored Loki rebuilds itself and simply starts
@@ -103,6 +103,30 @@ done
 if [ -d secrets ]; then
   MOUNT_ARGS+=(-v "$(pwd)/secrets:/data/secrets:ro")
   PATHS+=("/data/secrets")
+fi
+
+# App config migrated out of named volumes into ./.appdata so it is
+# editable on the host (see scripts/migrate-volume-to-appdata.sh). Same
+# data as before, different location, so it has to be covered here or the
+# migration would quietly delete these from the backup set.
+#
+# Directory names match the volume names they replaced, which keeps the
+# restic paths stable across the move.
+if [ -d .appdata ]; then
+  MOUNT_ARGS+=(-v "$(pwd)/.appdata:/data/appdata:ro")
+  PATHS+=("/data/appdata")
+fi
+
+# COMMON_APPDATA (/mnt/Media/.appdata) holds immich's managed store and
+# tdarr's config, and was in NEITHER backup script until this was noticed:
+# both iterate named volumes only, and these are bind mounts. Immich's is
+# ~270 MB of real state.
+#
+# ollama's subdirectory is excluded in restic-excludes.txt: 12 GB of model
+# weights that re-download with one `ollama pull`.
+if [ -n "${COMMON_APPDATA:-}" ] && [ -d "$COMMON_APPDATA" ]; then
+  MOUNT_ARGS+=(-v "${COMMON_APPDATA}:/data/media-appdata:ro")
+  PATHS+=("/data/media-appdata")
 fi
 
 if [ "${#PATHS[@]}" -eq 0 ]; then
