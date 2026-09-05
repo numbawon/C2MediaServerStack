@@ -131,6 +131,30 @@ if [ -n "${COMMON_APPDATA:-}" ] && [ -d "$COMMON_APPDATA" ]; then
   PATHS+=("/data/media-appdata")
 fi
 
+# Logical database dumps, for the same reason as in backup-local.sh: the
+# data directories above are tarred live, and a torn one restores into a
+# cluster that may not start. Written to a temp directory and mounted in,
+# since restic backs up paths rather than commands.
+#
+# Deliberately not fatal: a failed dump should not cost you the rest of the
+# off-site backup. The metrics and the missing files are the signal.
+DUMP_DIR="$(mktemp -d)"
+cleanup_dumps() { [ -n "${DUMP_DIR:-}" ] && rm -rf "$DUMP_DIR"; }
+trap cleanup_dumps EXIT
+
+echo "==> dumping databases"
+if ./scripts/dump-databases.sh "$DUMP_DIR"; then
+  MOUNT_ARGS+=(-v "${DUMP_DIR}:/data/dbdumps:ro")
+  PATHS+=("/data/dbdumps")
+else
+  echo "WARNING: one or more database dumps failed; continuing without them" >&2
+  # Still include whatever did succeed rather than dropping all three.
+  if [ -n "$(ls -A "$DUMP_DIR" 2>/dev/null)" ]; then
+    MOUNT_ARGS+=(-v "${DUMP_DIR}:/data/dbdumps:ro")
+    PATHS+=("/data/dbdumps")
+  fi
+fi
+
 if [ "${#PATHS[@]}" -eq 0 ]; then
   echo "No volumes found to back up -- is the stack deployed?" >&2
   exit 1
