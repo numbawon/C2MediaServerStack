@@ -234,27 +234,29 @@ things, and the *arrs paid all three for no benefit:
   public indexers block known exit ranges outright rather than merely
   challenging them. Exit IPs are shared, so somebody else's abuse becomes
   your ban with no visibility into why.
-- **Metadata traffic went through the tunnel too.** A container behind
-  the VPN routes *everything*, so Sonarr's and Radarr's TVDB/TMDB lookups
-  -- artwork, episode lists, release dates, none of it remotely sensitive
-  -- were exposed to exactly those rate limits and blocks.
+- **It was all or nothing.** A container behind the VPN routes
+  *everything*, so Sonarr's and Radarr's TVDB/TMDB lookups -- artwork,
+  episode lists, release dates, none of it remotely sensitive -- were
+  exposed to exactly those rate limits and blocks, with no way to send
+  the metadata one way and the searches another.
 - **A reconnect took them all down.** Everything sharing the namespace
   dies when gluetun is recreated, so a server rotation or an image bump
   was a four-app outage instead of a one-app one.
 
-The proxy gets you the part that was worth having without any of that.
-Sonarr, Radarr and LazyLibrarian each have a proxy setting under
-**Settings -> General -> Proxy**; Prowlarr has the richer **Indexer
-Proxies** feature, which supports plain HTTP and SOCKS proxies alongside
-FlareSolverr and is tagged *per indexer* -- so you can tunnel only the
-indexers that want it and leave the rest on the residential IP. Both
-point at the authenticated proxy gluetun already exposes on
-`${COMMON_LAN_IP}:8888` (see below). Exact fields are in "Configuration
-that only exists in a UI".
+The proxy keeps the part that was worth having and drops the rest. All
+four apps are pointed at it, so indexer traffic still exits through the
+tunnel, but the coupling is gone: a gluetun reconnect no longer touches
+them, and each app decides for itself what to send through the proxy and
+what to send direct. Setup and exact values are in "Pointing the *arrs at
+the VPN proxy".
 
-Do not put a proxy tag and the FlareSolverr tag on the same Prowlarr
-indexer; FlareSolverr has its own proxy field if one genuinely needs
-both.
+The one thing that genuinely must not go through it is any indexer using
+FlareSolverr. The `cf_clearance` cookie FlareSolverr obtains is bound to
+the IP that solved the challenge, so if Prowlarr then fetches the page
+from a different address the cookie is rejected and the indexer fails
+with a Cloudflare block. FlareSolverr runs on `edge` at the house IP, so
+those indexers are excluded from the proxy by hostname rather than
+tunnelled alongside the others.
 
 ### Cloudflare-blocked indexers (FlareSolverr)
 
@@ -498,12 +500,18 @@ of their config from Recyclarr. The rest are genuinely manual.
 
 Sonarr, Radarr, LazyLibrarian and Prowlarr are swarm services on the
 house IP; only qBittorrent is behind the VPN (see "Why only qBittorrent
-is behind the VPN"). Indexer traffic that you want tunnelled goes through
-gluetun's authenticated HTTP proxy instead, which is per-app UI config
-and therefore lives in the table above. Credentials are the ones in
-`secrets/httpproxy_user.txt` and `secrets/httpproxy_password.txt`.
+is behind the VPN"). All four are configured to send their outbound
+traffic through gluetun's authenticated HTTP proxy at
+`${COMMON_LAN_IP}:8888`, so indexer requests still exit through the
+tunnel. Credentials are the ones in `secrets/httpproxy_user.txt` and
+`secrets/httpproxy_password.txt`.
 
-**Sonarr / Radarr / LazyLibrarian** -- Settings -> General -> Proxy:
+Three of the four store this in a database or config file rather than in
+compose, which is why it is in the table above. Only the LazyLibrarian
+bypass list is declared, and only because it has to be an env var.
+
+**Sonarr / Radarr / Prowlarr** -- Settings -> General -> Proxy. All three
+are Servarr apps and take identical values:
 
 | Field | Value |
 |---|---|
@@ -512,24 +520,44 @@ and therefore lives in the table above. Credentials are the ones in
 | Hostname | `${COMMON_LAN_IP}` |
 | Port | `8888` |
 | Username / Password | from `secrets/httpproxy_*.txt` |
-| Bypass Proxy for Local Addresses | **on** |
-| Ignored Addresses | `*.local,192.168.*,qbittorrent,prowlarr,flaresolverr` |
+| Bypass Proxy for Local Addresses | on |
+| Ignored Addresses | `localhost,127.0.0.1,10.0.*,172.16.*,192.168.*,qbittorrent,prowlarr,sonarr,radarr,lazylibrarian,flaresolverr,vpn-client` |
 
-Bypass-for-local matters: without it these apps would send their calls to
-qBittorrent and Prowlarr out through the tunnel and back, which is slower
-and can simply fail. This is also all-or-nothing per app -- it catches
-TVDB/TMDB metadata lookups along with indexer traffic. That is a fair
-trade for Sonarr and Radarr only if you actually want the tunnel; leaving
-it off is a defensible default.
+The ignored-addresses list is not redundant with bypass-for-local. These
+apps reach each other by *service name* on the overlay, and a bare name
+is not something the local-address check recognises, so without the names
+listed explicitly Sonarr's calls to qBittorrent and Prowlarr would go out
+to gluetun and come back. Slower at best, and the gluetun firewall can
+refuse them outright.
 
-**Prowlarr** is the better place to do this, because its equivalent is
-per-indexer rather than per-app. Settings -> Indexers -> Indexer Proxies
--> **+** -> **HTTP**, same host/port/credentials, give it a tag such as
-`vpn`, then apply that tag only to the indexers you want tunnelled.
-Untagged indexers keep using the residential IP, which is what most
-public trackers prefer anyway.
+Prowlarr additionally carries `1337x.to,*.1337x.to` in that list. That is
+the FlareSolverr exception described above, and it is per-host because
+Prowlarr's app-level proxy has no per-indexer exclusion. Any future
+indexer given the `cloudflare` tag needs its hostname added here too,
+otherwise it will start failing with a Cloudflare block for reasons that
+look nothing like the actual cause.
 
-Verify from the host, comparing the two addresses:
+**LazyLibrarian** is the odd one out twice over. Its proxy lives in
+`config.ini` under a `[PROXY]` section rather than in a database:
+
+```ini
+[PROXY]
+proxy_host = http://<user>:<password>@${COMMON_LAN_IP}:8888
+proxy_type = http, https
+```
+
+Credentials go inline in the URL because that is the only place it takes
+them, and `proxy_type` is the list of schemes to proxy, not the scheme of
+the proxy itself. Edit this only while the container is stopped -- it
+rewrites `config.ini` on shutdown and will happily discard your changes.
+
+It also has no bypass list of its own, so that comes from `NO_PROXY` in
+`docker-stack.yml`. This works because LazyLibrarian makes its requests
+through python `requests`, which honours `NO_PROXY` from the environment
+even when a proxies dict is passed explicitly. Both `NO_PROXY` and
+`no_proxy` are set, since which one is read depends on the library.
+
+**Verifying.** From the host, compare the two addresses:
 
 ```bash
 curl -s https://api.ipify.org; echo          # your house IP
@@ -537,7 +565,22 @@ curl -s -x "http://<user>:<pass>@${COMMON_LAN_IP}:8888" https://api.ipify.org; e
 ```
 
 The second must differ, and must match the exit IP that
-`scripts/vpn-watchdog.sh` last recorded in `/var/lib/mediastack/vpn-public-ip`.
+`scripts/vpn-watchdog.sh` last recorded in
+`/var/lib/mediastack/vpn-public-ip`.
+
+That proves the proxy works, not that the apps use it. For that, watch
+the host connection table while making an app do something outbound:
+
+```bash
+# in one shell
+watch -n0.5 "ss -tn | grep :8888"
+# in another: force a metadata refresh, or in Prowlarr test all indexers
+```
+
+Connections to `${COMMON_LAN_IP}:8888` should appear while the refresh
+runs. Prowlarr's **Test All Indexers** button is the most direct check,
+since a misconfigured proxy fails the tests outright rather than quietly
+falling back to a direct connection.
 
 ### Why some of it cannot be declared
 

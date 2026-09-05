@@ -76,8 +76,11 @@ services:
       #                  gluetun makes it a setting, so that script is gone).
       #   the LAN        so LAN clients can use the HTTP proxy below.
       - FIREWALL_OUTBOUND_SUBNETS=10.0.1.0/24,172.20.0.0/16,${COMMON_LAN_SUBNET}
-      # Inbound on the default interface: the proxy plus the four web UIs.
-      - FIREWALL_INPUT_PORTS=8888,8080,8989,7878,5299
+      # Inbound on the default interface: the HTTP proxy, plus qBittorrent's
+      # web UI. 8989/7878/5299 were here for Sonarr/Radarr/LazyLibrarian
+      # back when they shared this namespace; they are swarm services now
+      # and listen on their own addresses.
+      - FIREWALL_INPUT_PORTS=8888,8080
 
       # Built-in HTTP proxy (CONNECT-capable, so it handles HTTPS too).
       # Anything on the LAN pointed at COMMON_LAN_IP:8888 exits through the

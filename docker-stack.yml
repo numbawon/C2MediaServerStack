@@ -1162,6 +1162,18 @@ services:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
       - TZ=${COMMON_TZ}
+      # LazyLibrarian's outbound proxy (config.ini [PROXY]) has no bypass
+      # list of its own -- unlike Sonarr/Radarr/Prowlarr, which have a
+      # proxyBypassFilter field. Without this it would send its calls to
+      # qBittorrent out to gluetun and back, which is slower at best and
+      # blocked at worst.
+      #
+      # It works because LazyLibrarian makes its requests through python
+      # requests, which honours NO_PROXY from the environment even when a
+      # proxies dict is passed explicitly. Bare names match as suffixes,
+      # so the service names cover the overlay.
+      - NO_PROXY=localhost,127.0.0.1,10.0.1.0/24,192.168.0.0/16,qbittorrent,prowlarr,sonarr,radarr,flaresolverr,vpn-client
+      - no_proxy=localhost,127.0.0.1,10.0.1.0/24,192.168.0.0/16,qbittorrent,prowlarr,sonarr,radarr,flaresolverr,vpn-client
     volumes:
       - lazylibrarian_config:/config
       - ${COMMON_MEDIA}/EBooks:/books
