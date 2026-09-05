@@ -68,10 +68,6 @@ volumes:
     name: pinepods_backups
   traefik_logs:
     name: traefik_logs
-  files_cfg:
-    name: files_cfg
-  browse_cfg:
-    name: browse_cfg
   # Explicit `name:` on every volume so it doesn't get the `<stack-name>_`
   # prefix Swarm adds by default -- keeps scripts/backup-local.sh's volume
   # list stable regardless of what you name the stack at deploy time.
@@ -81,51 +77,22 @@ volumes:
     name: pihole_config
   pihole_dnsmasq:
     name: pihole_dnsmasq
-  portainer_data:
-    name: portainer_data
   postgres_data:
     name: postgres_data
   prometheus_data:
     name: prometheus_data
-  grafana_data:
-    name: grafana_data
-  seerr_config:
-    name: seerr_config
-  tautulli_config:
-    name: tautulli_config
-  navidrome_config:
-    name: navidrome_config
   loki_data:
     name: loki_data
-  organizarr_data:
-    name: organizarr_data
-  alertmanager_data:
-    name: alertmanager_data
   # Holds ntfy's user.db (accounts + access tokens) and its message
   # cache. Losing this means re-issuing every token, including the one
   # in the phone's custom headers.
-  ntfy_data:
-    name: ntfy_data
   # Diun's record of which digest it last reported per image. Losing it
   # means one noisy run that re-reports everything as new.
-  diun_data:
-    name: diun_data
   # Written by scripts/verify-backups.sh, read by node-exporter's
   # textfile collector. Not backed up: it is derived state, regenerated
   # on the next verification run.
   node_exporter_textfile:
     name: node_exporter_textfile
-  recyclarr_config:
-    name: recyclarr_config
-  beets_config:
-  flood_data:
-    # Explicit name so Swarm does not prefix it to mediastack_flood_data.
-    # Same reason as the other pinned names here: scripts/backup-local.sh
-    # lists volumes by name, and a prefix would silently drop this one from
-    # the backup set.
-    name: flood_data
-  cleanuparr_config:
-    name: cleanuparr_config
   audiobookshelf_config:
     name: audiobookshelf_config
   audiobookshelf_metadata:
@@ -526,7 +493,7 @@ services:
       - TZ=${COMMON_TZ}
     command: -H tcp://docker-socket-proxy:2375
     volumes:
-      - portainer_data:/data
+      - ${COMMON_CONFIG}/portainer:/data
     networks:
       - edge
       - internal
@@ -594,7 +561,7 @@ services:
     environment:
       - TZ=${COMMON_TZ}
     volumes:
-      - seerr_config:/app/config
+      - ${COMMON_CONFIG}/seerr:/app/config
     # Resolve through Pi-hole rather than Docker's default path out to the
     # router. Seerr is Alpine/musl, and musl fails a whole hostname lookup
     # with EAI_AGAIN when the AAAA half returns SERVFAIL -- which is exactly
@@ -681,7 +648,7 @@ services:
       - PGID=${COMMON_PGID}
       - TZ=${COMMON_TZ}
     volumes:
-      - tautulli_config:/config
+      - ${COMMON_CONFIG}/tautulli:/config
     networks:
       - edge
     deploy:
@@ -802,7 +769,7 @@ services:
       - ${COMMON_CONFIG}/prowlarr:/data/prowlarr:ro
       - ${COMMON_CONFIG}/bazarr:/data/bazarr:ro
       - ${COMMON_CONFIG}/lazylibrarian:/data/lazylibrarian:ro
-      - organizarr_data:/state
+      - ${COMMON_CONFIG}/organizarr:/state
     networks:
       - edge
     deploy:
@@ -946,7 +913,7 @@ services:
       # the longest repeat_interval with room to spare.
       - --data.retention=336h
     volumes:
-      - alertmanager_data:/alertmanager
+      - ${COMMON_CONFIG}/alertmanager:/alertmanager
       - ./alertmanager:/etc/alertmanager:ro
     networks:
       - edge
@@ -1194,7 +1161,7 @@ services:
       # reading that file, so ${COMMON_DOMAIN} would be taken literally.
       - NTFY_BASE_URL=https://ntfy.${COMMON_DOMAIN}
     volumes:
-      - ntfy_data:/var/lib/ntfy
+      - ${COMMON_CONFIG}/ntfy:/var/lib/ntfy
       - ./ntfy:/etc/ntfy:ro
     networks:
       - edge
@@ -1229,7 +1196,7 @@ services:
       - TZ=${COMMON_TZ}
       - LOG_LEVEL=info
     volumes:
-      - diun_data:/data
+      - ${COMMON_CONFIG}/diun:/data
       - ./diun:/etc/diun:ro
     networks:
       - internal
@@ -1263,7 +1230,7 @@ services:
     secrets:
       - grafana_admin_password
     volumes:
-      - grafana_data:/var/lib/grafana
+      - ${COMMON_CONFIG}/grafana:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     networks:
       # `internal`, not `edge` -- the *arr apps and everything else that's
@@ -1352,7 +1319,7 @@ services:
       # Volume for Recyclarr's own regenerable state (its clone of the
       # TRaSH guides repo); read-only directory mount for the config it
       # actually acts on.
-      - recyclarr_config:/config
+      - ${COMMON_CONFIG}/recyclarr:/config
       - ./recyclarr/configs:/config/configs:ro
     networks:
       - edge
@@ -1386,7 +1353,7 @@ services:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
     volumes:
-      - cleanuparr_config:/config
+      - ${COMMON_CONFIG}/cleanuparr:/config
     networks:
       - edge
     deploy:
@@ -1493,7 +1460,7 @@ services:
     volumes:
       - ${COMMON_MEDIA}:/w/media
       - /mnt/Storage:/w/storage
-      - files_cfg:/cfg
+      - ${COMMON_CONFIG}/files:/cfg
     environment:
       - TZ=${COMMON_TZ}
     networks:
@@ -1554,7 +1521,7 @@ services:
       - --no-mv
     volumes:
       - ${COMMON_MEDIA}:/w/media:ro
-      - browse_cfg:/cfg
+      - ${COMMON_CONFIG}/browse:/cfg
     environment:
       - TZ=${COMMON_TZ}
     networks:
@@ -1623,7 +1590,7 @@ services:
       - FLOOD_OPTION_qbuser=admin
       - FLOOD_OPTION_qbpass=subnet-whitelisted
     volumes:
-      - flood_data:/config
+      - ${COMMON_CONFIG}/flood:/config
     networks:
       - edge
     deploy:
@@ -1663,7 +1630,7 @@ services:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
     volumes:
-      - beets_config:/config
+      - ${COMMON_CONFIG}/beets:/config
       # Read-write: tag repair rewrites the audio files themselves.
       - ${COMMON_MEDIA}/Music:/music
       # The config is version-controlled rather than living in the volume,
