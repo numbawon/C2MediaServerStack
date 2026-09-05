@@ -89,9 +89,13 @@ VOLUMES=(
 #
 # Rule of thumb: keep the .db files and config, drop anything the app
 # re-fetches from TMDB/TVDB/MusicBrainz or re-derives from the media.
+#
+# Each case matches both spellings: the volume name for anything still in a
+# named volume, and the shortened .appdata directory name for anything
+# migrated out (navidrome_config and navidrome are the same app).
 exclusions_for() {
   case "$1" in
-    plex_config)
+    plex_config|plex)
       # 3.5 GB of Metadata/Movies alone. Databases/ is the real payload:
       # watch history, library structure, play counts.
       printf '%s\n' \
@@ -102,24 +106,24 @@ exclusions_for() {
         --exclude=./Library/Application*Support/Plex*Media*Server/Crash*Reports \
         --exclude=./Library/Application*Support/Plex*Media*Server/Scanners
       ;;
-    sonarr_config|radarr_config|lidarr_config|readarr_config)
+    sonarr_config|radarr_config|lidarr_config|readarr_config|sonarr|radarr|lidarr|readarr)
       # MediaCover is poster/fanart thumbnails, hundreds of numbered dirs.
       # radarr.db is 64 MB; its MediaCover was 2.5 GB.
       printf '%s\n' --exclude=./MediaCover --exclude=./logs --exclude=./Backups
       ;;
-    prowlarr_config|bazarr_config|lazylibrarian_config)
+    prowlarr_config|bazarr_config|lazylibrarian_config|prowlarr|bazarr|lazylibrarian)
       printf '%s\n' --exclude=./logs --exclude=./Backups
       ;;
-    navidrome_config)
+    navidrome_config|navidrome)
       printf '%s\n' --exclude=./cache
       ;;
-    open_webui_data)
+    open_webui_data|open_webui)
       # cache/ is 2.2 GB of re-downloadable model weights (embedding,
       # whisper, tiktoken) against 820 KB of webui.db and 184 KB of
       # vector_db. Excluding it makes this volume a rounding error.
       printf '%s\n' --exclude=./cache
       ;;
-    tautulli_config)
+    tautulli_config|tautulli)
       printf '%s\n' --exclude=./logs --exclude=./cache
       ;;
     *) : ;;

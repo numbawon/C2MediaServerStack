@@ -22,25 +22,58 @@
 # service must already be stopped: copying a live SQLite database yields a
 # file that looks fine and is subtly torn.
 #
+# NAMING
+#
+# The destination drops the redundant suffix: navidrome_config becomes
+# .appdata/navidrome, since the directory's parent already says these are
+# configs. Apps with more than one volume nest instead of colliding, so
+# crowdsec_config and crowdsec_data become .appdata/crowdsec/config and
+# .appdata/crowdsec/data. Pass an explicit destination for those.
+#
 # Usage:
-#   scripts/migrate-volume-to-appdata.sh <volume-name> [<volume-name>...]
+#   scripts/migrate-volume-to-appdata.sh <volume>[:<dest>] [...]
+#
+# Examples:
+#   ... navidrome_config              -> .appdata/navidrome
+#   ... crowdsec_config:crowdsec/config crowdsec_data:crowdsec/data
 set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 APPDATA="$(pwd)/.appdata"
 
 if [ $# -lt 1 ]; then
-  echo "usage: $0 <volume-name> [<volume-name>...]" >&2
+  echo "usage: $0 <volume>[:<dest>] [<volume>[:<dest>]...]" >&2
   exit 64
 fi
+
+# volume name -> directory name, unless one was given explicitly.
+#
+# This strips one trailing _word, so it is right for the common single
+# volume per app (navidrome_config -> navidrome) and wrong for anything
+# with a compound name: immich_db_data would become immich_db, and
+# tdarr_configs becomes tdarr while its sibling tdarr_server does not.
+# Those cases are exactly the ones that need an explicit dest anyway,
+# since two volumes cannot share one directory.
+dest_for() {
+  case "$1" in
+    *_config|*_configs|*_data|*_cfg) echo "${1%_*}" ;;
+    *) echo "$1" ;;
+  esac
+}
 
 mkdir -p "$APPDATA"
 # Not world-readable: several of these hold API keys and admin credentials.
 chmod 700 "$APPDATA"
 
 rc=0
-for vol in "$@"; do
-  echo "==> $vol"
+for arg in "$@"; do
+  vol="${arg%%:*}"
+  if [ "$arg" = "$vol" ]; then
+    name="$(dest_for "$vol")"
+  else
+    name="${arg#*:}"
+  fi
+  echo "==> $vol -> .appdata/$name"
 
   if ! docker volume inspect "$vol" >/dev/null 2>&1; then
     echo "    volume does not exist, skipping"
@@ -57,7 +90,7 @@ for vol in "$@"; do
     continue
   fi
 
-  dest="$APPDATA/$vol"
+  dest="$APPDATA/$name"
   if [ -e "$dest" ] && [ -n "$(ls -A "$dest" 2>/dev/null)" ]; then
     echo "    $dest already exists and is not empty, skipping"
     continue

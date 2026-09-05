@@ -738,7 +738,7 @@ services:
       # plugins/ folder, and plugins are installed by dropping a .ndp file
       # in. That is impossible from the host when the data lives in a
       # root-owned named volume under /var/lib/docker.
-      - ${COMMON_CONFIG}/navidrome_config:/data
+      - ${COMMON_CONFIG}/navidrome:/data
       - ${COMMON_MEDIA}/Music:/music:ro
     networks:
       # `internal`, not `edge`, for the same reason as grafana:
