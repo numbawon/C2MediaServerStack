@@ -89,32 +89,14 @@ volumes:
     name: prometheus_data
   grafana_data:
     name: grafana_data
-  lidarr_config:
-    name: lidarr_config
-  bazarr_config:
-    name: bazarr_config
   seerr_config:
     name: seerr_config
-  prowlarr_config:
-    name: prowlarr_config
   tautulli_config:
     name: tautulli_config
   navidrome_config:
     name: navidrome_config
   loki_data:
     name: loki_data
-  # These three moved here with their services when Sonarr/Radarr/
-  # LazyLibrarian came out from behind the VPN. The volumes themselves
-  # never moved: an explicit `name:` has always kept them unprefixed, so
-  # the same data carried straight over. organizarr also mounts them
-  # read-only, since it only needs to read each app's ApiKey out of
-  # config.xml, never write.
-  sonarr_config:
-    name: sonarr_config
-  radarr_config:
-    name: radarr_config
-  lazylibrarian_config:
-    name: lazylibrarian_config
   organizarr_data:
     name: organizarr_data
   alertmanager_data:
@@ -566,7 +548,7 @@ services:
       - PGID=${COMMON_PGID}
       - TZ=${COMMON_TZ}
     volumes:
-      - lidarr_config:/config
+      - ${COMMON_CONFIG}/lidarr:/config
       - ${COMMON_MEDIA}/Music:/music
       - ${COMMON_DOWNLOADS}:/downloads
     networks:
@@ -587,7 +569,7 @@ services:
       - PGID=${COMMON_PGID}
       - TZ=${COMMON_TZ}
     volumes:
-      - bazarr_config:/config
+      - ${COMMON_CONFIG}/bazarr:/config
       - ${COMMON_MEDIA}/Movies:/movies
       - ${COMMON_MEDIA}/TV:/tv
     networks:
@@ -643,7 +625,7 @@ services:
       - PGID=${COMMON_PGID}
       - TZ=${COMMON_TZ}
     volumes:
-      - prowlarr_config:/config
+      - ${COMMON_CONFIG}/prowlarr:/config
     networks:
       - edge
     deploy:
@@ -814,12 +796,12 @@ services:
       # CONFIG_PATH: it needs no API key for its health endpoint.
       - CLEANUPARR_URL=http://cleanuparr:11011
     volumes:
-      - sonarr_config:/data/sonarr:ro
-      - radarr_config:/data/radarr:ro
-      - lidarr_config:/data/lidarr:ro
-      - prowlarr_config:/data/prowlarr:ro
-      - bazarr_config:/data/bazarr:ro
-      - lazylibrarian_config:/data/lazylibrarian:ro
+      - ${COMMON_CONFIG}/sonarr:/data/sonarr:ro
+      - ${COMMON_CONFIG}/radarr:/data/radarr:ro
+      - ${COMMON_CONFIG}/lidarr:/data/lidarr:ro
+      - ${COMMON_CONFIG}/prowlarr:/data/prowlarr:ro
+      - ${COMMON_CONFIG}/bazarr:/data/bazarr:ro
+      - ${COMMON_CONFIG}/lazylibrarian:/data/lazylibrarian:ro
       - organizarr_data:/state
     networks:
       - edge
@@ -1123,7 +1105,7 @@ services:
       - PGID=${COMMON_PGID}
       - TZ=${COMMON_TZ}
     volumes:
-      - sonarr_config:/config
+      - ${COMMON_CONFIG}/sonarr:/config
       - ${COMMON_MEDIA}/TV:/tv
       - ${COMMON_DOWNLOADS}:/downloads
       - ./scripts/arr:/scripts:ro
@@ -1145,7 +1127,7 @@ services:
       - PGID=${COMMON_PGID}
       - TZ=${COMMON_TZ}
     volumes:
-      - radarr_config:/config
+      - ${COMMON_CONFIG}/radarr:/config
       - ${COMMON_MEDIA}/Movies:/movies
       - ${COMMON_DOWNLOADS}:/downloads
       - ./scripts/arr:/scripts:ro
@@ -1179,7 +1161,7 @@ services:
       - NO_PROXY=localhost,127.0.0.1,10.0.1.0/24,192.168.0.0/16,qbittorrent,prowlarr,sonarr,radarr,flaresolverr,vpn-client
       - no_proxy=localhost,127.0.0.1,10.0.1.0/24,192.168.0.0/16,qbittorrent,prowlarr,sonarr,radarr,flaresolverr,vpn-client
     volumes:
-      - lazylibrarian_config:/config
+      - ${COMMON_CONFIG}/lazylibrarian:/config
       - ${COMMON_MEDIA}/EBooks:/books
       - ${COMMON_DOWNLOADS}:/downloads
     networks:
