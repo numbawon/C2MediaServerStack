@@ -32,7 +32,7 @@ VOLUMES=(
   authentik_data pihole_config pihole_dnsmasq portainer_data postgres_data
   prometheus_data grafana_data sonarr_config radarr_config lidarr_config
   bazarr_config seerr_config lazylibrarian_config prowlarr_config
-  tautulli_config navidrome_config organizarr_data
+  tautulli_config organizarr_data
   # loki_data is deliberately NOT here. It holds nothing but logs:
   # chunks, their index, and a write-ahead log. loki-config.yaml lives
   # in this repo, so a restored Loki rebuilds itself and simply starts
@@ -149,6 +149,39 @@ for vol in "${VOLUMES[@]}"; do
     sh -c "apk add --no-cache tar >/dev/null 2>&1 && tar --ignore-failed-read $(exclusions_for "$vol" | tr '\n' ' ') -czf /backup/${vol}.tar.gz -C /volume ." \
     || { rc=$?; [ "$rc" -eq 1 ] || exit "$rc"; }
 done
+
+# App config migrated out of named volumes into ./.appdata so it is
+# editable on the host (scripts/migrate-volume-to-appdata.sh). The
+# directory names match the volumes they replaced, so exclusions_for
+# applies unchanged and the tarballs keep the same names as before the
+# move: a restore does not care which side of the migration it came from.
+if [ -d .appdata ]; then
+  for dir in .appdata/*/; do
+    [ -d "$dir" ] || continue
+    name="$(basename "$dir")"
+    echo "backing up appdata: $name"
+    tar --ignore-failed-read $(exclusions_for "$name" | tr '\n' ' ') \
+      -czf "${OUT}/${name}.tar.gz" -C "$dir" . \
+      || { rc=$?; [ "$rc" -eq 1 ] || exit "$rc"; }
+  done
+fi
+
+# COMMON_APPDATA (/mnt/Media/.appdata) holds immich's managed store and
+# tdarr's config. Both were in NEITHER backup script until this was
+# noticed: the lists iterate named volumes, and these are bind mounts.
+#
+# ollama is skipped, and only ollama: 12 GB of model weights that come
+# back with one `ollama pull`.
+if [ -n "${COMMON_APPDATA:-}" ] && [ -d "$COMMON_APPDATA" ]; then
+  for dir in "$COMMON_APPDATA"/*/; do
+    [ -d "$dir" ] || continue
+    name="$(basename "$dir")"
+    [ "$name" = "ollama" ] && { echo "skip: ollama models (re-downloadable)"; continue; }
+    echo "backing up media-appdata: $name"
+    tar --ignore-failed-read -czf "${OUT}/media-appdata-${name}.tar.gz" -C "$dir" . \
+      || { rc=$?; [ "$rc" -eq 1 ] || exit "$rc"; }
+  done
+fi
 
 docker secret ls --format '{{.Name}}' > "$OUT/swarm-secret-names.txt" 2>/dev/null || true
 

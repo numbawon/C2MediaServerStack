@@ -11,6 +11,13 @@ homer/config.yml
 # Local file-based secrets for the standalone compose stacks
 secrets/
 
+# Runtime state migrated out of Docker named volumes so it is editable on
+# the host. Not declarative config: these are live databases, caches and
+# API keys the apps rewrite constantly. Deliberately NOT under /mnt/Media,
+# which the `files` service serves read-write. Covered by both backup
+# scripts.
+.appdata/
+
 # Backup output, restic cache
 backups/
 .restic-cache/
