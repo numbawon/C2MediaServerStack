@@ -1675,6 +1675,36 @@ and tdarr's config had never been backed up at all. ollama's subdirectory
 is the one thing skipped, being 12 GB of weights that come back with a
 single `ollama pull`.
 
+### Removing the old volumes
+
+The migration deliberately left every original volume in place, roughly
+14 GB of duplicate config. They are the fallback, and deleting them is
+where the migration stops being reversible.
+
+`scripts/cleanup-migrated-volumes.sh` is that deletion, gated. The
+condition is **three successful off-site backup cycles since the
+migration**, not three days: those differ exactly when it matters, since
+a week of failed backups still looks fine on a calendar while the old
+volumes are quietly the only intact copy. It counts restic snapshots
+newer than the `.appdata/.migrated-at` marker.
+
+```bash
+scripts/cleanup-migrated-volumes.sh --status   # where things stand
+scripts/cleanup-migrated-volumes.sh            # dry run
+scripts/cleanup-migrated-volumes.sh --force    # actually remove
+```
+
+Per volume it also requires that nothing mounts it and that the matching
+`.appdata` directory is non-empty. Volumes it does not know about are
+ignored entirely: the list of what was migrated is explicit, because an
+earlier version inferred it by stripping the volume's trailing word, and
+that mapped `suricata_logs` onto `.appdata/suricata` and `tdarr_logs`
+onto `.appdata/tdarr`, offering two live log volumes for deletion.
+
+Expect a few to report "still mounted by a container" for a while. Exited
+Swarm task containers from previous deploys keep a reference to their
+volumes; `docker container prune` clears those and makes them eligible.
+
 ### Migrating another volume
 
 `scripts/migrate-volume-to-appdata.sh <volume>[:<dest>]` copies and
