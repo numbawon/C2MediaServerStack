@@ -448,6 +448,57 @@ One thing worth knowing: `SEARCH_API_URL` and `PEOPLE_API_URL` point at
 services the PinePods project hosts. Podcast searches leave this network
 when you use them. Browsing and playing what is already here does not.
 
+### Importing a local podcast: two traps
+
+Adding a folder is `POST /api/data/add_local_podcast` with `user_id`,
+`directory_path` (the name as `list_local_directories` returns it) and
+`podcast_name`, or the equivalent button in the UI. Two things reliably
+go wrong.
+
+**A single ID3 comment frame fails the whole podcast.** PinePods reads
+`COMM` as the episode description and keeps the frame's
+description-terminator NUL. Postgres rejects `0x00` in text, so the
+episode insert fails and the podcast lands with zero episodes and a
+`500 Database error: invalid byte sequence for encoding "UTF8": 0x00`.
+It is not an encoding problem and re-encoding does not fix it: a COMM
+frame always has that terminator, and it was reproduced with both
+UTF-16 and UTF-8 frames. The fix is to remove the frame:
+
+```bash
+# strip COMM, backing every frame up to .comm-undo.json in the folder first
+python3 scripts/podcast-comm-strip.py "/mnt/Media/Podcasts/<show>" --apply
+# and to put them back
+python3 scripts/podcast-comm-strip.py "/mnt/Media/Podcasts/<show>" --restore
+```
+
+Descriptions are worth keeping, so after importing, load them into
+PinePods' own `episodedescription` column from that backup rather than
+letting them disappear. Match on `episodeurl`, which is
+`local:///opt/pinepods/local-media/<show>/<filename>`.
+
+**MP4-container files import half-blind.** For `.m4a`/`.m4b`, PinePods
+reads neither the duration nor the embedded cover: Heist's six episodes
+arrived with durations of `739, 0, 765, 0, 0, 0` against real runtimes of
+50 to 55 minutes, and no artwork at all, despite every file carrying a
+~58 KB cover. MP3s are fine, which is why only this one show was
+affected. Both are fixable after the fact, with `ffprobe` for the
+durations and `scripts/podcast-extract-covers.py` for the art, writing
+into `_artwork/` under the same UUID-named convention PinePods uses.
+
+That is also what `_artwork/` is: PinePods' extracted cover cache, one
+file per episode, which is why it holds thousands of UUID-named jpgs and
+why it is not something to tidy up.
+
+**Two other things about the API.** Requests go through nginx on 8040,
+which times out at 60 seconds; a large import returns `504` while the
+work is still running. The Rust API itself is on **8032** with no such
+limit, so use `http://pinepods:8032` from inside `edge` for anything
+long. And an import only inserts episodes that are new, so it will never
+correct the titles of episodes already in the database. Retagging files
+after they have been imported does nothing until those rows are updated
+directly.
+
+
 ## Configuration that only exists in a UI
 
 Most of this stack is declared in compose, and what is declared can be
