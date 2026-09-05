@@ -5,13 +5,19 @@
 # (forcing qBittorrent's traffic through the VPN container) is a plain-
 # compose-only feature; Swarm has no equivalent. See docker-stack.yml header.
 #
+# Only qBittorrent lives here. It is the one app whose exposure actually
+# needs the tunnel: it announces itself to trackers and connects to peers.
+# Everything that merely *searches* -- Prowlarr, Sonarr, Radarr,
+# LazyLibrarian -- is a swarm service in docker-stack.yml and reaches
+# indexers through gluetun's HTTP proxy on ${COMMON_LAN_IP}:8888 instead,
+# so a VPN reconnect no longer takes the whole *arr stack down with it.
+#
 # Traefik labels are NOT used here -- Traefik's docker provider is running in
-# swarmMode and only watches swarm services, so it would never see these
-# containers. Routing instead comes from static entries in
-# traefik/dynamic.yml, each pointing at that app's own network alias (see
-# vpn-client's `networks.edge.aliases` below) -- qbittorrent/sonarr/radarr/
-# lazylibrarian have no network of their own, they share vpn-client's, but
-# the aliases mean nothing else needs to know that.
+# swarmMode and only watches swarm services, so it would never see this
+# container. Routing instead comes from a static entry in
+# traefik/dynamic.yml pointing at vpn-client's `qbittorrent` network alias
+# (see below): qBittorrent has no network of its own, it shares
+# vpn-client's, but the alias means nothing else needs to know that.
 
 # Explicit project name so this and docker-compose.plex.yml don't both fall
 # back to the directory name and flag each other's containers as "orphans"
@@ -41,9 +47,10 @@ services:
   # the same WireGuard tunnel, reusing the very same private key.
   vpn-client:
     logging: *logging
-    # Four apps share this container's network namespace, so recreating it
-    # takes all of them down with it. Diun will tell you when a new gluetun
-    # image ships; do the bump by hand when you can watch it come back.
+    # qBittorrent shares this container's network namespace, so recreating
+    # it takes qBittorrent down with it. Diun will tell you when a new
+    # gluetun image ships; do the bump by hand when you can watch it come
+    # back.
     image: qmcgaw/gluetun:latest
     container_name: vpn-client
     cap_add:
@@ -101,23 +108,20 @@ services:
       - wireguard_private_key
       - httpproxy_user
       - httpproxy_password
-    # qbittorrent/sonarr/radarr/lazylibrarian all share this container's
-    # network namespace (network_mode: service:vpn-client below) -- one
-    # IP, differentiated only by port, an unavoidable consequence of
-    # routing all four through the VPN this way. These aliases let
-    # everything ELSE on `edge` reach each app by its own natural name
-    # anyway (http://sonarr:8989, http://qbittorrent:8080, ...) instead
-    # of a generic http://vpn-client:<port> for all four -- same IP
-    # under the hood, but every reference reads like what it actually
-    # means. Safe to claim these names: none of the four have any other
-    # standalone network presence to collide with.
+    # qbittorrent shares this container's network namespace
+    # (network_mode: service:vpn-client below), so it has no network
+    # identity of its own. This alias gives it one anyway: everything
+    # else on `edge` reaches it as http://qbittorrent:8080 rather than
+    # a generic http://vpn-client:8080. Same IP under the hood, but the
+    # reference reads like what it means.
+    #
+    # sonarr/radarr/lazylibrarian used to be aliased here too, back when
+    # they shared this namespace. They are swarm services now and carry
+    # their own names, so claiming those aliases here would collide.
     networks:
       edge:
         aliases:
           - qbittorrent
-          - sonarr
-          - radarr
-          - lazylibrarian
     restart: unless-stopped
 
   qbittorrent:
@@ -138,69 +142,6 @@ services:
       - ${COMMON_COMPLETED}:/completed
     restart: unless-stopped
 
-  # Moved out of the Swarm stack so their indexer-search traffic (not just
-  # qBittorrent's actual downloads) exits through the VPN too. Same
-  # network_mode:service:vpn-client sharing as qbittorrent above -- no
-  # independent network identity of their own, but vpn-client's aliases
-  # (see above) mean other apps still reach them as sonarr:8989/
-  # radarr:7878/lazylibrarian:5299, same as if they had one.
-  sonarr:
-    logging: *logging
-    image: linuxserver/sonarr:latest
-    container_name: sonarr
-    network_mode: "service:vpn-client"
-    depends_on:
-      - vpn-client
-    environment:
-      - PUID=${COMMON_PUID}
-      - PGID=${COMMON_PGID}
-      - TZ=${COMMON_TZ}
-    volumes:
-      - sonarr_config:/config
-      - ${COMMON_MEDIA}/TV:/tv
-      - ${COMMON_DOWNLOADS}:/downloads
-      # Post-import naming fixup, wired as a Custom Script connection.
-      # Read-only: the app runs it, it must not be editable from inside.
-      - ./scripts/arr:/scripts:ro
-    restart: unless-stopped
-
-  radarr:
-    logging: *logging
-    image: linuxserver/radarr:latest
-    container_name: radarr
-    network_mode: "service:vpn-client"
-    depends_on:
-      - vpn-client
-    environment:
-      - PUID=${COMMON_PUID}
-      - PGID=${COMMON_PGID}
-      - TZ=${COMMON_TZ}
-    volumes:
-      - radarr_config:/config
-      - ${COMMON_MEDIA}/Movies:/movies
-      - ${COMMON_DOWNLOADS}:/downloads
-      # Post-import naming fixup, wired as a Custom Script connection.
-      # Read-only: the app runs it, it must not be editable from inside.
-      - ./scripts/arr:/scripts:ro
-    restart: unless-stopped
-
-  lazylibrarian:
-    logging: *logging
-    image: linuxserver/lazylibrarian:latest
-    container_name: lazylibrarian
-    network_mode: "service:vpn-client"
-    depends_on:
-      - vpn-client
-    environment:
-      - PUID=${COMMON_PUID}
-      - PGID=${COMMON_PGID}
-      - TZ=${COMMON_TZ}
-    volumes:
-      - lazylibrarian_config:/config
-      - ${COMMON_MEDIA}/EBooks:/books
-      - ${COMMON_DOWNLOADS}:/downloads
-    restart: unless-stopped
-
 networks:
   edge:
     external: true   # the attachable overlay network created by the swarm stack
@@ -212,12 +153,6 @@ volumes:
   # this repo happens to live in.
   qbittorrent_config:
     name: qbittorrent_config
-  sonarr_config:
-    name: sonarr_config
-  radarr_config:
-    name: radarr_config
-  lazylibrarian_config:
-    name: lazylibrarian_config
 
 secrets:
   # Names here are gluetun's expected /run/secrets/<name> filenames. The

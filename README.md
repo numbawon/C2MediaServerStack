@@ -209,40 +209,52 @@ qBittorrent's traffic is forced through the VPN via
 `network_mode: service:vpn-client` -- Docker Swarm has no equivalent of
 sharing another container's network namespace, which is *the* reason
 `docker-compose.download.yml` exists as a separate, non-Swarm compose
-stack (see "Why three compose files" below). Sonarr, Radarr, and
-LazyLibrarian share that same network namespace too, so their actual
-*indexer searches* -- not just qBittorrent's downloads -- also exit
-through the VPN instead of your home IP.
+stack (see "Why three compose files" below).
 
-### Why Prowlarr is not behind the VPN
+### Why only qBittorrent is behind the VPN
 
-Sonarr, Radarr and LazyLibrarian exit through the VPN, but Prowlarr --
-the app that actually performs the indexer searches -- does not. That is
-deliberate, not an oversight.
+qBittorrent is the only container in the namespace. Prowlarr, Sonarr,
+Radarr and LazyLibrarian are ordinary swarm services that reach indexers
+through gluetun's HTTP proxy instead. That split is deliberate, and it is
+drawn around what the VPN is actually for.
 
 The exposure the VPN exists to cover is *swarm participation*: monitoring
-outfits join swarms and log peer IPs. That is qBittorrent, and it is
-behind the VPN. Prowlarr never joins a swarm, never announces, and never
-connects to a peer; it makes HTTPS requests to indexer sites and fetches
-`.torrent` files. The residual exposure is that your ISP can see TLS SNI
-to indexer domains and the indexer sees your residential IP, which is a
-different category of thing from sharing a file.
+outfits join swarms and log peer IPs. That is qBittorrent alone. None of
+the *arrs joins a swarm, announces, or connects to a peer; they make
+HTTPS requests to indexer sites and fetch `.torrent` files. The
+residual exposure there is that your ISP can see TLS SNI to indexer
+domains and the indexer sees your residential IP, which is a different
+category of thing from sharing a file.
 
-Against that, routing Prowlarr through the VPN actively costs you:
-Cloudflare challenges VPN and datacenter ranges far harder than
-residential ones, and a number of public indexers block known VPN exit
-ranges outright rather than merely challenging them. Exit IPs are also
-shared, so somebody else's abuse becomes your ban with no visibility into
-why.
+Against that, putting a whole container behind the VPN costs you three
+things, and the *arrs paid all three for no benefit:
 
-If you do want specific indexers tunnelled, you do not need to move
-Prowlarr at all. Prowlarr's **Indexer Proxies** feature supports plain
-HTTP and SOCKS proxies alongside FlareSolverr, tagged per indexer, and
-this stack already exposes an authenticated HTTP proxy on the VPN
-container (see below). Point an HTTP proxy entry at
-`${COMMON_LAN_IP}:8888`, tag it, and apply that tag only where you want
-it. Do not put a proxy tag and the FlareSolverr tag on the same indexer;
-FlareSolverr has its own proxy field if one genuinely needs both.
+- **Indexers treat VPN ranges worse.** Cloudflare challenges VPN and
+  datacenter ranges far harder than residential ones, and a number of
+  public indexers block known exit ranges outright rather than merely
+  challenging them. Exit IPs are shared, so somebody else's abuse becomes
+  your ban with no visibility into why.
+- **Metadata traffic went through the tunnel too.** A container behind
+  the VPN routes *everything*, so Sonarr's and Radarr's TVDB/TMDB lookups
+  -- artwork, episode lists, release dates, none of it remotely sensitive
+  -- were exposed to exactly those rate limits and blocks.
+- **A reconnect took them all down.** Everything sharing the namespace
+  dies when gluetun is recreated, so a server rotation or an image bump
+  was a four-app outage instead of a one-app one.
+
+The proxy gets you the part that was worth having without any of that.
+Sonarr, Radarr and LazyLibrarian each have a proxy setting under
+**Settings -> General -> Proxy**; Prowlarr has the richer **Indexer
+Proxies** feature, which supports plain HTTP and SOCKS proxies alongside
+FlareSolverr and is tagged *per indexer* -- so you can tunnel only the
+indexers that want it and leave the rest on the residential IP. Both
+point at the authenticated proxy gluetun already exposes on
+`${COMMON_LAN_IP}:8888` (see below). Exact fields are in "Configuration
+that only exists in a UI".
+
+Do not put a proxy tag and the FlareSolverr tag on the same Prowlarr
+indexer; FlareSolverr has its own proxy field if one genuinely needs
+both.
 
 ### Cloudflare-blocked indexers (FlareSolverr)
 
@@ -324,7 +336,7 @@ Docker Swarm can't do everything this stack needs:
 | File | Runs as | Why it's separate |
 |---|---|---|
 | `docker-stack.yml` | Swarm stack (`docker stack deploy`) | Everything that doesn't hit a Swarm limitation |
-| `docker-compose.download.yml` | Standalone compose | qBittorrent/Sonarr/Radarr/LazyLibrarian's traffic is forced through NordVPN via `network_mode: service:vpn-client` -- Swarm has no equivalent of sharing another container's network namespace |
+| `docker-compose.download.yml` | Standalone compose | qBittorrent's traffic is forced through NordVPN via `network_mode: service:vpn-client` -- Swarm has no equivalent of sharing another container's network namespace. It is the only app that needs it; everything else uses gluetun's HTTP proxy and lives in the Swarm stack |
 | `docker-compose.plex.yml` | Standalone compose | NVIDIA GPU reservation (`deploy.resources.reservations.devices`) and the plain `devices:` key are ignored/unsupported by `docker stack deploy` |
 
 Both standalone files join the same `edge` overlay network as the Swarm
@@ -454,6 +466,7 @@ rebuilt from memory.
 | Portainer admin account and OAuth | Portainer UI | `portainer_data` | yes |
 | Plex claim, libraries, custom access URLs | Plex UI / API | `plex_config` | yes |
 | Indexers, connections, root folders, quality profiles | each *arr UI | `<app>_config` | yes |
+| VPN proxy for indexer traffic (see below) | each *arr UI | `<app>_config` | yes |
 | Seerr's Plex link and service connections | Seerr UI | `seerr_config` | yes |
 | qBittorrent WebUI credentials and settings | qBittorrent UI | `qbittorrent_config` | yes |
 | Navidrome users | Navidrome UI | `navidrome_config` | yes |
@@ -480,6 +493,51 @@ channel pinned to 149/80 to stay off DFS, and the syslog drop-in.
 Some of these are recoverable by rerunning something rather than by
 remembering: ntfy has `scripts/init-ntfy.sh`, and the *arr apps get much
 of their config from Recyclarr. The rest are genuinely manual.
+
+### Pointing the *arrs at the VPN proxy
+
+Sonarr, Radarr, LazyLibrarian and Prowlarr are swarm services on the
+house IP; only qBittorrent is behind the VPN (see "Why only qBittorrent
+is behind the VPN"). Indexer traffic that you want tunnelled goes through
+gluetun's authenticated HTTP proxy instead, which is per-app UI config
+and therefore lives in the table above. Credentials are the ones in
+`secrets/httpproxy_user.txt` and `secrets/httpproxy_password.txt`.
+
+**Sonarr / Radarr / LazyLibrarian** -- Settings -> General -> Proxy:
+
+| Field | Value |
+|---|---|
+| Use Proxy | on |
+| Proxy Type | HTTP(S) |
+| Hostname | `${COMMON_LAN_IP}` |
+| Port | `8888` |
+| Username / Password | from `secrets/httpproxy_*.txt` |
+| Bypass Proxy for Local Addresses | **on** |
+| Ignored Addresses | `*.local,192.168.*,qbittorrent,prowlarr,flaresolverr` |
+
+Bypass-for-local matters: without it these apps would send their calls to
+qBittorrent and Prowlarr out through the tunnel and back, which is slower
+and can simply fail. This is also all-or-nothing per app -- it catches
+TVDB/TMDB metadata lookups along with indexer traffic. That is a fair
+trade for Sonarr and Radarr only if you actually want the tunnel; leaving
+it off is a defensible default.
+
+**Prowlarr** is the better place to do this, because its equivalent is
+per-indexer rather than per-app. Settings -> Indexers -> Indexer Proxies
+-> **+** -> **HTTP**, same host/port/credentials, give it a tag such as
+`vpn`, then apply that tag only to the indexers you want tunnelled.
+Untagged indexers keep using the residential IP, which is what most
+public trackers prefer anyway.
+
+Verify from the host, comparing the two addresses:
+
+```bash
+curl -s https://api.ipify.org; echo          # your house IP
+curl -s -x "http://<user>:<pass>@${COMMON_LAN_IP}:8888" https://api.ipify.org; echo
+```
+
+The second must differ, and must match the exit IP that
+`scripts/vpn-watchdog.sh` last recorded in `/var/lib/mediastack/vpn-public-ip`.
 
 ### Why some of it cannot be declared
 
@@ -1020,9 +1078,9 @@ from outside fails to connect rather than redirecting.
 
 ## When the VPN reconnects
 
-`qbittorrent`, `sonarr`, `radarr` and `lazylibrarian` run with
-`network_mode: service:vpn-client`, so they have no network stack of their
-own. When gluetun reconnects it builds a fresh `tun0`, and libtorrent
+`qbittorrent` runs with `network_mode: service:vpn-client`, so it has no
+network stack of its own. When gluetun reconnects it builds a fresh
+`tun0`, and libtorrent
 stays bound to the interface that is now gone. qBittorrent then reports
 its OLD external address, sits at zero DHT nodes and transfers nothing,
 while still looking connected in its own UI.
@@ -1035,7 +1093,14 @@ line said anything. `docker restart qbittorrent` took it from
 `scripts/vpn-watchdog.sh` on a two-minute timer closes that. It reads the
 public IP from inside the tunnel, and on a change restarts every container
 sharing the namespace and pushes to ntfy. Members are discovered from
-Docker rather than hardcoded, so a fifth app behind the VPN needs no edit.
+Docker rather than hardcoded, which is why it kept working unchanged when
+Sonarr, Radarr and LazyLibrarian moved out to the proxy, and why it would
+keep working if another app moved in.
+
+This used to be a four-app outage on every reconnect. Now it restarts
+qBittorrent and nothing else: the *arrs stay up, keep their queues, and
+keep talking to indexers through the proxy, which does not care that the
+tunnel underneath it was rebuilt.
 
 It does not use gluetun's control server (`/v1/publicip/ip` on :8000),
 which would be the obvious source: every endpoint answers 401 on this
@@ -1326,8 +1391,8 @@ It sits in the Swarm stack, not the download compose, because it needs no
 VPN: it calls qBittorrent's HTTP API and never talks to trackers or peers.
 Behind gluetun it would route UI traffic through the tunnel for nothing and
 tie its uptime to the VPN. It reaches the client through the `qbittorrent`
-network alias that vpn-client registers on `edge`, since the four apps
-behind the VPN have no network identity of their own.
+network alias that vpn-client registers on `edge`, since a container
+sharing another's network namespace has no identity of its own.
 
 Three things that cost time here:
 
