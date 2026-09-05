@@ -4,9 +4,11 @@
 #
 # WHY THIS IS NEEDED
 #
-# qbittorrent, sonarr, radarr and lazylibrarian all run with
-# network_mode: service:vpn-client, so they have no network stack of their
-# own. When gluetun reconnects -- server rotation, a rekey, a blip -- it
+# qbittorrent runs with network_mode: service:vpn-client, so it has no
+# network stack of its own. (Sonarr, Radarr and LazyLibrarian used to as
+# well; they are swarm services now and reach indexers through gluetun's
+# HTTP proxy instead, so a reconnect no longer touches them.) When gluetun
+# reconnects -- server rotation, a rekey, a blip -- it
 # builds a fresh tun0, and libtorrent stays bound to the interface that is
 # now gone. qBittorrent then reports its OLD external address, sits at
 # zero DHT nodes and transfers nothing, while still looking connected in
@@ -21,14 +23,15 @@
 #
 # gluetun exposes /v1/publicip/ip on :8000, which would be the obvious
 # source, but every endpoint answers 401 on this version. Enabling that
-# auth means restarting gluetun, which drops all four dependent apps --
-# the exact outage this script exists to avoid. So the public IP is read
+# auth means restarting gluetun, which drops qBittorrent with it -- the
+# exact outage this script exists to avoid. So the public IP is read
 # by making one outbound request from inside the namespace, which is also
 # a more honest test: it proves traffic actually leaves through the
 # tunnel, rather than proving gluetun believes it should.
 #
-# Members are discovered from Docker rather than hardcoded, so adding a
-# fifth app behind the VPN needs no change here.
+# Members are discovered from Docker rather than hardcoded, so this kept
+# working unchanged when three of the four apps moved out, and would keep
+# working if another one moved in.
 set -uo pipefail
 
 VPN_CONTAINER=${VPN_CONTAINER:-vpn-client}

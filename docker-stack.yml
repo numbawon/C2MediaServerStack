@@ -103,9 +103,11 @@ volumes:
     name: navidrome_config
   loki_data:
     name: loki_data
-  # Owned by docker-compose.download.yml, mounted here read-only too --
-  # named volumes aren't scoped to whichever compose file first created
-  # them, and organizarr only needs to read each app's ApiKey out of
+  # These three moved here with their services when Sonarr/Radarr/
+  # LazyLibrarian came out from behind the VPN. The volumes themselves
+  # never moved: an explicit `name:` has always kept them unprefixed, so
+  # the same data carried straight over. organizarr also mounts them
+  # read-only, since it only needs to read each app's ApiKey out of
   # config.xml, never write.
   sonarr_config:
     name: sonarr_config
@@ -1084,6 +1086,95 @@ services:
       - TZ=${COMMON_TZ}
     networks:
       - internal
+
+  # ---------------------------------------------------------------------
+  # Sonarr / Radarr / LazyLibrarian
+  #
+  # These used to run with network_mode: service:vpn-client, sharing
+  # qBittorrent's network stack. They do not need to: the exposure the VPN
+  # exists to cover is swarm participation -- announcing to trackers and
+  # connecting to peers -- and that is qBittorrent alone, which is still
+  # behind it. These apps make HTTPS requests to indexers and metadata
+  # providers; they never join a swarm.
+  #
+  # Moving them out buys three things:
+  #   - a gluetun reconnect no longer takes them down with it (see the
+  #     "When the VPN reconnects" section of the README)
+  #   - metadata traffic to TVDB/TMDB stops going out over a shared VPN
+  #     exit, where it was pointlessly exposed to the same rate limits and
+  #     blocks as indexer traffic
+  #   - Traefik discovers them by label like everything else, instead of
+  #     needing static file-provider entries and network aliases
+  #
+  # Indexer traffic that DOES want the tunnel goes through the authenticated
+  # HTTP proxy gluetun already exposes on ${COMMON_LAN_IP}:8888, configured
+  # per app rather than per container. That is UI configuration -- see the
+  # proxy rows in "Configuration that only exists in a UI".
+  # ---------------------------------------------------------------------
+  sonarr:
+    logging: *logging
+    image: linuxserver/sonarr:latest
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+    volumes:
+      - sonarr_config:/config
+      - ${COMMON_MEDIA}/TV:/tv
+      - ${COMMON_DOWNLOADS}:/downloads
+      - ./scripts/arr:/scripts:ro
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.sonarr.rule=Host(`sonarr.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.sonarr.entrypoints=web,websecure"
+        - "traefik.http.routers.sonarr.middlewares=authentik@file"
+        - "traefik.http.services.sonarr.loadbalancer.server.port=8989"
+
+  radarr:
+    logging: *logging
+    image: linuxserver/radarr:latest
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+    volumes:
+      - radarr_config:/config
+      - ${COMMON_MEDIA}/Movies:/movies
+      - ${COMMON_DOWNLOADS}:/downloads
+      - ./scripts/arr:/scripts:ro
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.radarr.rule=Host(`radarr.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.radarr.entrypoints=web,websecure"
+        - "traefik.http.routers.radarr.middlewares=authentik@file"
+        - "traefik.http.services.radarr.loadbalancer.server.port=7878"
+
+  lazylibrarian:
+    logging: *logging
+    image: linuxserver/lazylibrarian:latest
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+    volumes:
+      - lazylibrarian_config:/config
+      - ${COMMON_MEDIA}/EBooks:/books
+      - ${COMMON_DOWNLOADS}:/downloads
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.lazylibrarian.rule=Host(`lazylibrarian.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.lazylibrarian.entrypoints=web,websecure"
+        - "traefik.http.routers.lazylibrarian.middlewares=authentik@file"
+        - "traefik.http.services.lazylibrarian.loadbalancer.server.port=5299"
 
   # ---------------------------------------------------------------------
   # ntfy -- push notifications. The ONE internet-reachable service that
