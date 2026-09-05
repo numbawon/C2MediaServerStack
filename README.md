@@ -2296,6 +2296,111 @@ ntfy.sh for APNs. Message *content* stays on your server, but a ping per
 alert transits a third party, and Cloudflare Access likely breaks the
 iOS notification-service-extension fetch.
 
+## Media library watchdog
+
+Every media failure this stack has actually hit was silent. Not "logged at
+debug", silent: the container was up, the mounts were fine, and nothing
+anywhere said the library was wrong.
+
+- A PinePods import that returns `500` and lands **zero** episodes, showing
+  in the UI as a podcast that simply has nothing in it.
+- Six `.m4a` episodes imported with durations of `0` and no artwork,
+  because PinePods reads neither from MP4-container files.
+- 856 episode titles left stale for days after their files were retagged,
+  because an import only ever inserts *new* episodes and will never correct
+  a row that already exists.
+- 1204 root-owned files under `Audiobooks`, from Audiobookshelf running as
+  uid 0, found only because something else failed to write there.
+
+`scripts/media-watchdog.py` runs every 6 hours and compares what is on disk
+against what the indexing apps believe, writing `mediastack_media_*` metrics
+into the node-exporter textfile volume. Same mechanism as
+`scripts/verify-backups.sh`: a job on a timer becomes something Prometheus
+can alert on continuously. The **Media library watchdog** dashboard
+(uid `media-watchdog`) shows the current state and the per-podcast detail.
+
+What it checks, each one a failure listed above:
+
+| Check | Catches |
+|---|---|
+| folder on disk with no PinePods entry | a failed import, files present but nothing playable |
+| podcast row with zero episodes | the COMM/NUL import failure specifically |
+| episodes with duration 0 | MP4-container shows importing half-blind |
+| every episode missing artwork | the same MP4 blind spot |
+| stored title vs the file's tag | retagging that never reached the database |
+| rows pointing at a missing file | media deleted without removing the row |
+| files carrying an ID3 COMM frame | an import that *will* fail, before you run it |
+| root-owned paths under a media tree | an app running as uid 0 |
+
+The COMM check is the odd one out: it is the only one that fires about
+something that has not gone wrong yet. Already-imported episodes are
+unaffected, but one such frame anywhere in a folder fails that folder's next
+import completely, so knowing beforehand is the whole value.
+
+### The AI part, and what it is not allowed to do
+
+`scripts/ai-digest.py` runs daily, reads the watchdog's findings and
+Prometheus' firing alerts, and pushes a short plain-English digest to ntfy.
+
+It does not detect anything, deliberately. A language model asked "is this
+podcast missing episodes" is strictly worse than a `COUNT(*)`, and it fails
+in a way you cannot alert on. Every fact in the digest comes from the checks
+above, all of which alert on their own whether or not the digest ever runs.
+The model's only job is to say which of nine findings will bite first, which
+is the one part of this that is judgement rather than comparison.
+
+So the failure mode is bounded. If Ollama is down, slow, or returns
+something unusable, the script falls back to a plain deterministic summary
+and still sends it. It never suppresses a finding and is never the reason
+you hear about something late. The push carries the model's version with the
+raw summary underneath it, so a badly phrased line is still checkable.
+
+Two things keep it worth reading. It sends **nothing** when nothing is
+wrong, because a nightly "all good" stops being read inside a week. And
+alerts that fire permanently by design, `ImageUpdateAvailable` and the
+`Watchdog` dead-man switch, are collapsed to a single count rather than
+itemised, since otherwise they would be the entire digest every night.
+Set `AI_DIGEST_ALWAYS_PUSH=1` to force one, which is how to test it.
+
+### Model backend
+
+Defaults to the local Ollama on `127.0.0.1:11434` using
+`hermes3:8b-llama3.1-q4_K_M`, Nous Research's Hermes 3 on this machine's
+GPU. Nothing leaves the network.
+
+Nous' **Hermes Agent** is a desktop application rather than a server API, so
+there is nothing there for a headless nightly job to call. The local
+`hermes3:8b` is the same model family and is already installed. If a larger
+hosted model is ever wanted, the endpoint is an ordinary OpenAI-compatible
+`/chat/completions`:
+
+```bash
+AI_DIGEST_BASE_URL=https://<provider>/v1
+AI_DIGEST_MODEL=<model>
+AI_DIGEST_API_KEY_FILE=/path/to/key
+```
+
+That is a config change, not a code change. Be aware it sends podcast names,
+alert text and hostnames to that provider, which the local default does not.
+
+The daily schedule is not arbitrary. `OLLAMA_MAX_LOADED_MODELS=1` on an 8 GB
+card means every digest run evicts whatever model Open WebUI had resident.
+Once a day is worth that; hourly would not be.
+
+### Installing the timers
+
+```bash
+sudo cp systemd/mediastack-media-watchdog.{service,timer} \
+        systemd/mediastack-ai-digest.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now mediastack-media-watchdog.timer mediastack-ai-digest.timer
+```
+
+As with every unit here, the shipped files carry `/home/youruser/...` and
+the installed copies need the real path. Both scripts are safe to run by
+hand at any time; the watchdog only reads, and the digest only reads and
+pushes.
+
 ## Verification checklist
 
 - `docker stack deploy -c docker-stack.yml mediastack` -- no

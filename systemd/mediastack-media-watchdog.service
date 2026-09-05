@@ -1,0 +1,24 @@
+# Checks the media trees against the apps that index them, and writes
+# metrics node-exporter serves. See scripts/media-watchdog.py.
+#
+# Replace youruser with your actual repo path before installing.
+#
+# Install:
+#   sudo cp systemd/mediastack-media-watchdog.{service,timer} /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mediastack-media-watchdog.timer
+[Unit]
+Description=mediastack media library consistency checks
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/youruser/C2MediaServerStack
+EnvironmentFile=/home/youruser/C2MediaServerStack/.env
+ExecStart=/usr/bin/python3 /home/youruser/C2MediaServerStack/scripts/media-watchdog.py
+# Reads the tags of every episode in the library to catch title drift.
+# ~1400 files takes a few seconds warm, considerably longer if the array
+# has spun down, so the limit is generous rather than tight.
+TimeoutStartSec=30m
