@@ -48,7 +48,17 @@ METRIC_FILE="backup_verify.prom"
 # definitions and API keys -- losing it is genuinely annoying, and it is
 # a few MB rather than the tens of GB postgres_data or prometheus_data
 # would pull down from B2 on every run.
-RESTORE_VOLUME="${RESTORE_VOLUME:-prowlarr_config}"
+# Which path inside the snapshot to restore-test. Small enough to be cheap,
+# real enough to be meaningful: Prowlarr's config holds indexer definitions
+# and API keys, and is a few MB rather than the tens of GB postgres_data or
+# prometheus_data would pull down from B2 on every run.
+#
+# A full snapshot path, not a volume name. It used to be the latter, built
+# as /data/${RESTORE_VOLUME}, which broke when the configs moved out of
+# named volumes into .appdata: prowlarr_config no longer exists and the
+# path is now /data/appdata/prowlarr. Anything migrated the same way needs
+# the same shape.
+RESTORE_PATH="${RESTORE_PATH:-/data/appdata/prowlarr}"
 RESTORE_INTERVAL_DAYS="${RESTORE_INTERVAL_DAYS:-28}"
 
 RESTIC_ENV=(-e RESTIC_REPOSITORY -e RESTIC_PASSWORD -e B2_ACCOUNT_ID -e B2_ACCOUNT_KEY)
@@ -129,12 +139,23 @@ if [ "$age_days" -ge "$RESTORE_INTERVAL_DAYS" ]; then
   # every time. --json plus a type filter matters too, because the plain
   # listing counts directories alongside files (561) while the restored
   # count from `find -type f` does not.
-  expected_files=$(restic_run ls latest --json --recursive "/data/${RESTORE_VOLUME}" 2>/dev/null \
+  expected_files=$(restic_run ls latest --json --recursive "${RESTORE_PATH}" 2>/dev/null \
     | grep -c '"type":"file"')
 
+  # Zero means the path is not in the snapshot at all, which is a
+  # different problem from a restore that failed, and that distinction is
+  # the whole diagnosis. Say so, rather than letting it surface later as a
+  # bare count mismatch.
+  if [ "$expected_files" -eq 0 ]; then
+    echo "    ${RESTORE_PATH} is not in the latest snapshot." >&2
+    echo "    Either it stopped being backed up, or RESTORE_PATH is stale:" >&2
+    echo "    config paths moved from /data/<volume> to /data/appdata/<app>" >&2
+    echo "    when they left their named volumes." >&2
+  fi
+
   if restic_mounted "${SCRATCH}:/restore" \
-       restore latest --target /restore --include "/data/${RESTORE_VOLUME}"; then
-    restore_files=$(find "${SCRATCH}/data/${RESTORE_VOLUME}" -type f 2>/dev/null | wc -l)
+       restore latest --target /restore --include "${RESTORE_PATH}"; then
+    restore_files=$(find "${SCRATCH}${RESTORE_PATH}" -type f 2>/dev/null | wc -l)
     echo "    restored ${restore_files} files, snapshot lists ${expected_files}"
     # Both must be non-zero: a snapshot that lists nothing would
     # otherwise "match" an empty restore and pass.
