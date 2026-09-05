@@ -100,7 +100,7 @@ services:
       # makes it crash-loop on "Read-only file system". Docker seeds the
       # volume from the image on first run, so the default config and the
       # rule tuning in disable.conf both live here and survive updates.
-      - suricata_config:/etc/suricata
+      - ${COMMON_CONFIG}/suricata:/etc/suricata
     restart: unless-stopped
 
 networks:
@@ -108,8 +108,6 @@ networks:
     external: true
 
 volumes:
-  suricata_config:
-    name: suricata_config
   crowdsec_config:
     name: crowdsec_config
   crowdsec_data:

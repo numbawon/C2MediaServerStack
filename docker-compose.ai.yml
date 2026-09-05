@@ -169,7 +169,7 @@ services:
         school or a job too, whether or not it says so. Assume someone can
         read it, and write accordingly.","dismissible":false,"timestamp":0}]
     volumes:
-      - open_webui_data:/app/backend/data
+      - ${COMMON_CONFIG}/open_webui:/app/backend/data
     networks:
       - ai
       - edge
@@ -182,10 +182,3 @@ networks:
   # reachable from exactly one container and nothing else.
   ai:
     driver: bridge
-
-volumes:
-  # Explicit name so it isn't prefixed by the compose project name --
-  # keeps the backup scripts' volume list stable. See the same comment in
-  # docker-compose.download.yml.
-  open_webui_data:
-    name: open_webui_data
