@@ -22,6 +22,19 @@ set -a
 source "$ENV_FILE"
 set +a
 
+# .env too, for COMMON_APPDATA. Without this that variable is unset, and the
+# guard below is a `-n` test, so the whole media-appdata path was silently
+# skipped: the first run after it was added produced a snapshot with no
+# /data/media-appdata in it at all, and nothing said so. backup-local.sh has
+# always sourced .env, which is why the same block worked there and hid the
+# problem.
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
 VOLUMES=(
   authentik_data postgres_data prometheus_data pinepods_db_data
   immich_db_data traefik_acme
