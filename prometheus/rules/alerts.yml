@@ -447,3 +447,141 @@ groups:
           summary: "Diun has not completed a run in over 26 hours"
           description: >-
             Update notifications are silently not happening.
+
+      # -----------------------------------------------------------------
+      # Media library consistency (scripts/media-watchdog.py)
+      #
+      # Every one of these describes a failure that has actually happened
+      # here and produced no error anywhere: the container was up, the
+      # mounts were fine, and the library was quietly wrong.
+      # -----------------------------------------------------------------
+
+      - alert: MediaWatchdogStale
+        # Runs every 6h. Past 14h it has wedged, and "no media alerts"
+        # would otherwise be indistinguishable from "nothing is wrong".
+        expr: >-
+          time() - mediastack_media_watchdog_last_run_timestamp_seconds > 50400
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Media watchdog has not run in over 14 hours"
+          description: >-
+            Library consistency checks are silently not happening. Check
+            mediastack-media-watchdog.timer.
+
+      - alert: MediaWatchdogFailed
+        # The run itself broke, usually because the PinePods database was
+        # unreachable, so the other metrics below are stale rather than
+        # reassuring.
+        expr: mediastack_media_watchdog_success == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Media watchdog could not complete its checks"
+          description: >-
+            The findings below are from an incomplete run and should not
+            be trusted. Run scripts/media-watchdog.py by hand for the error.
+
+      - alert: PodcastNotImported
+        # A folder of episodes nobody can play. This is what a failed
+        # import looks like from the outside: files on disk, no entry.
+        expr: >-
+          mediastack_media_podcast_imported == 0
+          and mediastack_media_podcast_files_on_disk > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Podcast folder is not in PinePods: {{ $labels.podcast }}"
+          description: >-
+            {{ $labels.podcast }} has audio files on disk but no PinePods
+            entry, so none of it is playable. See "Importing a local
+            podcast: two traps" in the README.
+
+      - alert: PodcastImportedEmpty
+        # The specific shape of the COMM/NUL failure: the podcast row is
+        # created, then every episode insert fails, and the UI shows a
+        # podcast with nothing in it rather than an error.
+        expr: mediastack_media_podcast_episodes_in_db == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Podcast has zero episodes: {{ $labels.podcast }}"
+          description: >-
+            The podcast exists in PinePods but holds no episodes. Usually
+            an ID3 COMM frame failed the whole import; check
+            mediastack_media_podcast_comm_frames for this folder.
+
+      - alert: PodcastImportWillFail
+        # Fires BEFORE anyone tries to import, which is the only useful
+        # time to know. Existing episodes are unaffected.
+        expr: mediastack_media_podcast_comm_frames > 0
+        for: 6h
+        labels:
+          severity: info
+        annotations:
+          summary: "COMM frames will fail the next import: {{ $labels.podcast }}"
+          description: >-
+            {{ $value }} file(s) in {{ $labels.podcast }} carry an ID3 COMM
+            frame. Already-imported episodes are fine, but the next import
+            of this folder will insert nothing. Strip them with
+            scripts/podcast-comm-strip.py.
+
+      - alert: PodcastEpisodesMissingDuration
+        # .m4a/.m4b import with no duration at all. Playback works, but
+        # progress bars and "time remaining" are wrong everywhere.
+        expr: mediastack_media_podcast_zero_duration_episodes > 0
+        for: 6h
+        labels:
+          severity: info
+        annotations:
+          summary: "Episodes with no duration: {{ $labels.podcast }}"
+          description: >-
+            {{ $value }} episode(s) in {{ $labels.podcast }} have a duration
+            of zero. PinePods does not read duration from MP4-container
+            files; fix from ffprobe.
+
+      - alert: PodcastOrphanEpisodes
+        # Rows pointing at files that are gone. Clicking one is an error
+        # with no explanation.
+        expr: mediastack_media_podcast_orphan_episodes > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Episodes point at missing files: {{ $labels.podcast }}"
+          description: >-
+            {{ $value }} episode(s) in {{ $labels.podcast }} reference a file
+            that no longer exists. Deleting media without removing the row
+            leaves these behind.
+
+      - alert: PodcastTitleDrift
+        # Retagging files does nothing to rows already imported, so this
+        # stays wrong indefinitely and looks like the retag failed.
+        expr: mediastack_media_podcast_title_drift_episodes > 0
+        for: 6h
+        labels:
+          severity: info
+        annotations:
+          summary: "Stored titles no longer match file tags: {{ $labels.podcast }}"
+          description: >-
+            {{ $value }} episode(s) in {{ $labels.podcast }} differ from their
+            file's tag. An import only inserts new episodes and will never
+            correct these; the rows have to be updated directly.
+
+      - alert: MediaRootOwnedFiles
+        # Audiobookshelf running as uid 0 left 1204 root-owned entries
+        # under /mnt/Media/Audiobooks that had to be chowned by hand.
+        expr: mediastack_media_root_owned_files > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Root-owned files under {{ $labels.tree }}"
+          description: >-
+            {{ $value }} root-owned path(s) under {{ $labels.tree }}. Some app
+            is running as uid 0 and writing into a media tree; find it
+            before the count grows.

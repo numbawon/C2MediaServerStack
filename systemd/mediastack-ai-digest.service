@@ -1,0 +1,24 @@
+# Summarises firing alerts and media findings, and pushes to ntfy.
+# See scripts/ai-digest.py.
+#
+# Replace youruser with your actual repo path before installing.
+#
+# Install:
+#   sudo cp systemd/mediastack-ai-digest.{service,timer} /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mediastack-ai-digest.timer
+[Unit]
+Description=mediastack AI digest of alerts and media findings
+After=docker.service network-online.target mediastack-media-watchdog.service
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/youruser/C2MediaServerStack
+ExecStart=/usr/bin/python3 /home/youruser/C2MediaServerStack/scripts/ai-digest.py
+# Generation on an 8 GB card with one model resident can take a couple of
+# minutes if the model has to be loaded first. The script has its own
+# shorter timeout and falls back to the plain summary, so this is a
+# backstop rather than the real limit.
+TimeoutStartSec=20m

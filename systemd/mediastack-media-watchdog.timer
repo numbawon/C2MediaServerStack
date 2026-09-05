@@ -1,0 +1,12 @@
+[Unit]
+Description=Run mediastack media library checks every 6 hours
+
+[Timer]
+# Every 6 hours. Frequent enough that a bad import is caught the same day,
+# infrequent enough that reading 1400 files' tags is not a constant load.
+OnCalendar=*-*-* 00,06,12,18:20:00
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target

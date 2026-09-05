@@ -1,0 +1,16 @@
+[Unit]
+Description=Send the mediastack digest daily
+
+[Timer]
+# 07:45, after the 00:20 and 06:20 watchdog runs so the findings are
+# current, and early enough to be read with coffee.
+#
+# Deliberately not more often. Ollama holds one model at a time on this
+# card (OLLAMA_MAX_LOADED_MODELS=1), so every run evicts whatever Open
+# WebUI had loaded. Once a day is worth that; hourly would not be.
+OnCalendar=*-*-* 07:45:00
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target
