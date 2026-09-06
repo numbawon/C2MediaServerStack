@@ -39,19 +39,28 @@ and actually understand what they're running, not just copy-paste it.
 | **Prometheus, Alertmanager, alert-relay, ntfy** | The alert path. Prometheus evaluates rules, Alertmanager routes them, `alert-relay` formats them, ntfy pushes them to a phone. |
 | **Recyclarr** | Syncs TRaSH Guides quality profiles and custom formats into Sonarr/Radarr. No web UI and no API: a cron'd one-shot, so there is no hostname and no Authentik application. |
 | **Cleanuparr** | Removes stalled, blocked and known-malware downloads from the *arr queues and re-searches. Admin tier, because it deletes things. |
-| **Audiobookshelf** | Audiobooks and podcasts. Household tier, native OIDC, deliberately not forward-auth gated. |
+| **Audiobookshelf** | Audiobooks. Household tier, native OIDC, deliberately not forward-auth gated. Podcasts moved to PinePods, which is built for them. |
 | **Immich** | Photos and video. Household tier, native OIDC, deliberately not forward-auth gated. Runs its own Postgres and Redis. |
 | **Sonarr, Radarr, Lidarr, LazyLibrarian** | Library management for TV, movies, music, and ebooks -- find, grab, rename, organize. |
 | **Bazarr** | Subtitle management for Sonarr/Radarr's libraries. |
 | **Prowlarr** | Centralized indexer management -- add an indexer once, it syncs to every `*arr` app instead of configuring each separately. |
 | **Seerr** | The request front-end (actively-maintained Overseerr fork) -- where you or your family actually ask for something to be added. |
-| **qBittorrent** | Download client, with its traffic (and Sonarr/Radarr/LazyLibrarian's indexer-search traffic) forced through a VPN. |
+| **qBittorrent** | Download client, and the only service whose traffic is forced through the VPN. The *arrs used to share its network namespace; they reach indexers through gluetun's HTTP proxy now. |
 | **Plex** | Media server / playback, GPU-transcoded. Deliberately *not* behind the SSO gate -- see "Authentik integration patterns." |
 | **Navidrome** | Music streaming (Subsonic API) -- a dedicated music server, since Plex is only "fine" at it. |
 | **Tautulli** | Plex watch-history/stats. |
 | **Homer** | The dashboard -- one page linking to everything else. |
 | **Organizarr** | Custom-built settings hub for the `*arr` apps -- see below. Admin tier. |
 | **FlareSolverr** | Solves Cloudflare's JS challenge for the public indexers that would otherwise fail in Prowlarr. No UI, internal API only. |
+| **PinePods** | Podcasts, reading the existing library off disk rather than re-downloading it. Household tier, native OIDC. See "Podcasts (PinePods)". |
+| **Tdarr** | Transcoding pipeline, GPU-accelerated. See "Transcoding". |
+| **Beets** | Music tagging and organisation before Navidrome ever sees a file. No web UI worth exposing. |
+| **Flood** | A second web UI for qBittorrent, beside its own rather than replacing it. See "Flood". |
+| **copyparty** (`files`, `browse`) | File access over the web: `files` read-write over the media and storage roots, `browse` read-only over media. Both Authentik-gated. |
+| **Ollama, Open WebUI** | Local LLM inference on the GPU and its browser front end. Nothing leaves the network. See "Local AI". |
+| **CrowdSec** | Behavioural intrusion prevention. Reads Traefik's access log, decides who is misbehaving, and a Traefik plugin bouncer enforces it. See the bouncer notes in `traefik/dynamic/dynamic.yml`. |
+| **Suricata** (+ `suricata-exporter`) | Network IDS on the host interface, with its findings exported as Prometheus metrics. |
+| **blackbox-exporter** | Probes endpoints from outside the app, including the origin certificate's expiry, so a broken cert alerts before a browser finds it. |
 | **Prometheus, Grafana, cAdvisor, node-exporter** | Metrics: host, per-container, and dashboards. |
 | **Loki, Promtail** | Log aggregation -- searchable logs across every container, alongside the metrics. |
 
@@ -106,7 +115,8 @@ never needs membership in the narrower groups.
 | Infrastructure | `Admin` | Portainer, Traefik dashboard, web terminal, Pi-hole, Organizarr, Cleanuparr* |
 | Media management | `Admin`, `Contributor` | Prowlarr, Sonarr, Radarr, Lidarr, LazyLibrarian, Bazarr, qBittorrent |
 | Monitoring | `Admin`, `Metrics` | Grafana, Prometheus, Tautulli |
-| Household | none (domain-level) | Seerr, Navidrome, Homer |
+| Household | none (domain-level) | Seerr, Navidrome, Homer, files, browse |
+| Not forward-auth gated | see below | Plex, Audiobookshelf, Immich, PinePods, Open WebUI, Cleanuparr, ntfy |
 
 *Cleanuparr is bound to `Admin` like the rest of that row, but reaches it
 through its own OIDC login rather than the forward-auth gate. The group
@@ -127,7 +137,16 @@ library.
 
 The household tier has no dedicated application at all, so those
 hostnames fall through to the domain-level provider, which has no policy
-bindings: any authenticated user gets in. That is the media itself.
+bindings: any authenticated user gets in.
+
+The last row is the one this table would otherwise hide, and it covers
+most of what the household actually uses. Plex, Audiobookshelf, Immich
+and PinePods never see the forward-auth gate at all, because their native
+apps cannot complete a browser login redirect. Their access is decided by
+Plex's own account system, or by native OIDC against the same Authentik
+groups. So "who can reach Plex" is not answered anywhere in the table
+above, and adding `authentik@file` to make it consistent would break
+every client. See "The apps that are not forward-auth gated".
 
 **Why the media-management tier moves as a block.** The `*arr` apps each
 have an interactive/manual search that queries the same indexers Prowlarr
@@ -209,7 +228,7 @@ qBittorrent's traffic is forced through the VPN via
 `network_mode: service:vpn-client` -- Docker Swarm has no equivalent of
 sharing another container's network namespace, which is *the* reason
 `docker-compose.download.yml` exists as a separate, non-Swarm compose
-stack (see "Why three compose files" below).
+stack (see "Why the stack is split across compose files" below).
 
 ### Why only qBittorrent is behind the VPN
 
@@ -331,17 +350,24 @@ Two consequences worth knowing if you extend this:
   is `localhost:8080`, not `qbittorrent:8080`, even though everything
   outside the namespace uses the latter.
 
-## Why three compose files
+## Why the stack is split across compose files
 
-Docker Swarm can't do everything this stack needs:
+Docker Swarm can't do everything this stack needs. Anything that hits one
+of its limitations lives in its own standalone compose file. There are six,
+for three reasons Swarm has no answer to: GPU access, `network_mode: host`,
+and sharing another container's network namespace.
 
 | File | Runs as | Why it's separate |
 |---|---|---|
 | `docker-stack.yml` | Swarm stack (`docker stack deploy`) | Everything that doesn't hit a Swarm limitation |
 | `docker-compose.download.yml` | Standalone compose | qBittorrent's traffic is forced through NordVPN via `network_mode: service:vpn-client` -- Swarm has no equivalent of sharing another container's network namespace. It is the only app that needs it; everything else uses gluetun's HTTP proxy and lives in the Swarm stack |
 | `docker-compose.plex.yml` | Standalone compose | NVIDIA GPU reservation (`deploy.resources.reservations.devices`) and the plain `devices:` key are ignored/unsupported by `docker stack deploy` |
+| `docker-compose.tdarr.yml` | Standalone compose | Same GPU reason as Plex: transcoding needs the NVIDIA runtime |
+| `docker-compose.ai.yml` | Standalone compose | Same GPU reason again: Ollama runs inference on the card |
+| `docker-compose.dns.yml` | Standalone compose | Pi-hole needs `network_mode: host` to answer DNS on the real host ports, which Swarm has no equivalent for |
+| `docker-compose.ids.yml` | Standalone compose | Suricata needs `network_mode: host` plus `cap_add` to see the physical interface; an IDS that cannot see `eno1` is pointless |
 
-Both standalone files join the same `edge` overlay network as the Swarm
+The standalone files join the same `edge` overlay network as the Swarm
 stack (created once, attachable) so Traefik can still route to them --
 via static entries in `traefik/dynamic/dynamic.yml`, since Traefik's
 Docker provider in `swarmMode` doesn't auto-discover plain containers
@@ -390,16 +416,21 @@ cp cloudflared/emergency-config.yml.example cloudflared/emergency-config.yml
 cp homer/config.yml.example homer/config.yml
 $EDITOR cloudflared/config.yml cloudflared/emergency-config.yml homer/config.yml
 
-chmod +x scripts/*.sh
+chmod +x scripts/*.sh scripts/*.py
 ./scripts/bootstrap.sh             # docker swarm init + create the `edge` network
 
 # --- Cloudflare Tunnel (one-time) ---
 cloudflared tunnel login
 cloudflared tunnel create mediastack
-# For each hostname you're routing (traefik, auth, pihole, portainer, sonarr,
-# radarr, lidarr, bazarr, seerr, lazylibrarian, prowlarr, tautulli, navidrome,
-# organizarr, grafana, prometheus, plex, qbittorrent, and the bare domain for
-# homer):
+# For each hostname you're routing. Current list, which is worth
+# regenerating from the router rules rather than trusting this comment:
+#   grep -ohE 'Host\(`[^`]+`\)' docker-stack.yml traefik/dynamic/dynamic.yml \
+#     | sort -u
+# As of writing: ai, alertmanager, audiobookshelf, auth, bazarr, browse,
+# cleanuparr, files, flood, grafana, immich, lazylibrarian, lidarr,
+# navidrome, ntfy, organizarr, overseerr, pihole, plex, podcasts,
+# portainer, prometheus, prowlarr, qbittorrent, radarr, seerr, sonarr,
+# tautulli, tdarr, terminal, traefik, and the bare domain for homer:
 cloudflared tunnel route dns mediastack <sub>.yourdomain.com
 # Grab the tunnel token for init-secrets.sh next: Cloudflare Zero Trust
 # dashboard -> Networks -> Tunnels -> mediastack -> Configure -> copy token
@@ -408,9 +439,18 @@ cloudflared tunnel route dns mediastack <sub>.yourdomain.com
 ./scripts/init-secrets.sh          # prompts for Cloudflare/NordVPN/Plex values, generates the rest
 
 docker stack deploy -c docker-stack.yml mediastack
-docker compose -f docker-compose.download.yml up -d
-docker compose -f docker-compose.plex.yml up -d
+
+# All six standalone compose files. This used to list only download and
+# plex, which left Tdarr, Ollama, Pi-hole and Suricata undeployed. See
+# "Why the stack is split across compose files" for what each one is.
+for f in download plex tdarr ai dns ids; do
+  docker compose -f "docker-compose.$f.yml" up -d
+done
 ```
+
+Then install the timers, which is a separate step people miss: see
+"Every timer, in one place" under Backups. Without them nothing is backed
+up, verified, or watched on a schedule.
 
 ## Podcasts (PinePods)
 
@@ -422,7 +462,7 @@ podcast. It reads ID3 tags for episode titles and picks up cover art
 from the folder, so the existing hand-organised tree carries over
 instead of being re-downloaded.
 
-That tree is six shows, ~1460 episodes, flat, named `NNN. Title` from
+That tree is four shows, 1433 episodes, flat, named `NNN. Title` from
 each show's RSS feed (`itunes:episode`). See "Reading the logs" for how
 the numbering was derived and what deliberately went un-numbered.
 
@@ -1748,6 +1788,46 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now mediastack-backup-local.timer mediastack-backup-offsite.timer
 ```
 
+
+### Every timer, in one place
+
+Three of these had install instructions scattered across other sections
+and three had none at all, which meant following this README left you
+without backup verification, without the VPN watchdog, and without log
+trimming. All seven:
+
+| Timer | Schedule | What it does |
+|---|---|---|
+| `mediastack-backup-local` | daily 02:00 | Tars config into `<backup-root>/local/`, keeps 14 days |
+| `mediastack-backup-offsite` | daily 04:30 | restic to B2, encrypted, plus the database dumps |
+| `mediastack-verify-backups` | Sun 05:00 | Integrity, file restore, database restore. Deliberately after the off-site run so it verifies the newest snapshot |
+| `mediastack-media-watchdog` | every 6h | Compares the media trees against the apps that index them |
+| `mediastack-ai-digest` | daily 07:45 | Summarises findings and firing alerts to ntfy |
+| `mediastack-vpn-watchdog` | every 2 min | Restarts qBittorrent when the tunnel's exit IP changes |
+| `mediastack-trim-logs` | hourly | Caps runaway container logs |
+
+```bash
+cd /path/to/C2MediaServerStack
+for u in backup-local backup-offsite verify-backups media-watchdog \
+         ai-digest vpn-watchdog trim-logs; do
+  sed "s|/home/youruser/C2MediaServerStack|$PWD|g" \
+    "systemd/mediastack-$u.service" | sudo tee "/etc/systemd/system/mediastack-$u.service" >/dev/null
+  sudo cp "systemd/mediastack-$u.timer" /etc/systemd/system/
+done
+sudo systemctl daemon-reload
+sudo systemctl enable --now mediastack-{backup-local,backup-offsite,verify-backups,media-watchdog,ai-digest,vpn-watchdog,trim-logs}.timer
+```
+
+That loop substitutes the repo path rather than copying verbatim, which
+matters: the shipped units carry `/home/youruser/...` and a plain `cp`
+installs units that point at a directory which does not exist. They fail
+on first fire, and a timer that has never fired looks identical to one
+that has nothing to report.
+
+Check them with `systemctl list-timers 'mediastack-*'`. A `LAST` column of
+`-` on something that should have run by now means it was installed but
+never succeeded.
+
 Media itself is intentionally not covered by either backup -- too
 large, and not ephemeral container state. Every unit file under
 `systemd/` has your real repo path baked in as `/home/youruser/...` --
@@ -1814,7 +1894,8 @@ own README for the full reference) -- nothing about which apps exist is
 hardcoded.
 
 It talks to each app's real API (never a config file) using an API key
-read from that app's own config volume, mounted read-only -- lazily, not
+read from that app's own config directory under `.appdata`, mounted
+read-only -- lazily, not
 once at startup: on a fresh deploy, Swarm doesn't guarantee this
 container starts after the apps it depends on, and each of those apps
 only writes its own API key on its own first boot. A miss just gets
@@ -2021,9 +2102,10 @@ whatever timezone you are viewing from.
 
 ## The apps that are not forward-auth gated
 
-Four services deliberately carry no `authentik@file` middleware, and it
-is the same reason every time: **each has a native client that cannot
-complete a browser login redirect.**
+Eight services deliberately carry no `authentik@file` middleware, for one
+of two reasons: **a native client that cannot complete a browser login
+redirect**, or **real OIDC of their own**, where the gate would only mean
+logging in twice.
 
 | service | why | what protects it instead |
 |---|---|---|
@@ -2031,6 +2113,7 @@ complete a browser login redirect.**
 | Navidrome `/rest/*` | Subsonic API clients | per-person Subsonic password |
 | ntfy | Android app holds a persistent connection | Cloudflare Access service token + ntfy tokens |
 | Audiobookshelf | mobile app | native OIDC against Authentik |
+| PinePods | mobile apps hold long-lived sessions | native OIDC against Authentik |
 | Immich | mobile app | native OIDC against Authentik |
 | Open WebUI | has real OIDC, gate would be a second login | native OIDC, `Admin`/`Contributor`/`Family` via groups claim |
 | Cleanuparr | has real OIDC, gate would be a second login | native OIDC, `Admin` binding on the Authentik application |
@@ -2609,10 +2692,16 @@ pushes.
 - `docker stack deploy -c docker-stack.yml mediastack` -- no
   undeclared-volume/secret errors.
 - `docker service ls` -- all replicas up, nothing restart-looping.
-- `cloudflared tunnel info mediastack` shows connected; `ss -tlnp` on
-  the host shows nothing new bound to 80/443.
-- Any app URL redirects to Authentik login before showing the app
-  (except Plex, and Navidrome's `/rest/*`).
+- `cloudflared tunnel info mediastack` shows connected.
+- `ss -tlnp` shows Traefik bound to 80 and 443. That is expected and not
+  an exposure: those ports are published `mode: host` so Traefik sees real
+  client IPs, ingress is still the tunnel, and the router forwards neither
+  (see the 32443 section). This line used to read "nothing new bound to
+  80/443", which stopped being true when entrypoint TLS landed.
+- Any app URL redirects to Authentik login before showing the app, except
+  the eight in "The apps that are not forward-auth gated" -- Plex,
+  Audiobookshelf, Immich, PinePods, Open WebUI, Cleanuparr, ntfy and
+  Navidrome's `/rest/*`.
 - Plex: start a transcoded stream, confirm `nvidia-smi` shows an
   ffmpeg process.
 - `docker service update --force <service>` on something, confirm it
@@ -2622,6 +2711,14 @@ pushes.
   `restic snapshots` (via
   `docker run --rm -e RESTIC_REPOSITORY -e RESTIC_PASSWORD -e B2_ACCOUNT_ID -e B2_ACCOUNT_KEY restic/restic snapshots`,
   sourcing `secrets/restic.env` first).
+  Check the snapshot's **path list**, not just that it succeeded: a
+  missing path is how an unset variable silently drops a whole tree from
+  the backup, which has happened here.
+- `RESTORE_INTERVAL_DAYS=0 scripts/verify-backups.sh` -- integrity, a file
+  restore, and a database dump loaded into a throwaway Postgres, all
+  asserted rather than assumed.
+- `scripts/media-watchdog.py` -- reports 0 problems, and the **Media
+  library watchdog** dashboard in Grafana renders.
 
 ## Kernel tuning
 
