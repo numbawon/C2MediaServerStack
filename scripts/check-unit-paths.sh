@@ -42,8 +42,12 @@ for f in /etc/systemd/system/mediastack-*.service /etc/systemd/system/ttyd.servi
          /etc/systemd/system/cloudflared-emergency.service; do
   [ -e "$f" ] || continue
   found=$((found+1))
-  bad=$(grep -nE '^(WorkingDirectory|ExecStart|ExecStartPre|ExecStop|EnvironmentFile)=' "$f" \
-        | grep "$PLACEHOLDER" || true)
+  # User=youruser too, not just paths. router-exporter runs as a user rather
+  # than root because the SSH key lives in a home directory, and a leftover
+  # User=youruser fails at start with "Failed to determine user credentials"
+  # rather than anything mentioning the placeholder.
+  bad=$(grep -nE '^(WorkingDirectory|ExecStart|ExecStartPre|ExecStop|EnvironmentFile|User)=' "$f" \
+        | grep -E "$PLACEHOLDER|^[0-9]+:User=youruser" || true)
   if [ -n "$bad" ]; then
     echo "    PLACEHOLDER LEFT IN $f:"
     echo "$bad" | sed 's/^/      /'
