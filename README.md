@@ -2332,10 +2332,27 @@ timer, is what actually checks:
   the repository structure *and* downloads and hashes a random 5% of the
   real pack files. Structure-only checking would miss silent corruption
   in B2, which is the failure this exists to catch.
-- **Restore, every 28 days.** Restores one volume out of the newest
+- **File restore, every 28 days.** Restores one path out of the newest
   snapshot into a scratch directory and asserts the restored file count
-  equals what the snapshot manifest lists. This is the only step that
-  proves recovery, rather than that the bytes hash correctly.
+  equals what the snapshot manifest lists. `RESTORE_PATH` selects it, and
+  it is a full snapshot path rather than a volume name: once configs moved
+  into `.appdata` the two stopped having a mechanical relationship, and
+  the old `/data/${RESTORE_VOLUME}` form silently pointed at a path that
+  no longer existed.
+- **Database restore, every 28 days.** Restores a `pg_dump` out of the
+  newest snapshot, loads it into a disposable `postgres:16` container with
+  no volume, and asserts the resulting table count matches what the dump
+  itself declares. Authentik's by default, because losing that database
+  locks you out of every service behind SSO. This is a different failure
+  from the file restore above: a dump can be present, correctly sized and
+  valid gzip while being unloadable, and the only way to find out is to
+  load it. `DB_RESTORE_DUMP` and `DB_RESTORE_IMAGE` override the target;
+  the image tag has to match the server the dump came from, since a dump
+  from 16 will not load into 14.
+
+Those two are the only steps that prove recovery rather than proving the
+bytes hash correctly, and they prove different things: one that a
+directory comes back, the other that a database does.
 
 Results are written as Prometheus metrics into the
 `node_exporter_textfile` volume and served by node-exporter's textfile
@@ -2344,7 +2361,7 @@ Prometheus can alert on continuously. `BackupVerificationStale` fires if
 the timer itself stops, because "no failures reported" and "nothing is
 checking" otherwise look identical.
 
-Two details worth not re-learning:
+Four details worth not re-learning:
 
 - `restic ls` needs **`--recursive`**, or it lists only the top level
   (10 entries against 555 actual files) and the assertion fails every
@@ -2353,6 +2370,14 @@ Two details worth not re-learning:
 - restic runs as root inside its container, so the restored tree is
   root-owned and the script cannot delete it as an ordinary user.
   Cleanup runs in a throwaway container for that reason.
+- Count tables across **every non-system schema**, not just `public`.
+  Authentik keeps 230 tables in `public` and another 155 in a `template`
+  schema. The dump's `CREATE TABLE` lines span both, so counting only
+  `public` compared 230 against 385 and failed a restore that had worked
+  perfectly. Both sides have to be counted the same way.
+- The dumps carry `--clean --if-exists`, so their `DROP` statements fail
+  harmlessly against a fresh database. `ON_ERROR_STOP` is deliberately
+  off and the table count is the assertion, not `psql`'s exit status.
 
 `secrets/` is included in the off-site backup and deliberately not in the
 local one. It is git-ignored by design, which also means it exists in
