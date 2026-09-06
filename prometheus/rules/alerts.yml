@@ -516,7 +516,12 @@ groups:
         # The wireless link carrying everything a node's clients do. Weak
         # backhaul caps that node no matter how strong its own radio looks to
         # the client.
-        expr: mediastack_router_backhaul_rssi_dbm < -80
+        #
+        # Measured from the NODE, not from the router's WDS interfaces. Those
+        # only exist for some AiMesh attachment modes, so a node can be well
+        # connected and have no WDS entry at all; alerting on those would have
+        # watched one node three times and the other never.
+        expr: mediastack_router_uplink_rssi_dbm < -80
         for: 30m
         labels:
           severity: warning

@@ -512,7 +512,7 @@
    "description": "Stations associated per radio interface. eth5 is 2.4 GHz and eth6 is 5 GHz on these units. Clients are counted where they are actually associated, so this shows how the mesh is distributing them.",
    "gridPos": {
     "h": 8,
-    "w": 12,
+    "w": 8,
     "x": 0,
     "y": 25
    },
@@ -550,12 +550,12 @@
   },
   {
    "type": "timeseries",
-   "title": "Mesh backhaul signal",
-   "description": "RSSI of each wireless backhaul link, in dBm. Closer to zero is better: roughly -60 is strong, -70 workable, past -80 expect the node to drop to a lower rate and its clients to feel it.",
+   "title": "Node uplink signal",
+   "description": "RSSI as each NODE measures its own uplink, which is the honest view. This used to chart the router's WDS interfaces instead, and that was misleading: AiMesh nodes may attach as ordinary stations with no WDS interface at all, so a perfectly connected node showed nothing while a single node's three WDS links looked like the whole mesh. Closer to zero is better; roughly -60 strong, -70 workable, past -80 the node drops to a lower rate and its clients feel it.",
    "gridPos": {
     "h": 8,
-    "w": 12,
-    "x": 12,
+    "w": 8,
+    "x": 8,
     "y": 25
    },
    "datasource": {
@@ -565,13 +565,12 @@
    "targets": [
     {
      "refId": "A",
-     "expr": "mediastack_router_backhaul_rssi_dbm",
-     "legendFormat": "{{router}} {{interface}}",
-     "instant": false,
      "datasource": {
       "type": "prometheus",
       "uid": "${datasource}"
-     }
+     },
+     "expr": "mediastack_router_uplink_rssi_dbm",
+     "legendFormat": "{{router}} {{band}}"
     }
    ],
    "fieldConfig": {
@@ -602,6 +601,70 @@
      }
     },
     "overrides": []
+   },
+   "options": {}
+  },
+  {
+   "type": "timeseries",
+   "title": "Node uplink rate and SNR",
+   "description": "Negotiated PHY rate and signal-to-noise on each node's uplink. RSSI alone can look fine while a noisy channel holds the rate down, which is the case worth catching: the link is up, the signal is strong, and everything behind that node is still slow.",
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 25
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "mediastack_router_uplink_rate_mbps",
+     "legendFormat": "{{router}} {{band}} rate"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "mediastack_router_uplink_snr_db",
+     "legendFormat": "{{router}} {{band}} SNR"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "min": 0,
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 0
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": ".*SNR.*"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "none"
+       },
+       {
+        "id": "custom.axisPlacement",
+        "value": "right"
+       }
+      ]
+     }
+    ]
    },
    "options": {}
   }
