@@ -1830,6 +1830,34 @@ Check them with `systemctl list-timers 'mediastack-*'`. A `LAST` column of
 `-` on something that should have run by now means it was installed but
 never succeeded.
 
+### Why the units are tracked, and not `.example`
+
+`cloudflared/config.yml` and `homer/config.yml` are gitignored with
+`.example` twins because they are bind-mounted into containers, so the real
+file with the real domain has to exist in the repo directory. Systemd units
+are not read from the repo at all; they are copied to `/etc/systemd/system`
+and run from there. The tracked copy is already the template, holds no
+secrets, and its only variable is a path. A `.example` twin would double the
+files and gitignore something with nothing to hide.
+
+What that leaves unguarded is drift in both directions, and both have
+happened:
+
+- A **repo** unit edited to a real path. Once as a half-edit, with
+  `WorkingDirectory` pointing at the real path while `ExecStart` still said
+  `youruser`. That installs without complaint and then fails.
+- An **installed** unit still saying `/home/youruser`, because it was copied
+  without substituting. It fails on first fire, and a timer that has never
+  fired looks exactly like one with nothing to report.
+
+`scripts/check-unit-paths.sh` catches both, plus any installed unit
+referencing a path that does not exist. Read-only, exits non-zero on a
+finding, so it works as a pre-commit hook or a manual pass:
+
+```bash
+scripts/check-unit-paths.sh
+```
+
 Media itself is intentionally not covered by either backup -- too
 large, and not ephemeral container state. Every unit file under
 `systemd/` has your real repo path baked in as `/home/youruser/...` --
