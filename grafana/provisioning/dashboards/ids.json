@@ -1,716 +1,1025 @@
 {
-  "uid": "ids-overview",
-  "title": "Intrusion detection (Suricata + CrowdSec)",
-  "tags": [
-    "mediastack",
-    "security",
-    "ids"
-  ],
-  "timezone": "browser",
-  "schemaVersion": 39,
-  "refresh": "1m",
-  "time": {
-    "from": "now-24h",
-    "to": "now"
+ "uid": "ids-overview",
+ "title": "Intrusion detection (Suricata + CrowdSec)",
+ "tags": [
+  "mediastack",
+  "security",
+  "ids"
+ ],
+ "timezone": "browser",
+ "schemaVersion": 39,
+ "refresh": "1m",
+ "time": {
+  "from": "now-24h",
+  "to": "now"
+ },
+ "panels": [
+  {
+   "type": "row",
+   "title": "Is the IDS actually working?",
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "collapsed": false,
+   "panels": []
   },
-  "panels": [
+  {
+   "type": "stat",
+   "title": "Rules loaded",
+   "description": "The number that matters most. Suricata will run, log flows and pass every health check with ZERO rules loaded, detecting nothing -- which is exactly what happened during setup when suricata-update wrote rules into a directory the engine could not read. Red here means blind.",
+   "gridPos": {
+    "h": 5,
+    "w": 5,
+    "x": 0,
+    "y": 1
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
     {
-      "type": "row",
-      "title": "Is the IDS actually working?",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
-      "collapsed": false,
-      "panels": []
-    },
-    {
-      "type": "stat",
-      "title": "Rules loaded",
-      "description": "The number that matters most. Suricata will run, log flows and pass every health check with ZERO rules loaded, detecting nothing -- which is exactly what happened during setup when suricata-update wrote rules into a directory the engine could not read. Red here means blind.",
-      "gridPos": {
-        "h": 5,
-        "w": 5,
-        "x": 0,
-        "y": 1
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "suricata_rules_loaded",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "stat",
-      "title": "Suricata",
-      "description": "1 when stats are fresh. The process can be resident but wedged, which this catches and a container liveness check does not.",
-      "gridPos": {
-        "h": 5,
-        "w": 4,
-        "x": 5,
-        "y": 1
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "suricata_up",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "stat",
-      "title": "CrowdSec",
-      "description": "Up means logs are being parsed and bans issued. When it is down the Traefik bouncer keeps serving a stale decision list, so the site stays up but stops learning.",
-      "gridPos": {
-        "h": 5,
-        "w": 4,
-        "x": 9,
-        "y": 1
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "up{job=\"crowdsec\"}",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "stat",
-      "title": "Packets/sec",
-      "description": "Flat zero on a live network means Suricata is not seeing the wire at all: wrong interface, link down, or no promiscuous mode.",
-      "gridPos": {
-        "h": 5,
-        "w": 5,
-        "x": 13,
-        "y": 1
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "rate(suricata_kernel_packets_total[5m])",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "pps",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "stat",
-      "title": "Packet loss",
-      "description": "Traffic arriving faster than it can be inspected. Anything sustained above a few percent means detection has real gaps.",
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 18,
-        "y": 1
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "rate(suricata_kernel_drops_total[5m]) / clamp_min(rate(suricata_kernel_packets_total[5m]), 1)",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 0.01
-              },
-              {
-                "color": "red",
-                "value": 0.05
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "row",
-      "title": "Detections",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 6
-      },
-      "collapsed": false,
-      "panels": []
-    },
-    {
-      "type": "timeseries",
-      "title": "Suricata alerts",
-      "description": "Signature matches on the wire. Covers the LAN and the ports exposed there; near-blind to internet traffic, which arrives encrypted inside the Cloudflare tunnel.",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 7
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "rate(suricata_alerts_total[15m]) * 900",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "legendFormat": "alerts / 15m"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "min": 0,
-          "custom": {
-            "fillOpacity": 15,
-            "showPoints": "never"
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "timeseries",
-      "title": "CrowdSec scenarios triggered",
-      "description": "Which detection scenarios are firing, by name. This is the HTTP-layer half: brute force, path probing, crawlers -- the attacks Suricata cannot see.",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 7
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "rate(cs_bucket_poured_total[15m]) * 900",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "legendFormat": "{{name}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "min": 0,
-          "custom": {
-            "fillOpacity": 15,
-            "showPoints": "never"
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "row",
-      "title": "What CrowdSec is reading and deciding",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 15
-      },
-      "collapsed": false,
-      "panels": []
-    },
-    {
-      "type": "timeseries",
-      "title": "Log lines ingested",
-      "description": "Per source. A flat line for traefik means access logging broke; flat for suricata means the sensor stopped.",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 16
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "rate(cs_filesource_hits_total[5m])",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "legendFormat": "{{acquis_type}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "min": 0,
-          "custom": {
-            "fillOpacity": 15,
-            "showPoints": "never",
-            "stacking": {
-              "mode": "normal"
-            }
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "timeseries",
-      "title": "Whitelisted events",
-      "description": "Events matched but deliberately not acted on, by reason. Healthy: this is the safety net stopping a LAN device or the tunnel itself from being banned.",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 16
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "rate(cs_node_wl_hits_ok_total[15m]) * 900",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "legendFormat": "{{name}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "min": 0,
-          "custom": {
-            "fillOpacity": 15,
-            "showPoints": "never"
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "row",
-      "title": "Enforcement",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 24
-      },
-      "collapsed": false,
-      "panels": []
-    },
-    {
-      "type": "stat",
-      "title": "Bouncer pulls",
-      "description": "The Traefik bouncer fetching the decision list. If this stops, bans stop being enforced even though CrowdSec keeps issuing them.",
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 0,
-        "y": 25
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(rate(cs_lapi_bouncer_requests_total{route=\"/v1/decisions/stream\"}[15m])) * 900",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "legendFormat": "pulls / 15m",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 0.5
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "stat",
-      "title": "Active alerts",
-      "description": "Distinct alert reasons CrowdSec currently holds.",
-      "gridPos": {
-        "h": 5,
-        "w": 5,
-        "x": 6,
-        "y": 25
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "count(cs_alerts) or vector(0)",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "stat",
-      "title": "Rules failed to load",
-      "description": "Signatures rejected at load time. Coverage is lower than the rule count implies.",
-      "gridPos": {
-        "h": 5,
-        "w": 5,
-        "x": 11,
-        "y": 25
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "suricata_rules_failed",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "stat",
-      "title": "Suricata uptime",
-      "description": "Time since the engine last restarted.",
-      "gridPos": {
-        "h": 5,
-        "w": 8,
-        "x": 16,
-        "y": 25
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "suricata_uptime_seconds",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "none",
-        "graphMode": "none",
-        "textMode": "value"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
+     "refId": "A",
+     "expr": "suricata_rules_loaded",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "instant": true
     }
-  ],
-  "templating": {
-    "list": [
-      {
-        "name": "datasource",
-        "label": "Datasource",
-        "type": "datasource",
-        "query": "prometheus",
-        "current": {},
-        "hide": 0,
-        "refresh": 1
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "green",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Suricata",
+   "description": "1 when stats are fresh. The process can be resident but wedged, which this catches and a container liveness check does not.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 5,
+    "y": 1
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "suricata_up",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "green",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "CrowdSec",
+   "description": "Up means logs are being parsed and bans issued. When it is down the Traefik bouncer keeps serving a stale decision list, so the site stays up but stops learning.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 9,
+    "y": 1
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "up{job=\"crowdsec\"}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "green",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Packets/sec",
+   "description": "Flat zero on a live network means Suricata is not seeing the wire at all: wrong interface, link down, or no promiscuous mode.",
+   "gridPos": {
+    "h": 5,
+    "w": 5,
+    "x": 13,
+    "y": 1
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rate(suricata_kernel_packets_total[5m])",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "pps",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "green",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Packet loss",
+   "description": "Traffic arriving faster than it can be inspected. Anything sustained above a few percent means detection has real gaps.",
+   "gridPos": {
+    "h": 5,
+    "w": 6,
+    "x": 18,
+    "y": 1
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rate(suricata_kernel_drops_total[5m]) / clamp_min(rate(suricata_kernel_packets_total[5m]), 1)",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 0.01
+       },
+       {
+        "color": "red",
+        "value": 0.05
+       }
+      ]
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "row",
+   "title": "Detections",
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 6
+   },
+   "collapsed": false,
+   "panels": []
+  },
+  {
+   "type": "timeseries",
+   "title": "Suricata alerts",
+   "description": "Signature matches on the wire. Covers the LAN and the ports exposed there; near-blind to internet traffic, which arrives encrypted inside the Cloudflare tunnel.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 7
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rate(suricata_alerts_total[15m]) * 900",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "legendFormat": "alerts / 15m"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "min": 0,
+     "custom": {
+      "fillOpacity": 15,
+      "showPoints": "never"
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "CrowdSec scenarios triggered",
+   "description": "Which detection scenarios are firing, by name. This is the HTTP-layer half: brute force, path probing, crawlers -- the attacks Suricata cannot see.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 7
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rate(cs_bucket_poured_total[15m]) * 900",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "legendFormat": "{{name}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "min": 0,
+     "custom": {
+      "fillOpacity": 15,
+      "showPoints": "never"
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "row",
+   "title": "What CrowdSec is reading and deciding",
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 15
+   },
+   "collapsed": false,
+   "panels": []
+  },
+  {
+   "type": "timeseries",
+   "title": "Log lines ingested",
+   "description": "Per source. A flat line for traefik means access logging broke; flat for suricata means the sensor stopped.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 16
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rate(cs_filesource_hits_total[5m])",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "legendFormat": "{{acquis_type}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "min": 0,
+     "custom": {
+      "fillOpacity": 15,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "normal"
       }
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Whitelisted events",
+   "description": "Events matched but deliberately not acted on, by reason. Healthy: this is the safety net stopping a LAN device or the tunnel itself from being banned.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 16
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rate(cs_node_wl_hits_ok_total[15m]) * 900",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "legendFormat": "{{name}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "min": 0,
+     "custom": {
+      "fillOpacity": 15,
+      "showPoints": "never"
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "row",
+   "title": "Enforcement",
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 24
+   },
+   "collapsed": false,
+   "panels": []
+  },
+  {
+   "type": "stat",
+   "title": "Bouncer pulls",
+   "description": "The Traefik bouncer fetching the decision list. If this stops, bans stop being enforced even though CrowdSec keeps issuing them.",
+   "gridPos": {
+    "h": 5,
+    "w": 6,
+    "x": 0,
+    "y": 25
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum(rate(cs_lapi_bouncer_requests_total{route=\"/v1/decisions/stream\"}[15m])) * 900",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "legendFormat": "pulls / 15m",
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "green",
+        "value": 0.5
+       }
+      ]
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Active alerts",
+   "description": "Distinct alert reasons CrowdSec currently holds.",
+   "gridPos": {
+    "h": 5,
+    "w": 5,
+    "x": 6,
+    "y": 25
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "count(cs_alerts) or vector(0)",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Rules failed to load",
+   "description": "Signatures rejected at load time. Coverage is lower than the rule count implies.",
+   "gridPos": {
+    "h": 5,
+    "w": 5,
+    "x": 11,
+    "y": 25
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "suricata_rules_failed",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "auto"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Suricata uptime",
+   "description": "Time since the engine last restarted.",
+   "gridPos": {
+    "h": 5,
+    "w": 8,
+    "x": 16,
+    "y": 25
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "suricata_uptime_seconds",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "none",
+    "graphMode": "none",
+    "textMode": "value"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "row",
+   "title": "Where it comes from",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 30
+   },
+   "panels": []
+  },
+  {
+   "type": "geomap",
+   "title": "Alert sources",
+   "description": "One marker per source IP CrowdSec has alerted on, sized by how many alerts it produced. Coordinates come from CrowdSec's own GeoLite2 lookup, not from anything this dashboard does. Expect cloud providers rather than countries: the marker is where the VM is, not where the person is. Sources MaxMind cannot place are counted in the country panel but cannot be drawn, so the two totals differ.",
+   "gridPos": {
+    "h": 12,
+    "w": 16,
+    "x": 0,
+    "y": 31
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "mediastack_crowdsec_alerts_by_source",
+     "instant": true,
+     "format": "table",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    }
+   ],
+   "transformations": [
+    {
+     "id": "convertFieldType",
+     "options": {
+      "conversions": [
+       {
+        "targetField": "latitude",
+        "destinationType": "number"
+       },
+       {
+        "targetField": "longitude",
+        "destinationType": "number"
+       }
+      ]
+     }
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "__name__": true,
+       "job": true,
+       "instance": true
+      }
+     }
+    }
+   ],
+   "options": {
+    "view": {
+     "id": "zero",
+     "lat": 25,
+     "lon": 0,
+     "zoom": 1.4
+    },
+    "controls": {
+     "showZoom": true,
+     "mouseWheelZoom": true,
+     "showAttribution": true
+    },
+    "basemap": {
+     "type": "default",
+     "name": "Basemap"
+    },
+    "tooltip": {
+     "mode": "details"
+    },
+    "layers": [
+     {
+      "type": "markers",
+      "name": "Alert sources",
+      "location": {
+       "mode": "coords",
+       "latitude": "latitude",
+       "longitude": "longitude"
+      },
+      "tooltip": true,
+      "config": {
+       "showLegend": false,
+       "style": {
+        "size": {
+         "field": "Value",
+         "fixed": 5,
+         "min": 4,
+         "max": 22
+        },
+        "color": {
+         "fixed": "dark-red"
+        },
+        "opacity": 0.55,
+        "symbol": {
+         "mode": "fixed",
+         "fixed": "img/icons/marker/circle.svg"
+        },
+        "symbolAlign": {
+         "horizontal": "center",
+         "vertical": "center"
+        },
+        "textConfig": {
+         "fontSize": 12,
+         "offsetX": 0,
+         "offsetY": 0
+        }
+       }
+      }
+     }
     ]
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "barchart",
+   "title": "Alerts by country",
+   "description": "Bounded cardinality, unlike the map: roughly 250 possible values no matter how many hosts scan you. '??' is sources MaxMind could not place, which includes private ranges and some newer cloud allocations. Trust this panel over the map for totals.",
+   "gridPos": {
+    "h": 12,
+    "w": 8,
+    "x": 16,
+    "y": 31
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "topk(15, mediastack_crowdsec_alerts_by_country)",
+     "instant": true,
+     "format": "table",
+     "legendFormat": "{{country}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "__name__": true,
+       "job": true,
+       "instance": true
+      }
+     }
+    }
+   ],
+   "options": {
+    "orientation": "horizontal",
+    "xTickLabelRotation": 0,
+    "showValue": "always",
+    "legend": {
+     "showLegend": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "axisLabel": ""
+     },
+     "unit": "short"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Sources plotted / seen",
+   "description": "The map caps at 200 most-recent sources so a scanner sweep cannot add unbounded Prometheus series. If plotted is below seen, the map is showing a recent subset and the country panel is the complete picture.",
+   "gridPos": {
+    "h": 4,
+    "w": 8,
+    "x": 16,
+    "y": 43
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "mediastack_crowdsec_geo_sources_plotted",
+     "instant": true,
+     "legendFormat": "plotted",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "mediastack_crowdsec_geo_sources_total",
+     "instant": true,
+     "legendFormat": "seen",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "none",
+    "graphMode": "none",
+    "textMode": "value_and_name"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "table",
+   "title": "Most persistent sources",
+   "description": "Alert counts per IP, with the AS name, which is usually more telling than the country. A single cloud host probing repeatedly looks very different from one hit each from many addresses.",
+   "gridPos": {
+    "h": 8,
+    "w": 16,
+    "x": 0,
+    "y": 43
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "topk(20, mediastack_crowdsec_alerts_by_source)",
+     "instant": true,
+     "format": "table",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "__name__": true,
+       "job": true,
+       "instance": true,
+       "latitude": true,
+       "longitude": true
+      },
+      "renameByName": {
+       "Value": "alerts",
+       "as_name": "AS"
+      }
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "fields": {},
+      "sort": [
+       {
+        "field": "alerts",
+        "desc": true
+       }
+      ]
+     }
+    }
+   ],
+   "options": {
+    "showHeader": true
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   }
   }
+ ],
+ "templating": {
+  "list": [
+   {
+    "name": "datasource",
+    "label": "Datasource",
+    "type": "datasource",
+    "query": "prometheus",
+    "current": {},
+    "hide": 0,
+    "refresh": 1
+   }
+  ]
+ }
 }

@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh the CrowdSec alert source map every 15 minutes
+
+[Timer]
+# Fifteen minutes. This is a map you look at, not something you act on in
+# real time, and cscli walks the whole alert history on each run.
+OnBootSec=6min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target
