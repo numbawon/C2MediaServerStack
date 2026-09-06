@@ -1,0 +1,622 @@
+{
+ "uid": "routers",
+ "title": "Routers (AiMesh)",
+ "tags": [
+  "mediastack",
+  "network",
+  "router"
+ ],
+ "timezone": "",
+ "schemaVersion": 39,
+ "refresh": "1m",
+ "time": {
+  "from": "now-12h",
+  "to": "now"
+ },
+ "panels": [
+  {
+   "type": "row",
+   "title": "Are all three up?",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "panels": []
+  },
+  {
+   "type": "stat",
+   "title": "Routers reachable",
+   "description": "How many of the AiMesh devices answered over SSH on the last run. Anything below expected means a node is off, rebooting, or has lost its key.",
+   "gridPos": {
+    "h": 5,
+    "w": 5,
+    "x": 0,
+    "y": 1
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "mediastack_router_exporter_reachable",
+     "legendFormat": "reachable",
+     "instant": true,
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    },
+    {
+     "refId": "A",
+     "expr": "mediastack_router_exporter_expected",
+     "legendFormat": "expected",
+     "instant": true,
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "green",
+        "value": 3
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "value_and_name"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Uptime",
+   "description": "Seconds since boot per device. A node resetting on its own is the first sign of a power or thermal problem.",
+   "gridPos": {
+    "h": 5,
+    "w": 9,
+    "x": 5,
+    "y": 1
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "mediastack_router_uptime_seconds",
+     "legendFormat": "{{router}}",
+     "instant": true,
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "none",
+    "graphMode": "none",
+    "textMode": "value_and_name"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "WAN",
+   "description": "ASUSWRT reports state 2 for a connected WAN. Only the main router has one; the mesh nodes reach the internet through it.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 14,
+    "y": 1
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "mediastack_router_wan_connected",
+     "legendFormat": "{{router}}",
+     "instant": true,
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "0": {
+         "text": "DOWN",
+         "color": "red",
+         "index": 0
+        },
+        "1": {
+         "text": "up",
+         "color": "green",
+         "index": 1
+        }
+       }
+      }
+     ]
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "value_and_name"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Tracked connections",
+   "description": "Entries in the main router's conntrack table against its 300000 ceiling. Mesh nodes bridge rather than route, so theirs stay near zero by design.",
+   "gridPos": {
+    "h": 5,
+    "w": 6,
+    "x": 18,
+    "y": 1
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "mediastack_router_conntrack_count",
+     "legendFormat": "{{router}}",
+     "instant": true,
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "none",
+    "graphMode": "area",
+    "textMode": "value_and_name"
+   }
+  },
+  {
+   "type": "row",
+   "title": "Load, memory and heat",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 6
+   },
+   "panels": []
+  },
+  {
+   "type": "timeseries",
+   "title": "CPU load per core",
+   "description": "Load average divided by core count, so 1.0 means saturated regardless of the device. These are 3-core units.",
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 7
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "mediastack_router_load1 / mediastack_router_cores",
+     "legendFormat": "{{router}}",
+     "instant": false,
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "min": 0,
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 8
+     }
+    },
+    "overrides": []
+   },
+   "options": {}
+  },
+  {
+   "type": "timeseries",
+   "title": "Memory used",
+   "description": "Total minus available. These have 512 MB and no swap, so sustained pressure here shows up as dropped connections rather than slowness.",
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 7
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "mediastack_router_memory_total_bytes - mediastack_router_memory_available_bytes",
+     "legendFormat": "{{router}}",
+     "instant": false,
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "min": 0,
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 8
+     }
+    },
+    "overrides": []
+   },
+   "options": {}
+  },
+  {
+   "type": "timeseries",
+   "title": "Temperature",
+   "description": "SoC (thermal_zone0) and per-radio sensors. Broadcom radios sitting in the 70s are normal; the SoC climbing while radios stay flat usually means airflow rather than wireless load.",
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 7
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "mediastack_router_temperature_celsius",
+     "legendFormat": "{{router}} {{sensor}}",
+     "instant": false,
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "celsius",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 0
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 80
+       },
+       {
+        "color": "red",
+        "value": 95
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {}
+  },
+  {
+   "type": "row",
+   "title": "Throughput",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 15
+   },
+   "panels": []
+  },
+  {
+   "type": "timeseries",
+   "title": "LAN bridge throughput (br0)",
+   "description": "Rate of change of the interface byte counters. br0 is the LAN-side bridge, so this is household traffic rather than internet traffic.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 16
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rate(mediastack_router_interface_rx_bytes_total{interface=\"br0\"}[5m])*8",
+     "legendFormat": "{{router}} rx",
+     "instant": false,
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "rate(mediastack_router_interface_tx_bytes_total{interface=\"br0\"}[5m])*8",
+     "legendFormat": "{{router}} tx",
+     "instant": false,
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bps",
+     "min": 0,
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 6
+     }
+    },
+    "overrides": []
+   },
+   "options": {}
+  },
+  {
+   "type": "timeseries",
+   "title": "Mesh backhaul throughput",
+   "description": "The wds interfaces are the wireless links between the main router and each node. Everything a node's clients do crosses one of these, so saturation here caps that node no matter how good its own radio looks.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 16
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rate(mediastack_router_interface_rx_bytes_total{interface=~\"wds.*\"}[5m])*8",
+     "legendFormat": "{{router}} {{interface}} rx",
+     "instant": false,
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "rate(mediastack_router_interface_tx_bytes_total{interface=~\"wds.*\"}[5m])*8",
+     "legendFormat": "{{router}} {{interface}} tx",
+     "instant": false,
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bps",
+     "min": 0,
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 1,
+      "fillOpacity": 6
+     }
+    },
+    "overrides": []
+   },
+   "options": {}
+  },
+  {
+   "type": "row",
+   "title": "Wireless",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 24
+   },
+   "panels": []
+  },
+  {
+   "type": "timeseries",
+   "title": "Clients per radio",
+   "description": "Stations associated per radio interface. eth5 is 2.4 GHz and eth6 is 5 GHz on these units. Clients are counted where they are actually associated, so this shows how the mesh is distributing them.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 25
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "mediastack_router_wifi_clients",
+     "legendFormat": "{{router}} {{interface}}",
+     "instant": false,
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "min": 0,
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "stacking": {
+       "mode": "normal"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {}
+  },
+  {
+   "type": "timeseries",
+   "title": "Mesh backhaul signal",
+   "description": "RSSI of each wireless backhaul link, in dBm. Closer to zero is better: roughly -60 is strong, -70 workable, past -80 expect the node to drop to a lower rate and its clients to feel it.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 25
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "mediastack_router_backhaul_rssi_dbm",
+     "legendFormat": "{{router}} {{interface}}",
+     "instant": false,
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "dBm",
+     "max": -30,
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 0
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": -80
+       },
+       {
+        "color": "green",
+        "value": -70
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {}
+  }
+ ],
+ "templating": {
+  "list": [
+   {
+    "name": "datasource",
+    "label": "Datasource",
+    "type": "datasource",
+    "query": "prometheus",
+    "current": {},
+    "hide": 0,
+    "refresh": 1
+   }
+  ]
+ }
+}

@@ -1,0 +1,12 @@
+[Unit]
+Description=Collect router metrics every 2 minutes
+
+[Timer]
+# Two minutes. Throughput is a rate over counters, so the sample interval sets
+# how sharp a spike can look; finer than this just adds SSH churn for graphs
+# nobody reads at that resolution.
+OnBootSec=4min
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target

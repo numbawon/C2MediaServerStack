@@ -1,0 +1,22 @@
+# Collects CPU, memory, temperature, throughput and client counts from the
+# AiMesh routers over SSH. See scripts/router-exporter.py.
+#
+# Replace youruser with your actual repo path before installing.
+[Unit]
+Description=mediastack router metrics export
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Runs as the user, NOT root, unlike every other unit here. The SSH key that
+# reaches the routers lives in that user's ~/.ssh and root would not find it.
+# That user is in the docker group, so writing the metrics still works.
+User=youruser
+WorkingDirectory=/home/youruser/C2MediaServerStack
+EnvironmentFile=/home/youruser/C2MediaServerStack/.env
+ExecStart=/usr/bin/python3 /home/youruser/C2MediaServerStack/scripts/router-exporter.py
+# Three SSH round trips. If they cannot finish in two minutes the network is
+# the problem, not this.
+TimeoutStartSec=2m

@@ -466,6 +466,93 @@ groups:
             Update notifications are silently not happening.
 
       # -----------------------------------------------------------------
+      # Routers (scripts/router-exporter.py)
+      # -----------------------------------------------------------------
+
+      - alert: RouterUnreachable
+        # A mesh node that stops answering is invisible otherwise: the wifi
+        # keeps working from the other nodes, so nothing degrades in a way
+        # anyone notices until coverage quietly gets worse in one room.
+        expr: mediastack_router_up == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Router not answering: {{ $labels.router }}"
+          description: >-
+            {{ $labels.router }} ({{ $labels.role }}) has not responded over
+            SSH for 10 minutes. Powered off, rebooting, or it lost the key.
+
+      - alert: RouterTemperatureHigh
+        # Broadcom radios run warm and the 70s are normal. This is set where
+        # throttling and instability actually start.
+        expr: mediastack_router_temperature_celsius > 95
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.router }} {{ $labels.sensor }} at {{ $value }}C"
+          description: >-
+            Sustained above 95C. Check airflow and whether it is sitting in
+            sun or on top of something else warm.
+
+      - alert: RouterMemoryLow
+        # 512 MB and no swap. When these run out they drop connections rather
+        # than slowing down, which looks like a wifi problem.
+        expr: >-
+          mediastack_router_memory_available_bytes
+          / mediastack_router_memory_total_bytes < 0.10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.router }} has under 10% memory free"
+          description: >-
+            These have no swap, so exhaustion shows up as dropped connections
+            rather than slowness. A reboot clears it; repeated occurrences
+            mean something is leaking.
+
+      - alert: RouterBackhaulWeak
+        # The wireless link carrying everything a node's clients do. Weak
+        # backhaul caps that node no matter how strong its own radio looks to
+        # the client.
+        expr: mediastack_router_backhaul_rssi_dbm < -80
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Weak mesh backhaul: {{ $labels.interface }} at {{ $value }} dBm"
+          description: >-
+            Below -80 dBm the link drops to a lower rate and every client on
+            that node feels it. Usually means a node was moved, or something
+            large now sits between it and the main router.
+
+      - alert: RouterConntrackFilling
+        expr: >-
+          mediastack_router_conntrack_count
+          / mediastack_router_conntrack_max > 0.80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.router }} connection table over 80% full"
+          description: >-
+            New connections are refused once this fills, which presents as
+            some sites loading and others not.
+
+      - alert: RouterExporterStale
+        expr: >-
+          time() - mediastack_router_exporter_last_run_timestamp_seconds > 900
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Router metrics have not updated in 15 minutes"
+          description: >-
+            The collector runs every 2 minutes. Nothing is watching the
+            routers while this is firing.
+
+      # -----------------------------------------------------------------
       # Authentik accounts (scripts/authentik-watchdog.py)
       # -----------------------------------------------------------------
 

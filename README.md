@@ -950,6 +950,57 @@ cloudflared tunnel route dns mediastack ai.yourdomain.com
 Without it the name simply does not resolve, which looks like the service
 being down rather than like a missing record.
 
+## Router metrics (AiMesh)
+
+The router syslog already shipped to Loki carries **events**, not numbers:
+boots, WAN transitions, DDNS updates, dropbear logins. There is nothing in
+that stream to chart, which is why "how warm is the radio" and "how much is
+crossing the backhaul" needed a separate collector.
+
+`scripts/router-exporter.py` SSHes to each device every two minutes and
+reads `/proc` and `wl`. No SNMP (not enabled, and turning it on means an
+Entware package plus another LAN listener), no agent on the router (`/opt`
+and `/jffs` do not survive a firmware update). Dashboard: **Routers
+(AiMesh)**, uid `routers`.
+
+### The mesh nodes were never covered
+
+An AiMesh node forwards its logs nowhere. The two nodes are separate
+devices that happen to be centrally configured, which is why the Loki
+`router` job only ever had one host in it, `c2rtr`. Node addresses are
+discovered from the main router's own `cfg_device_list` on each run rather
+than hardcoded, so a node that gets a new DHCP lease is still found.
+
+### What it collects
+
+| Metric | From | Notes |
+|---|---|---|
+| load, cores | `/proc/loadavg`, `/proc/cpuinfo` | charted as load per core, so 1.0 means saturated on any model |
+| memory | `/proc/meminfo` | 512 MB and **no swap**: exhaustion drops connections rather than slowing down |
+| SoC temperature | `/sys/class/thermal/thermal_zone0` | |
+| per-radio temperature | `wl -i ethN phy_tempsense` | eth5 is 2.4 GHz, eth6 is 5 GHz |
+| throughput | `/proc/net/dev` | counters, charted as a rate |
+| wifi clients | `wl -i ethN assoclist` | counted where they are actually associated |
+| backhaul RSSI | `wl -i wdsN rssi` | the wireless link every node client depends on |
+| conntrack | `/proc/sys/net/netfilter/nf_conntrack_*` | mesh nodes bridge rather than route, so theirs sit near zero |
+
+Backhaul is the one worth watching. Everything a node's clients do crosses
+that wireless link, so a weak one caps the node no matter how strong its
+radio looks to the client sitting next to it.
+
+### This unit runs as a user, not root
+
+Every other timer here runs as root. This one sets `User=` because the SSH
+key that reaches the routers lives in a home directory and root would not
+find it. That user must be in the `docker` group for the metrics write to
+work.
+
+That makes it the one unit where the install has to substitute **two**
+things, the repo path and the user, which is why the install loop carries a
+second `sed` expression. `scripts/check-unit-paths.sh` fails on a leftover
+`User=youruser`, because systemd rejects it with "Failed to determine user
+credentials" rather than anything mentioning a placeholder.
+
 ## TLS certificates (Let's Encrypt)
 
 Traefik holds one wildcard certificate for `<domain>` + `*.<domain>`,
@@ -1794,7 +1845,7 @@ sudo systemctl enable --now mediastack-backup-local.timer mediastack-backup-offs
 Several of these had install instructions scattered across other sections
 and several had none at all, which meant following this README left you
 without backup verification, without the VPN watchdog, and without log
-trimming. All nine:
+trimming. All ten:
 
 | Timer | Schedule | What it does |
 |---|---|---|
@@ -1806,18 +1857,20 @@ trimming. All nine:
 | `mediastack-vpn-watchdog` | every 2 min | Restarts qBittorrent when the tunnel's exit IP changes |
 | `mediastack-authentik-watchdog` | every 5 min | Exports Authentik account state so a new account raises an alert |
 | `mediastack-crowdsec-geo` | every 15 min | Exports CrowdSec alert sources with coordinates for the IDS world map |
+| `mediastack-router-exporter` | every 2 min | Collects CPU, memory, temperature, throughput and client counts from all three AiMesh routers over SSH |
 | `mediastack-trim-logs` | hourly | Caps runaway container logs |
 
 ```bash
 cd /path/to/C2MediaServerStack
 for u in backup-local backup-offsite verify-backups media-watchdog \
-         ai-digest vpn-watchdog trim-logs authentik-watchdog crowdsec-geo; do
-  sed "s|/home/youruser/C2MediaServerStack|$PWD|g" \
+         ai-digest vpn-watchdog trim-logs authentik-watchdog crowdsec-geo \\
+         router-exporter; do
+  sed -e "s|/home/youruser/C2MediaServerStack|$PWD|g" -e "s|^User=youruser$|User=$USER|" \
     "systemd/mediastack-$u.service" | sudo tee "/etc/systemd/system/mediastack-$u.service" >/dev/null
   sudo cp "systemd/mediastack-$u.timer" /etc/systemd/system/
 done
 sudo systemctl daemon-reload
-sudo systemctl enable --now mediastack-{backup-local,backup-offsite,verify-backups,media-watchdog,ai-digest,vpn-watchdog,trim-logs,authentik-watchdog,crowdsec-geo}.timer
+sudo systemctl enable --now mediastack-{backup-local,backup-offsite,verify-backups,media-watchdog,ai-digest,vpn-watchdog,trim-logs,authentik-watchdog,crowdsec-geo,router-exporter}.timer
 ```
 
 That loop substitutes the repo path rather than copying verbatim, which
@@ -2551,7 +2604,7 @@ Prometheus (rules/) --> Alertmanager --> alert-relay --> ntfy --> phone
 
 ### Every alert, and what it means
 
-Forty-seven rules across `alerts.yml` and `ids.yml`. Until now the README
+Fifty-three rules across `alerts.yml` and `ids.yml`. Until now the README
 named three of them, so an alert arriving on your phone at 3 a.m. sent you
 grepping the rules files to find out what it meant. Each rule still carries
 its full reasoning as a comment beside it; this is the index.
@@ -2573,6 +2626,13 @@ grep -hE "^      - alert:|severity:|summary:" prometheus/rules/*.yml
 | `BackupRestoreTestStale` | warning | No successful restore test in over 45 days |
 | `BackupSnapshotsMissing` | critical | Off-site repository has fewer than 2 snapshots |
 | `BackupVerificationStale` | warning | Backup verification has not run in over 9 days |
+| **Routers** | | |
+| `RouterUnreachable` | warning | Router not answering: <label> |
+| `RouterTemperatureHigh` | critical | <label> <label> at <label>C |
+| `RouterMemoryLow` | warning | <label> has under 10% memory free |
+| `RouterBackhaulWeak` | warning | Weak mesh backhaul: <label> at <label> dBm |
+| `RouterConntrackFilling` | warning | <label> connection table over 80% full |
+| `RouterExporterStale` | warning | Router metrics have not updated in 15 minutes |
 | **Accounts** | | |
 | `AuthentikNewAccount` | info | New Authentik account: <label> |
 | `AuthentikWatchdogStale` | warning | Authentik account watch has not run in over an hour |
