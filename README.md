@@ -539,7 +539,7 @@ The router is a deliberate exception rather than an oversight. Its
 settings are few and reconstructible from its own UI, and the one file
 that would be tedious to retype -- `router/syslog-ng-remote.conf` -- is
 kept in this repo. If the router is ever reset or replaced, the list to
-redo is: the WAN 32443 -> 192.168.50.10:443 forward that carries Plex,
+redo is: the WAN 32443 -> ${COMMON_LAN_IP}:443 forward that carries Plex,
 the Cloudflare DDNS script at `/jffs/scripts/ddns-start`, the 5GHz
 channel pinned to 149/80 to stay off DFS, and the syslog drop-in.
 
@@ -1013,14 +1013,14 @@ ssh <router> 'nvram get wan0_ipaddr'
 
 Then watch the DNAT counters across an external connection attempt. On
 443 they do not move at all, so the packets never reach the router. On
-32443, forwarded to 192.168.50.10:443, they do:
+32443, forwarded to ${COMMON_LAN_IP}:443, they do:
 
 ```
-0  DNAT tcp dpt:443   to:192.168.50.10
-3  DNAT tcp dpt:32443 to:192.168.50.10:443
+0  DNAT tcp dpt:443   to:${COMMON_LAN_IP}
+3  DNAT tcp dpt:32443 to:${COMMON_LAN_IP}:443
 ```
 
-So: `WAN 32443 -> 192.168.50.10:443`, and Plex's `customConnections` is
+So: `WAN 32443 -> ${COMMON_LAN_IP}:443`, and Plex's `customConnections` is
 `https://plex.<domain>:32443`. Traefik needs no change -- the client
 still asks for the same hostname, so the wildcard certificate is valid.
 The 443 forward is left in place; it costs nothing and starts working if

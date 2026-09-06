@@ -131,7 +131,7 @@ http:
           # above, which is a different thing: it decides whose
           # X-Forwarded-For is believed, not who is exempt.
           clientTrustedIPs:
-            - 192.168.50.0/24
+            - {{ env "COMMON_LAN_SUBNET" }}
 
           # --- AppSec (WAF), DETECT ONLY -------------------------------
           # Inspects individual request payloads (SQLi, XSS, traversal,
