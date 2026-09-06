@@ -61,6 +61,14 @@ METRIC_FILE="backup_verify.prom"
 RESTORE_PATH="${RESTORE_PATH:-/data/appdata/prowlarr}"
 RESTORE_INTERVAL_DAYS="${RESTORE_INTERVAL_DAYS:-28}"
 
+# Which database dump to prove restorable, and the Postgres major version to
+# load it into. Authentik deliberately: losing that database locks you out of
+# every service behind SSO, so it is the one whose recovery is worth proving.
+# The image tag must match the server the dump came from; a dump from 16 will
+# not load into 14.
+DB_RESTORE_DUMP="${DB_RESTORE_DUMP:-authentik}"
+DB_RESTORE_IMAGE="${DB_RESTORE_IMAGE:-postgres:16}"
+
 RESTIC_ENV=(-e RESTIC_REPOSITORY -e RESTIC_PASSWORD -e B2_ACCOUNT_ID -e B2_ACCOUNT_KEY)
 
 # Arguments go AFTER the image name or docker parses them as its own
@@ -91,6 +99,9 @@ write_metrics() {
 
 integrity_ok=0
 restore_ok=0
+db_restore_ok=0
+db_tables=0
+db_expected_tables=0
 restore_ran=0
 restore_files=0
 expected_files=0
@@ -170,6 +181,100 @@ if [ "$age_days" -ge "$RESTORE_INTERVAL_DAYS" ]; then
   else
     echo "    RESTORE COMMAND FAILED" >&2
   fi
+
+  # -------------------------------------------------------------------
+  # Database restore, into a throwaway server
+  #
+  # The file restore above proves a directory tree comes back. It says
+  # nothing about whether a database does, and those fail differently: a
+  # dump can be present, correctly sized and valid gzip while still being
+  # unloadable. The only way to know is to load it.
+  #
+  # Authentik's by default, because losing that database locks you out of
+  # every service behind SSO.
+  #
+  # The server is a disposable container with no volume, so this cannot
+  # touch the running stack even if the dump is malformed.
+  # -------------------------------------------------------------------
+  DB_DUMP_PATH="/data/dbdumps/${DB_RESTORE_DUMP}.sql.gz"
+  DB_TEST_CONTAINER="verify-dbrestore-$$"
+
+  cleanup_dbtest() {
+    docker rm -f "$DB_TEST_CONTAINER" >/dev/null 2>&1 || true
+  }
+  trap 'cleanup_dbtest; cleanup_scratch' EXIT
+
+  echo "==> database restore test (${DB_RESTORE_DUMP} into ${DB_RESTORE_IMAGE})"
+
+  if restic_mounted "${SCRATCH}:/restore" \
+       restore latest --target /restore --include "${DB_DUMP_PATH}" >/dev/null 2>&1 \
+     && [ -s "${SCRATCH}${DB_DUMP_PATH}" ]; then
+
+    # What the dump says it holds, so the assertion is against the dump
+    # itself rather than a number hardcoded here that would rot.
+    db_expected_tables=$(gzip -dc "${SCRATCH}${DB_DUMP_PATH}" 2>/dev/null \
+      | grep -c "^CREATE TABLE" || true)
+
+    # POSTGRES_USER/DB match the dump's owner and database name, which
+    # dump-databases.sh keeps identical to the label. Without the role the
+    # OWNER TO statements fail and the tables land unowned.
+    if docker run -d --rm --name "$DB_TEST_CONTAINER" \
+         -e POSTGRES_PASSWORD=verify \
+         -e POSTGRES_USER="${DB_RESTORE_DUMP}" \
+         -e POSTGRES_DB="${DB_RESTORE_DUMP}" \
+         "$DB_RESTORE_IMAGE" >/dev/null 2>&1; then
+
+      ready=0
+      for _ in $(seq 1 60); do
+        if docker exec "$DB_TEST_CONTAINER" pg_isready -U "${DB_RESTORE_DUMP}" \
+             >/dev/null 2>&1; then
+          ready=1
+          break
+        fi
+        sleep 2
+      done
+
+      if [ "$ready" -eq 1 ]; then
+        # ON_ERROR_STOP is deliberately off: the dump carries --clean
+        # --if-exists, so its DROP statements fail harmlessly against a
+        # fresh database. The table count below is the real assertion.
+        gzip -dc "${SCRATCH}${DB_DUMP_PATH}" 2>/dev/null \
+          | docker exec -i "$DB_TEST_CONTAINER" \
+              psql -U "${DB_RESTORE_DUMP}" -d "${DB_RESTORE_DUMP}" -q >/dev/null 2>&1 || true
+
+        # Every user schema, not just public. Authentik keeps 230 tables in
+        # public and another 155 in a `template` schema; counting only
+        # public compared 230 against the dump's 385 CREATE TABLE lines and
+        # failed a restore that had in fact worked perfectly. Both sides
+        # have to be counted the same way.
+        db_tables=$(docker exec "$DB_TEST_CONTAINER" psql -U "${DB_RESTORE_DUMP}" \
+          -d "${DB_RESTORE_DUMP}" -tAc \
+          "select count(*) from information_schema.tables
+             where table_schema not in ('pg_catalog','information_schema')" \
+          2>/dev/null | tr -d '[:space:]')
+        db_tables=${db_tables:-0}
+
+        echo "    loaded ${db_tables} tables, dump declares ${db_expected_tables}"
+        if [ "$db_tables" -gt 0 ] && [ "$db_expected_tables" -gt 0 ] \
+           && [ "$db_tables" -eq "$db_expected_tables" ]; then
+          db_restore_ok=1
+          echo "    database restore OK"
+        else
+          echo "    DATABASE RESTORE ASSERTION FAILED" >&2
+        fi
+      else
+        echo "    throwaway Postgres never became ready" >&2
+      fi
+    else
+      echo "    could not start the throwaway Postgres" >&2
+    fi
+  else
+    echo "    ${DB_DUMP_PATH} is not in the latest snapshot," >&2
+    echo "    or restored empty. Databases are dumped by" >&2
+    echo "    scripts/dump-databases.sh, called from both backup jobs." >&2
+  fi
+  cleanup_dbtest
+
   cleanup_scratch
   trap - EXIT
 else
@@ -179,6 +284,10 @@ else
   restore_ok=$(read_prev mediastack_backup_verify_restore_success)
   restore_ok=${restore_ok%%.*}
   [ -z "$restore_ok" ] && restore_ok=0
+  # Same for the database result: a skipped run must not read as a failure.
+  db_restore_ok=$(read_prev mediastack_backup_verify_db_restore_success)
+  db_restore_ok=${db_restore_ok%%.*}
+  [ -z "$db_restore_ok" ] && db_restore_ok=0
 fi
 
 snapshot_count=$(restic_run snapshots --json 2>/dev/null | grep -o '"time"' | wc -l)
@@ -205,6 +314,15 @@ mediastack_backup_verify_restored_files ${restore_files}
 # HELP mediastack_backup_verify_expected_files Files the snapshot manifest listed for the tested volume.
 # TYPE mediastack_backup_verify_expected_files gauge
 mediastack_backup_verify_expected_files ${expected_files}
+# HELP mediastack_backup_verify_db_restore_success Whether a database dump loaded into a throwaway server and matched its own table count.
+# TYPE mediastack_backup_verify_db_restore_success gauge
+mediastack_backup_verify_db_restore_success ${db_restore_ok}
+# HELP mediastack_backup_verify_db_tables Tables present after loading the dump.
+# TYPE mediastack_backup_verify_db_tables gauge
+mediastack_backup_verify_db_tables ${db_tables}
+# HELP mediastack_backup_verify_db_expected_tables Tables the dump itself declares.
+# TYPE mediastack_backup_verify_db_expected_tables gauge
+mediastack_backup_verify_db_expected_tables ${db_expected_tables}
 # HELP mediastack_backup_verify_snapshots Snapshots currently in the repository.
 # TYPE mediastack_backup_verify_snapshots gauge
 mediastack_backup_verify_snapshots ${snapshot_count}

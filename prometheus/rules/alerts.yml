@@ -201,6 +201,23 @@ groups:
             verification. Investigate before the next forget/prune, which
             could compact damage into the only remaining copy.
 
+      - alert: BackupDatabaseRestoreFailed
+        # The file restore test proves a directory tree comes back. This
+        # proves a DATABASE does, which fails differently: a dump can be
+        # present, correctly sized and valid gzip while being unloadable,
+        # and the only way to know is to load it. Authentik's by default,
+        # because losing that one locks you out of everything behind SSO.
+        expr: mediastack_backup_verify_db_restore_success == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database restore test failed"
+          description: >-
+            A dump was loaded into a throwaway Postgres and produced
+            {{ $value }} tables against the count the dump itself declares.
+            The dump exists but has not been shown to come back.
+
       - alert: BackupRestoreTestFailed
         expr: mediastack_backup_verify_restore_success == 0
         for: 5m
