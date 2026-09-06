@@ -287,6 +287,11 @@ services:
       # Host(`plex.example.com`)), so the plex/qbittorrent static routes
       # never matched any real request.
       - COMMON_DOMAIN=${COMMON_DOMAIN}
+      # Same mechanism, same trap: dynamic.yml's CrowdSec bouncer reads
+      # clientTrustedIPs from {{ env "COMMON_LAN_SUBNET" }}. Without this
+      # the template renders empty, the list empties, and LAN clients
+      # quietly stop being exempt from the bouncer.
+      - COMMON_LAN_SUBNET=${COMMON_LAN_SUBNET}
       # lego (the ACME library Traefik embeds) accepts a _FILE suffix on
       # any of its provider variables and reads the value out of the file,
       # so the Cloudflare token stays a Docker secret instead of sitting
