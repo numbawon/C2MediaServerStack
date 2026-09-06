@@ -1794,7 +1794,7 @@ sudo systemctl enable --now mediastack-backup-local.timer mediastack-backup-offs
 Several of these had install instructions scattered across other sections
 and several had none at all, which meant following this README left you
 without backup verification, without the VPN watchdog, and without log
-trimming. All eight:
+trimming. All nine:
 
 | Timer | Schedule | What it does |
 |---|---|---|
@@ -1805,18 +1805,19 @@ trimming. All eight:
 | `mediastack-ai-digest` | daily 07:45 | Summarises findings and firing alerts to ntfy |
 | `mediastack-vpn-watchdog` | every 2 min | Restarts qBittorrent when the tunnel's exit IP changes |
 | `mediastack-authentik-watchdog` | every 5 min | Exports Authentik account state so a new account raises an alert |
+| `mediastack-crowdsec-geo` | every 15 min | Exports CrowdSec alert sources with coordinates for the IDS world map |
 | `mediastack-trim-logs` | hourly | Caps runaway container logs |
 
 ```bash
 cd /path/to/C2MediaServerStack
 for u in backup-local backup-offsite verify-backups media-watchdog \
-         ai-digest vpn-watchdog trim-logs authentik-watchdog; do
+         ai-digest vpn-watchdog trim-logs authentik-watchdog crowdsec-geo; do
   sed "s|/home/youruser/C2MediaServerStack|$PWD|g" \
     "systemd/mediastack-$u.service" | sudo tee "/etc/systemd/system/mediastack-$u.service" >/dev/null
   sudo cp "systemd/mediastack-$u.timer" /etc/systemd/system/
 done
 sudo systemctl daemon-reload
-sudo systemctl enable --now mediastack-{backup-local,backup-offsite,verify-backups,media-watchdog,ai-digest,vpn-watchdog,trim-logs,authentik-watchdog}.timer
+sudo systemctl enable --now mediastack-{backup-local,backup-offsite,verify-backups,media-watchdog,ai-digest,vpn-watchdog,trim-logs,authentik-watchdog,crowdsec-geo}.timer
 ```
 
 That loop substitutes the repo path rather than copying verbatim, which

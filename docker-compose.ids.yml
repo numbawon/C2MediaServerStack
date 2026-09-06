@@ -95,12 +95,22 @@ services:
       - SURICATA_OPTIONS=--set stream.inline=no --set stats.interval=30 --set outputs.1.eve-log.types.3.http.enabled=no --set outputs.1.eve-log.types.4.dns.enabled=no --set outputs.1.eve-log.types.5.mdns.enabled=no --set outputs.1.eve-log.types.6.tls.enabled=no --set outputs.1.eve-log.types.7.files.enabled=no --set outputs.1.eve-log.types.26.dhcp.enabled=no
     volumes:
       - suricata_logs:/var/log/suricata
-      # A named volume, not a bind mount of ./suricata: the image chowns
-      # /etc/suricata recursively on start, and a read-only bind there
-      # makes it crash-loop on "Read-only file system". Docker seeds the
-      # volume from the image on first run, so the default config and the
-      # rule tuning in disable.conf both live here and survive updates.
+      # Read-WRITE, and it must stay that way: the image chowns
+      # /etc/suricata recursively on start, so a read-only mount here makes
+      # it crash-loop on "Read-only file system". Holds the default config
+      # plus the rule tuning in disable.conf.
       - ${COMMON_CONFIG}/suricata:/etc/suricata
+      # The ruleset, and it has to be a NAMED volume. The image declares
+      # /var/lib/suricata as a VOLUME, so without this Docker creates an
+      # anonymous one that is abandoned every time the container is
+      # recreated. suricata-update's 47911 rules then vanish and the engine
+      # starts with zero, which looks healthy in every check except
+      # ruleset-stats: the process runs, the interface is captured, the logs
+      # flow, and it detects nothing.
+      #
+      # That is exactly what happened on 2026-09-06 after an unrelated
+      # `compose down && up`. SuricataNoRulesLoaded is what caught it.
+      - suricata_rules:/var/lib/suricata
     restart: unless-stopped
 
 networks:
@@ -114,6 +124,8 @@ volumes:
     name: crowdsec_data
   suricata_logs:
     name: suricata_logs
+  suricata_rules:
+    name: suricata_rules
   # Written by the swarm stack's traefik, read here.
   traefik_logs:
     name: traefik_logs

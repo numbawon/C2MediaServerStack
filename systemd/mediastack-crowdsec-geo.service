@@ -1,0 +1,15 @@
+# Exports CrowdSec alert sources with coordinates, for the world map on the
+# IDS dashboard. See scripts/crowdsec-geo.py.
+#
+# Replace youruser with your actual repo path before installing.
+[Unit]
+Description=mediastack CrowdSec alert source geolocation export
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/youruser/C2MediaServerStack
+ExecStart=/usr/bin/python3 /home/youruser/C2MediaServerStack/scripts/crowdsec-geo.py
+TimeoutStartSec=10m
