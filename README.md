@@ -2518,6 +2518,74 @@ Prometheus (rules/) --> Alertmanager --> alert-relay --> ntfy --> phone
 - **Rules** are in `prometheus/rules/alerts.yml`, kept deliberately
   small. A noisy alerting system gets muted, and a muted one is worse
   than none because you believe you have one.
+
+### Every alert, and what it means
+
+Forty-five rules across `alerts.yml` and `ids.yml`. Until now the README
+named three of them, so an alert arriving on your phone at 3 a.m. sent you
+grepping the rules files to find out what it meant. Each rule still carries
+its full reasoning as a comment beside it; this is the index.
+
+Regenerate after adding a rule rather than editing by hand:
+
+```bash
+grep -hE "^      - alert:|severity:|summary:" prometheus/rules/*.yml
+```
+
+| Alert | Severity | Fires when |
+|---|---|---|
+| **Backups** | | |
+| `BackupDatabaseRestoreFailed` | critical | Database restore test failed |
+| `BackupIntegrityFailed` | critical | restic check failed on the off-site repository |
+| `BackupJobFailed` | critical | The off-site backup job failed on its last run |
+| `BackupJobStale` | critical | No successful off-site backup in over 30 hours |
+| `BackupRestoreTestFailed` | critical | Backup restore test failed |
+| `BackupRestoreTestStale` | warning | No successful restore test in over 45 days |
+| `BackupSnapshotsMissing` | critical | Off-site repository has fewer than 2 snapshots |
+| `BackupVerificationStale` | warning | Backup verification has not run in over 9 days |
+| **Media library** | | |
+| `MediaRootOwnedFiles` | warning | Root-owned files under <label> |
+| `MediaStorageCritical` | critical | Media storage below 75 GB free |
+| `MediaStorageFilling` | warning | Media storage below 250 GB free |
+| `MediaWatchdogFailed` | warning | Media watchdog could not complete its checks |
+| `MediaWatchdogStale` | warning | Media watchdog has not run in over 14 hours |
+| `PodcastEpisodesMissingDuration` | info | Episodes with no duration: <label> |
+| `PodcastImportWillFail` | info | COMM frames will fail the next import: <label> |
+| `PodcastImportedEmpty` | warning | Podcast has zero episodes: <label> |
+| `PodcastNotImported` | warning | Podcast folder is not in PinePods: <label> |
+| `PodcastOrphanEpisodes` | warning | Episodes point at missing files: <label> |
+| `PodcastTitleDrift` | info | Stored titles no longer match file tags: <label> |
+| **Reachability and TLS** | | |
+| `OriginTlsCertExpiringSoon` | critical | Traefik's Let's Encrypt certificate expires in under 21 days |
+| `OriginTlsProbeDown` | warning | Cannot reach Traefik directly to check its certificate |
+| `PublicEndpointDown` | critical | <label> is unreachable from outside |
+| `TlsCertExpiringSoon` | warning | TLS certificate for <label> expires in under 14 days |
+| `TunnelDown` | critical | Multiple public endpoints down: tunnel or DNS, not the apps |
+| **DNS** | | |
+| `DnsFilteringBypassed` | warning | Pi-hole is answering but no longer blocking |
+| `DnsResolverAaaaFailing` | warning | AAAA lookups failing on the <label> resolver |
+| `DnsResolverDown` | critical | DNS resolver <label> not answering |
+| **Host and containers** | | |
+| `BtrfsDeviceErrors` | critical | btrfs <label> errors on <label> |
+| `ContainerRestartLoop` | warning | <label> is restarting repeatedly |
+| `HostMemoryPressure` | warning | Less than 10 percent memory available |
+| `PrometheusNotConnectedToAlertmanager` | critical | Prometheus cannot reach Alertmanager |
+| `SystemDiskCritical` | critical | System disk below 10 GB free |
+| `SystemDiskFilling` | warning | System disk below 25 GB free |
+| `TargetDown` | critical | <label> has been unreachable for 5 minutes |
+| `Watchdog` | none | Alerting pipeline is alive |
+| **Intrusion detection** | | |
+| `CrowdSecDown` | critical | CrowdSec is unreachable |
+| `SuricataDroppingPackets` | warning | Suricata dropping <label> of packets |
+| `SuricataExporterDown` | critical | Suricata exporter is unreachable |
+| `SuricataNoRulesLoaded` | critical | Suricata has ZERO detection rules loaded |
+| `SuricataNotCapturing` | critical | Suricata is capturing no packets |
+| `SuricataRulesFailed` | warning | <label> Suricata rules failed to load |
+| `SuricataStale` | critical | Suricata is not emitting stats |
+| **Image updates** | | |
+| `DiunStale` | warning | Diun has not completed a run in over 26 hours |
+| `DiunTrackingNothing` | warning | Diun completed a run but is tracking no images |
+| `ImageUpdateAvailable` | info | Update available: <label> |
 - **Editing a rule is not enough to apply it.** The rules directory is a
   bind mount, so the new file is inside the container immediately, but
   Prometheus only re-reads it on SIGHUP. `docker stack deploy` will not
