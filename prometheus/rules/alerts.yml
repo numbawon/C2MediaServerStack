@@ -466,6 +466,44 @@ groups:
             Update notifications are silently not happening.
 
       # -----------------------------------------------------------------
+      # Authentik accounts (scripts/authentik-watchdog.py)
+      # -----------------------------------------------------------------
+
+      - alert: AuthentikNewAccount
+        # Fires for 24h after an account first appears, then resolves on its
+        # own. Accounts are gated upstream by the Google consent screen's
+        # test-user allowlist, so this is "someone you allowlisted signed in
+        # for the first time", not "a stranger got in". Informational by
+        # design: it should be a thing you notice, not a thing that wakes you.
+        expr: >-
+          time() - mediastack_authentik_user_created_timestamp_seconds < 86400
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "New Authentik account: {{ $labels.username }}"
+          description: >-
+            {{ $labels.username }} appeared in Authentik within the last day.
+            If you did not expect it, deactivate it in Authentik and check
+            the Google OAuth consent screen's test-user list, which is what
+            gates who can reach the login at all.
+
+      - alert: AuthentikWatchdogStale
+        # Runs every 5 minutes. Past an hour it has wedged, and "no new
+        # account alerts" would otherwise be indistinguishable from "nobody
+        # is checking".
+        expr: >-
+          time() - mediastack_authentik_watchdog_last_run_timestamp_seconds > 3600
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Authentik account watch has not run in over an hour"
+          description: >-
+            New accounts would appear unannounced. Check
+            mediastack-authentik-watchdog.timer.
+
+      # -----------------------------------------------------------------
       # Media library consistency (scripts/media-watchdog.py)
       #
       # Every one of these describes a failure that has actually happened

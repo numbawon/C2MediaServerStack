@@ -1791,10 +1791,10 @@ sudo systemctl enable --now mediastack-backup-local.timer mediastack-backup-offs
 
 ### Every timer, in one place
 
-Three of these had install instructions scattered across other sections
-and three had none at all, which meant following this README left you
+Several of these had install instructions scattered across other sections
+and several had none at all, which meant following this README left you
 without backup verification, without the VPN watchdog, and without log
-trimming. All seven:
+trimming. All eight:
 
 | Timer | Schedule | What it does |
 |---|---|---|
@@ -1804,18 +1804,19 @@ trimming. All seven:
 | `mediastack-media-watchdog` | every 6h | Compares the media trees against the apps that index them |
 | `mediastack-ai-digest` | daily 07:45 | Summarises findings and firing alerts to ntfy |
 | `mediastack-vpn-watchdog` | every 2 min | Restarts qBittorrent when the tunnel's exit IP changes |
+| `mediastack-authentik-watchdog` | every 5 min | Exports Authentik account state so a new account raises an alert |
 | `mediastack-trim-logs` | hourly | Caps runaway container logs |
 
 ```bash
 cd /path/to/C2MediaServerStack
 for u in backup-local backup-offsite verify-backups media-watchdog \
-         ai-digest vpn-watchdog trim-logs; do
+         ai-digest vpn-watchdog trim-logs authentik-watchdog; do
   sed "s|/home/youruser/C2MediaServerStack|$PWD|g" \
     "systemd/mediastack-$u.service" | sudo tee "/etc/systemd/system/mediastack-$u.service" >/dev/null
   sudo cp "systemd/mediastack-$u.timer" /etc/systemd/system/
 done
 sudo systemctl daemon-reload
-sudo systemctl enable --now mediastack-{backup-local,backup-offsite,verify-backups,media-watchdog,ai-digest,vpn-watchdog,trim-logs}.timer
+sudo systemctl enable --now mediastack-{backup-local,backup-offsite,verify-backups,media-watchdog,ai-digest,vpn-watchdog,trim-logs,authentik-watchdog}.timer
 ```
 
 That loop substitutes the repo path rather than copying verbatim, which
@@ -2521,7 +2522,7 @@ Prometheus (rules/) --> Alertmanager --> alert-relay --> ntfy --> phone
 
 ### Every alert, and what it means
 
-Forty-five rules across `alerts.yml` and `ids.yml`. Until now the README
+Forty-seven rules across `alerts.yml` and `ids.yml`. Until now the README
 named three of them, so an alert arriving on your phone at 3 a.m. sent you
 grepping the rules files to find out what it meant. Each rule still carries
 its full reasoning as a comment beside it; this is the index.
@@ -2543,6 +2544,9 @@ grep -hE "^      - alert:|severity:|summary:" prometheus/rules/*.yml
 | `BackupRestoreTestStale` | warning | No successful restore test in over 45 days |
 | `BackupSnapshotsMissing` | critical | Off-site repository has fewer than 2 snapshots |
 | `BackupVerificationStale` | warning | Backup verification has not run in over 9 days |
+| **Accounts** | | |
+| `AuthentikNewAccount` | info | New Authentik account: <label> |
+| `AuthentikWatchdogStale` | warning | Authentik account watch has not run in over an hour |
 | **Media library** | | |
 | `MediaRootOwnedFiles` | warning | Root-owned files under <label> |
 | `MediaStorageCritical` | critical | Media storage below 75 GB free |
