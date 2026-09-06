@@ -2794,26 +2794,20 @@ pushes.
 
 ## Kernel tuning
 
-`sysctl/99-mediastack-tuning.conf`, installed the same way as the systemd
-units -- copied, not symlinked, so editing the repo copy changes nothing
-until you install it again:
+None. There was a `sysctl/99-mediastack-tuning.conf` setting
+`vm.swappiness = 10`, and it was removed rather than installed, because the
+reasoning behind it was wrong.
 
-```bash
-sudo cp sysctl/99-mediastack-tuning.conf /etc/sysctl.d/
-sudo sysctl --system
-```
+It argued that the default of 60 evicts idle anonymous pages too eagerly
+and that a service stalls coming back in. That is a real effect when swap
+is a file on disk. This host swaps to **zram**, which is a compressed block
+device in RAM: "swapping" means compressing a page and keeping it in
+memory, at roughly 3x, with no disk involved. The latency it was meant to
+avoid does not exist here, and discouraging zram use trades cheap
+compression for holding uncompressed pages instead.
 
-Currently one setting. `vm.swappiness` drops from the default 60 to 10.
-The default assumes RAM is scarce and evicts idle anonymous pages eagerly
-to grow the page cache; this host has 62 GB with roughly 46 GB available
-and 16 GB committed, so that trade is backwards. It had pushed 3.3 GB of a
-4 GB swap file out -- including gnome-shell, on a headless machine --
-purely because nothing had touched those pages.
-
-Nothing was malfunctioning. This is latency, not capacity: a service whose
-pages were evicted while idle stalls coming back in, and the swap file had
-dropped to 765 MB of headroom for no benefit. 10 rather than 0 keeps
-swapping available under real pressure, which is the point of having it.
+Left at the default 60 deliberately. If swap ever moves back to a disk
+file, the original argument becomes valid again and is worth revisiting.
 
 ## Rotating a secret
 

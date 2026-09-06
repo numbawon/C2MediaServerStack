@@ -1648,6 +1648,17 @@ services:
   audiobookshelf:
     logging: *logging
     image: ghcr.io/advplyr/audiobookshelf:latest
+    # Runs as the owning user, not root. The image defaults to uid 0 and
+    # ignores PUID/PGID (that is a LinuxServer convention and this is not a
+    # LinuxServer image), so without this every file it wrote into
+    # /mnt/Media was root-owned. That produced 1204 such entries under
+    # Audiobooks once already, all of which had to be chowned by hand.
+    #
+    # Its config and metadata directories were chowned to 1000:1000 in the
+    # same change. Setting this without doing that leaves it unable to read
+    # its own database; doing that without setting this just re-creates
+    # root-owned files on the next write. Neither half works alone.
+    user: "${COMMON_PUID}:${COMMON_PGID}"
     environment:
       - TZ=${COMMON_TZ}
     volumes:
