@@ -78,9 +78,15 @@ except Exception:
 cut = int(sys.argv[1])
 n = 0
 for s in snaps:
+    # restic emits Z-suffixed UTC, e.g. 2026-09-05T23:55:59.481542716Z.
+    # Slicing to [:19] drops the Z, and a naive datetime's .timestamp()
+    # is interpreted as LOCAL time, which shifted every snapshot forward
+    # by the UTC offset and made them look newer than they were. On a
+    # UTC-7 host that let the gate unlock up to 7 hours early.
     t = s.get('time', '')[:19]
     try:
-        ts = datetime.datetime.fromisoformat(t).timestamp()
+        ts = datetime.datetime.fromisoformat(t).replace(
+            tzinfo=datetime.timezone.utc).timestamp()
     except ValueError:
         continue
     if ts >= cut:
