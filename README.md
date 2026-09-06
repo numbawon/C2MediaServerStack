@@ -981,12 +981,36 @@ than hardcoded, so a node that gets a new DHCP lease is still found.
 | per-radio temperature | `wl -i ethN phy_tempsense` | eth5 is 2.4 GHz, eth6 is 5 GHz |
 | throughput | `/proc/net/dev` | counters, charted as a rate |
 | wifi clients | `wl -i ethN assoclist` | counted where they are actually associated |
-| backhaul RSSI | `wl -i wdsN rssi` | the wireless link every node client depends on |
+| uplink RSSI, noise, SNR, rate | `wl -i ethN rssi/status/rate` **on the node** | the link every one of that node's clients depends on |
+| WDS link RSSI | `wl -i wdsN rssi` on the router | router-side view of one peer link, and **not** the whole picture |
 | conntrack | `/proc/sys/net/netfilter/nf_conntrack_*` | mesh nodes bridge rather than route, so theirs sit near zero |
 
 Backhaul is the one worth watching. Everything a node's clients do crosses
 that wireless link, so a weak one caps the node no matter how strong its
 radio looks to the client sitting next to it.
+
+**Measure it from the node, not from the router's WDS interfaces.** That was
+the first implementation and it was wrong in a way that read as a fault.
+AiMesh has more than one attachment mode: one node here holds three `wds`
+interfaces on the router, the other attaches as an ordinary station and has
+none at all. Charting `wds` therefore showed three links to one node and
+nothing whatsoever for the other, which looks exactly like a node that lost
+its backhaul. The truth was the opposite, the invisible node had the better
+link:
+
+```
+node A   -54 dBm 2.4GHz + -68 dBm 5GHz    three wds interfaces, visible
+node B   -56 dBm 5GHz, SNR 32, 1621 Mbps  no wds interface, invisible
+```
+
+Reading `wl -i ethN rssi` on each node gives one honest number per node
+whichever mode it uses. A genuine uplink RSSI is negative; the root router
+reports a positive magnitude because it has no uplink, which is the test
+used rather than the mode string, since every radio claims `Mode: Managed`.
+
+SNR and negotiated rate are charted beside RSSI because signal alone can look
+healthy while a noisy channel holds the rate down, and that is the case worth
+catching: link up, signal strong, everything behind the node still slow.
 
 ### This unit runs as a user, not root
 

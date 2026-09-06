@@ -61,7 +61,23 @@ for i in eth5 eth6 eth7; do
 done
 for i in $(ls /sys/class/net 2>/dev/null | grep '^wds'); do
   r=$(wl -i $i rssi 2>/dev/null)
-  [ -n "$r" ] && echo "BACKHAUL $i $r"
+  [ -n "$r" ] && echo "WDSLINK $i $r"
+done
+# The uplink as the NODE sees it. A real uplink RSSI is negative; the root
+# router reports a positive magnitude here because it has no uplink at all,
+# which is why the sign is the test rather than "Mode: Managed" (every one
+# of them claims Managed).
+for r in eth5 eth6 eth7; do
+  rssi=$(wl -i $r rssi 2>/dev/null)
+  case "$rssi" in
+    -*) st=$(wl -i $r status 2>/dev/null)
+        noise=$(echo "$st" | sed -n 's/.*noise: \(-[0-9]*\).*/\1/p' | head -1)
+        snr=$(echo "$st" | sed -n 's/.*SNR: \([0-9]*\).*/\1/p' | head -1)
+        rate=$(wl -i $r rate 2>/dev/null | sed -n 's/^\([0-9.]*\).*/\1/p' | head -1)
+        band=$(wl -i $r band 2>/dev/null)
+        echo "UPLINK $r ${rssi} ${noise:-0} ${snr:-0} ${rate:-0} ${band:-?}"
+        ;;
+  esac
 done
 echo "CONNTRACK $(cat /proc/sys/net/netfilter/nf_conntrack_count 2>/dev/null) $(cat /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null)"
 awk 'NR>2{gsub(":","",$1); print "IFACE "$1" "$2" "$10}' /proc/net/dev
@@ -145,10 +161,24 @@ def main_fn():
                 elif k == "CLIENTS":
                     lines.append('mediastack_router_wifi_clients{router="%s",interface="%s"} %s'
                                  % (esc(host), esc(p[1]), int(p[2])))
-                elif k == "BACKHAUL":
-                    # wl reports the magnitude; RSSI is negative dBm.
-                    lines.append('mediastack_router_backhaul_rssi_dbm{router="%s",interface="%s"} %d'
+                elif k == "WDSLINK":
+                    # Router-side view of one WDS peer link. Kept, but it is
+                    # NOT the whole backhaul picture: AiMesh nodes may attach
+                    # as ordinary stations with no wds interface at all, so a
+                    # node can be perfectly connected and appear nowhere here.
+                    # Use the uplink metrics below to judge a node's link.
+                    lines.append('mediastack_router_wds_link_rssi_dbm{router="%s",interface="%s"} %d'
                                  % (esc(host), esc(p[1]), -abs(int(p[2]))))
+                elif k == "UPLINK" and role != "main" and len(p) >= 7:
+                    band = {"a": "5GHz", "b": "2.4GHz"}.get(p[6], p[6])
+                    lab = 'router="%s",radio="%s",band="%s"' % (esc(host), esc(p[1]), band)
+                    lines.append('mediastack_router_uplink_rssi_dbm{%s} %d' % (lab, int(p[2])))
+                    if int(p[3]):
+                        lines.append('mediastack_router_uplink_noise_dbm{%s} %d' % (lab, int(p[3])))
+                    if int(p[4]):
+                        lines.append('mediastack_router_uplink_snr_db{%s} %d' % (lab, int(p[4])))
+                    if float(p[5]):
+                        lines.append('mediastack_router_uplink_rate_mbps{%s} %s' % (lab, float(p[5])))
                 elif k == "CONNTRACK" and len(p) > 2:
                     lines.append('mediastack_router_conntrack_count{router="%s"} %s' % (esc(host), int(p[1])))
                     lines.append('mediastack_router_conntrack_max{router="%s"} %s' % (esc(host), int(p[2])))
@@ -205,8 +235,16 @@ def main_fn():
         "# TYPE mediastack_router_temperature_celsius gauge",
         "# HELP mediastack_router_wifi_clients Stations associated per radio.",
         "# TYPE mediastack_router_wifi_clients gauge",
-        "# HELP mediastack_router_backhaul_rssi_dbm Mesh backhaul signal, negative dBm.",
-        "# TYPE mediastack_router_backhaul_rssi_dbm gauge",
+        "# HELP mediastack_router_wds_link_rssi_dbm Router-side view of one WDS peer link. Not every node has one.",
+        "# TYPE mediastack_router_wds_link_rssi_dbm gauge",
+        "# HELP mediastack_router_uplink_rssi_dbm Uplink signal as the node itself measures it, negative dBm.",
+        "# TYPE mediastack_router_uplink_rssi_dbm gauge",
+        "# HELP mediastack_router_uplink_noise_dbm Noise floor on the node's uplink radio.",
+        "# TYPE mediastack_router_uplink_noise_dbm gauge",
+        "# HELP mediastack_router_uplink_snr_db Signal to noise ratio on the node's uplink.",
+        "# TYPE mediastack_router_uplink_snr_db gauge",
+        "# HELP mediastack_router_uplink_rate_mbps Negotiated PHY rate on the node's uplink.",
+        "# TYPE mediastack_router_uplink_rate_mbps gauge",
         "# HELP mediastack_router_conntrack_count Tracked connections.",
         "# TYPE mediastack_router_conntrack_count gauge",
         "# HELP mediastack_router_conntrack_max Connection tracking table size.",
