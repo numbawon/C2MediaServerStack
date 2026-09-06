@@ -52,7 +52,7 @@
      }
     },
     {
-     "refId": "A",
+     "refId": "B",
      "expr": "mediastack_router_exporter_expected",
      "legendFormat": "expected",
      "instant": true,
@@ -137,7 +137,7 @@
   {
    "type": "stat",
    "title": "WAN",
-   "description": "ASUSWRT reports state 2 for a connected WAN. Only the main router has one; the mesh nodes reach the internet through it.",
+   "description": "Only the main router has a WAN; the mesh nodes reach the internet through it over the backhaul. The query is scoped to role=main so the nodes are absent rather than shown as DOWN, which is what they looked like when this counted every device.",
    "gridPos": {
     "h": 5,
     "w": 4,
@@ -151,7 +151,7 @@
    "targets": [
     {
      "refId": "A",
-     "expr": "mediastack_router_wan_connected",
+     "expr": "mediastack_router_wan_connected{role=\"main\"}",
      "legendFormat": "{{router}}",
      "instant": true,
      "datasource": {

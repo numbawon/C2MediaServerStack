@@ -157,10 +157,13 @@ def main_fn():
                                  % (esc(host), esc(p[1]), int(p[2])))
                     lines.append('mediastack_router_interface_tx_bytes_total{router="%s",interface="%s"} %s'
                                  % (esc(host), esc(p[1]), int(p[3])))
-                elif k == "WAN":
-                    # 2 means connected on ASUSWRT. Only the main router has a WAN.
-                    lines.append('mediastack_router_wan_connected{router="%s"} %d'
-                                 % (esc(host), 1 if p[1] == "2" else 0))
+                elif k == "WAN" and role == "main":
+                    # 2 means connected on ASUSWRT. Emitted ONLY for the main
+                    # router: a mesh node has no WAN at all, so exporting a 0
+                    # for it renders as a red DOWN tile for a link it was never
+                    # supposed to have.
+                    lines.append('mediastack_router_wan_connected{router="%s",role="%s"} %d'
+                                 % (esc(host), role, 1 if p[1] == "2" else 0))
             except (ValueError, IndexError):
                 continue
 
