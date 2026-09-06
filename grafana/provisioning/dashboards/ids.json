@@ -778,8 +778,9 @@
      "showAttribution": true
     },
     "basemap": {
-     "type": "default",
-     "name": "Basemap"
+     "type": "osm-standard",
+     "name": "OpenStreetMap",
+     "config": {}
     },
     "tooltip": {
      "mode": "details"
