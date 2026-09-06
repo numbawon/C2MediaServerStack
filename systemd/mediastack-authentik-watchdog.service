@@ -1,0 +1,18 @@
+# Exports Authentik account state as Prometheus metrics, so a new account
+# raises an alert through the same path as everything else.
+# See scripts/authentik-watchdog.py.
+#
+# Replace youruser with your actual repo path before installing.
+[Unit]
+Description=mediastack Authentik account watch
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/youruser/C2MediaServerStack
+ExecStart=/usr/bin/python3 /home/youruser/C2MediaServerStack/scripts/authentik-watchdog.py
+# One small query. If it cannot finish in a minute something is wrong with
+# Postgres, not with this.
+TimeoutStartSec=5m

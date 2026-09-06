@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch Authentik accounts every 5 minutes
+
+[Timer]
+# Five minutes. A new account is not an emergency, but waiting six hours to
+# hear about one defeats the point.
+OnBootSec=3min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
