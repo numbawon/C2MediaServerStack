@@ -2435,6 +2435,36 @@ Set expectations: I2P is slow. Multi-hop tunnels in both directions, and
 swarms are far smaller than clearnet. It is worth it for material that
 exists nowhere else, not as a general replacement.
 
+#### Finding the torrents: the HTTP proxy
+
+SAM is only half of it. The tracker index pages are themselves `.i2p`
+addresses and resolve nowhere else, so browsing needs i2pd's HTTP proxy,
+published on the LAN at `COMMON_LAN_IP:4444`.
+
+Point a browser at it as an HTTP proxy and `http://tracker2.postman.i2p/`
+opens. In Firefox that is Settings -> Network Settings -> Manual proxy
+configuration, HTTP Proxy `COMMON_LAN_IP` port 4444, with "Also use this
+proxy for HTTPS" left OFF: I2P sites are plain HTTP inside the tunnel, and
+i2pd will not CONNECT to clearnet hosts anyway.
+
+It carries no credentials, unlike gluetun's proxy on 8888, and that is
+deliberate rather than an oversight. With no outproxy configured, i2pd
+serves `.i2p` destinations and refuses clearnet ones, so it is not an open
+relay; gluetun's does exit to the internet and would be one without auth.
+It is still bound to the LAN address rather than 0.0.0.0.
+
+The full workflow, end to end:
+
+1. Browse the tracker over the HTTP proxy, find a torrent, copy the magnet
+   or download the `.torrent`.
+2. Add it to qBittorrent exactly as any other torrent.
+3. qBittorrent sees the `.i2p` announce URL and routes it over SAM by
+   itself. It opens the SAM session on the first I2P torrent, not at
+   startup, so an idle log before then is not a fault.
+
+Nothing else changes. Clearnet torrents keep using the VPN, the two swarms
+share no peers, and no per-torrent setting is needed.
+
 #### The console, and why it is gated
 
 The web console is at `i2p.<domain>` behind Authentik. That is not
