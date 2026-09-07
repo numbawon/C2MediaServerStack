@@ -203,6 +203,13 @@ three different patterns, chosen per app based on what it supports:
    this group" option pointed at it, or every login just re-provisions
    a plain user.
 
+The `default-authentication-login` stage keeps Authentik's browser SSO
+session for one day. Selecting **Remember me on this device** adds 29
+days, for a 30-day total. During that window each app still receives its
+own audience-bound token, but redirects through Authentik without another
+password/MFA challenge. The setting applies to new login sessions; an
+existing session-only cookie is not made persistent retroactively.
+
 **What's deliberately *not* gated:** Plex, and Navidrome's `/rest/*`
 Subsonic API path. Native mobile/TV/car apps can't complete a
 browser-redirect SSO challenge -- there's no browser to bounce through --
@@ -269,13 +276,11 @@ them, and each app decides for itself what to send through the proxy and
 what to send direct. Setup and exact values are in "Pointing the *arrs at
 the VPN proxy".
 
-The one thing that genuinely must not go through it is any indexer using
-FlareSolverr. The `cf_clearance` cookie FlareSolverr obtains is bound to
-the IP that solved the challenge, so if Prowlarr then fetches the page
-from a different address the cookie is rejected and the indexer fails
-with a Cloudflare block. FlareSolverr runs on `edge` at the house IP, so
-those indexers are excluded from the proxy by hostname rather than
-tunnelled alongside the others.
+Cloudflare-protected indexers need both halves on the same route. The
+`cf_clearance` cookie a solver obtains is bound to the solving IP, so
+ByParr/FlareSolverr and Prowlarr's follow-up request all use gluetun's
+proxy. A solver tag selects the browser; global proxy settings keep every
+request on the same VPN exit.
 
 ### Cloudflare-blocked indexers: two solvers, measured
 
@@ -574,6 +579,13 @@ One thing worth knowing: `SEARCH_API_URL` and `PEOPLE_API_URL` point at
 services the PinePods project hosts. Podcast searches leave this network
 when you use them. Browsing and playing what is already here does not.
 
+`deploy.sh stack` builds a small local PinePods image. It keeps upstream
+0.9.0 intact except for accepting optional subscription metadata. Upstream
+sends `person_img: null` for hosts without artwork but its API declared that
+field as a required string, causing HTTP 422 before the subscription reached
+PostgreSQL. Podcast details can likewise have `categories: null`; the web UI
+previously unwrapped that value and stopped before sending the add request.
+
 ### Importing a local podcast: two traps
 
 Adding a folder is `POST /api/data/add_local_podcast` with `user_id`,
@@ -675,23 +687,20 @@ of their config from Recyclarr. The rest are genuinely manual.
 
 ### Pointing the *arrs at the VPN proxy
 
-Sonarr, Radarr, LazyLibrarian and Prowlarr are swarm services on the
-house IP; only qBittorrent is behind the VPN (see "Why only qBittorrent
-is behind the VPN"). Sonarr, Radarr and LazyLibrarian send their outbound
-traffic through gluetun's authenticated HTTP proxy at
+Sonarr, Radarr, Lidarr, LazyLibrarian, Bazarr and Prowlarr are swarm
+services on the house IP; only qBittorrent shares gluetun's network
+namespace (see "Why only qBittorrent is behind the VPN"). The apps send
+outbound HTTP traffic through gluetun's authenticated proxy at
 `${COMMON_LAN_IP}:8888`, so their indexer requests still exit through the
 tunnel. Credentials are the ones in `secrets/httpproxy_user.txt` and
 `secrets/httpproxy_password.txt`.
-
-**Prowlarr is deliberately not in that list any more.** It uses
-per-indexer proxies instead, for reasons in the next section.
 
 These apps store this in a database or config file rather than in
 compose, which is why it is in the table above. Only the LazyLibrarian
 bypass list is declared, and only because it has to be an env var.
 
-**Sonarr / Radarr** -- Settings -> General -> Proxy. Both are Servarr
-apps and take identical values:
+**Sonarr / Radarr / Lidarr / Prowlarr** -- Settings -> General -> Proxy.
+All four are Servarr apps and take identical values:
 
 | Field | Value |
 |---|---|
@@ -701,7 +710,7 @@ apps and take identical values:
 | Port | `8888` |
 | Username / Password | from `secrets/httpproxy_*.txt` |
 | Bypass Proxy for Local Addresses | on |
-| Ignored Addresses | `localhost,127.0.0.1,10.0.*,172.16.*,192.168.*,qbittorrent,prowlarr,sonarr,radarr,lazylibrarian,flaresolverr,byparr,vpn-client` |
+| Ignored Addresses | `localhost,127.0.0.1,10.0.*,172.16.*,192.168.*,qbittorrent,prowlarr,sonarr,radarr,lidarr,lazylibrarian,bazarr,flaresolverr,byparr,vpn-client` |
 
 The ignored-addresses list is not redundant with bypass-for-local. These
 apps reach each other by *service name* on the overlay, and a bare name
@@ -710,7 +719,73 @@ listed explicitly Sonarr's calls to qBittorrent and Prowlarr would go out
 to gluetun and come back. Slower at best, and the gluetun firewall can
 refuse them outright.
 
-### Why Prowlarr uses per-indexer proxies instead of an app-level one
+### Prowlarr and Cloudflare solvers
+
+Prowlarr's global proxy is enabled. Its bypass list contains only local
+addresses and service names; public indexer hostnames never belong there.
+Every ordinary indexer request therefore exits through gluetun.
+
+Both solvers are *configured* to use gluetun as their upstream proxy, with
+wrappers reading `httpproxy_user` and `httpproxy_password` from Swarm
+secrets so credentials stay out of the stack file and service environment.
+This shared egress is mandatory because Cloudflare binds `cf_clearance` to
+the IP that solved the challenge.
+
+**Only ByParr actually honours it.** Measured on 2026-09-06 by asking each
+solver to fetch an IP echo and comparing the answer to the gluetun exit:
+
+| Solver | Mechanism | Result |
+|---|---|---|
+| ByParr | `PROXY_SERVER` env | VPN exit, 8 of 8 |
+| FlareSolverr | `PROXY_URL` env | house IP, 8 of 9 |
+| FlareSolverr | explicit per-request `proxy` | house IP, 3 of 4 |
+
+FlareSolverr reads the variables (they are present in its process and its
+source consumes them), and it still mostly exits direct. The pattern is
+that the first request after an idle period is proxied and reused ones are
+not, which points at its browser-instance pooling: a driver created without
+the proxy gets handed out again. Neither mechanism is reliable, so
+**FlareSolverr must be treated as unproxied.**
+
+Consequences, and they are the reason this is documented rather than
+quietly tolerated:
+
+- **Do not tag any indexer `flare`.** FlareSolverr would solve from the
+  house IP while Prowlarr fetches through the VPN, so `cf_clearance` is
+  rejected and the indexer fails with a Cloudflare block. That is the exact
+  bug this whole design removes, mirrored.
+- **`scripts/solver-probe.py` drove that leak on a timer.** It asks both
+  solvers for five 1337x mirrors, so FlareSolverr's half went out from the
+  house IP. The repo timer says 4h; the installed copy was still the
+  original 30min, which is 240 house-IP requests a day at the mirrors, and
+  the script's own docstring warns that this load pattern is what gets an
+  address blocked. The timer is stopped. Re-enable it only if FlareSolverr
+  is removed or fixed, and reinstall the timer so repo and installed agree.
+- **The probe's comparison is no longer meaningful** regardless, because it
+  measures a proxied solver against an unproxied one. Real per-indexer
+  outcomes come from `scripts/prowlarr-indexer-metrics.py` instead.
+
+Any future check of solver proxying must compare the observed egress
+address. Both solvers report `Success` while exiting from the wrong one, so
+the success flag proves nothing.
+
+Settings -> Indexers -> Indexer Proxies contains `ByParr` (tag `byparr`)
+and `FlareSolverr` (tag `flare`). Add exactly one solver tag only when an
+indexer needs a browser, and in practice that tag is `byparr`. The older
+`VPN` indexer-proxy entry and tag remain harmless but redundant now that
+Prowlarr's global proxy covers all external requests.
+
+A challenge page (`cf-mitigated: challenge`) is solvable. Cloudflare error
+1006 means the VPN exit itself is banned; restart `vpn-client` to select
+another server, then let the solver obtain fresh clearance for the new IP.
+
+<details>
+<summary>Superseded 2026-09-06 per-indexer proxy design</summary>
+
+The following records the previous design and why it was replaced. Do not
+use it as current setup guidance.
+
+### Why Prowlarr used per-indexer proxies instead of an app-level one
 
 Prowlarr ran with the same app-level proxy until 2026-09-06, when adding
 any new indexer became impossible. Every candidate failed with `Unable to
@@ -836,6 +911,8 @@ hostnames, so switching 1337x from `1337x.to` to `1337x.st` failed to
 save with a Forbidden that had nothing to do with the mirror. With no
 bypass list in play, a mirror switch is just a Base Url edit.
 
+</details>
+
 **LazyLibrarian** is the odd one out twice over. Its proxy lives in
 `config.ini` under a `[PROXY]` section rather than in a database:
 
@@ -855,6 +932,11 @@ It also has no bypass list of its own, so that comes from `NO_PROXY` in
 through python `requests`, which honours `NO_PROXY` from the environment
 even when a proxies dict is passed explicitly. Both `NO_PROXY` and
 `no_proxy` are set, since which one is read depends on the library.
+
+**Bazarr** -- Settings -> General -> Proxy. Select HTTP, use the same
+host, port and credentials, then exclude `localhost`, `127.0.0.1`,
+`sonarr`, `radarr`, `prowlarr` and `bazarr`. Bazarr accepts repeated exact
+hostnames here, not CIDR ranges or wildcard patterns.
 
 **Verifying.** From the host, compare the two addresses:
 
@@ -2475,8 +2557,15 @@ environment variables:
 
 - **Audiobookshelf**: Settings -> Authentication -> enable OpenID
   Connect. Paste the issuer URL and click Auto-populate, then fill in
-  the client ID and secret. Add the mobile redirect URI under *Allowed
-  Mobile Redirect URIs*.
+  the client ID and secret. In Authentik, enable both
+  `authorization_code` and `refresh_token` grant types on the provider;
+  leaving only `refresh_token` lets authentication finish but returns
+  `invalid_request` at Audiobookshelf's callback. Replace Authentik's
+  default `email` scope (which returns `email_verified: false`) with a
+  provider-specific mapping that returns the managed family account's
+  email and `email_verified: true`; Audiobookshelf rejects unverified
+  email while matching or auto-registering users. Add the mobile redirect
+  URI under *Allowed Mobile Redirect URIs*.
 - **Immich**: Administration -> Settings -> OAuth Authentication.
 
 Client IDs and secrets are in `secrets/oidc-clients.env` (git-ignored).
