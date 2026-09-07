@@ -466,6 +466,43 @@ groups:
             Update notifications are silently not happening.
 
       # -----------------------------------------------------------------
+      # Indexers (scripts/prowlarr-indexer-metrics.py)
+      # -----------------------------------------------------------------
+
+      - alert: IndexerFailureRateHigh
+        # Real Prowlarr traffic, not a synthetic probe. An indexer that fails
+        # a fifth of its queries is degrading searches now, and the *arrs
+        # report it as "nothing found" rather than as an error.
+        expr: >-
+          sum by (indexer,solver) (mediastack_prowlarr_queries{result="failure"})
+          / sum by (indexer,solver) (mediastack_prowlarr_queries) > 0.20
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.indexer }} failing {{ $value | humanizePercentage }} of queries"
+          description: >-
+            Measured over 24h of real queries. If it sits behind a Cloudflare
+            solver ({{ $labels.solver }}), check whether that solver is the
+            cause before blaming the site: compare the two on the IDS
+            dashboard, and try a mirror.
+
+      - alert: ProwlarrMetricsWindowTruncated
+        # The collector pages backwards until it reaches the window edge. If
+        # it hits the page cap first the counts cover less than 24h, and every
+        # rate derived from them is wrong in a way nothing else reveals.
+        expr: mediastack_prowlarr_metrics_window_complete == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Indexer metrics cover less than the full window"
+          description: >-
+            Paging hit PROWLARR_MAX_PAGES before reaching the cutoff, so the
+            success rates are computed from a partial window. Raise the cap or
+            shorten the window.
+
+      # -----------------------------------------------------------------
       # Routers (scripts/router-exporter.py)
       # -----------------------------------------------------------------
 

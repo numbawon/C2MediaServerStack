@@ -1,0 +1,12 @@
+[Unit]
+Description=Summarise Prowlarr indexer outcomes every 15 minutes
+
+[Timer]
+# Read-only against a local API, so this is cheap and can run often. It
+# summarises a rolling 24h window, so the numbers move gradually rather than
+# jumping between runs.
+OnBootSec=5min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target
