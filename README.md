@@ -621,12 +621,40 @@ listed explicitly Sonarr's calls to qBittorrent and Prowlarr would go out
 to gluetun and come back. Slower at best, and the gluetun firewall can
 refuse them outright.
 
-Prowlarr additionally carries `1337x.to,*.1337x.to` in that list. That is
-the FlareSolverr exception described above, and it is per-host because
-Prowlarr's app-level proxy has no per-indexer exclusion. Any future
-indexer given the `cloudflare` tag needs its hostname added here too,
-otherwise it will start failing with a Cloudflare block for reasons that
-look nothing like the actual cause.
+Prowlarr additionally carries every 1337x mirror in that list. That is the
+FlareSolverr exception described above, and it is per-host because
+Prowlarr's app-level proxy has no per-indexer exclusion. Any future indexer
+given the `cloudflare` tag needs its hostname added here too, otherwise it
+will start failing with a Cloudflare block for reasons that look nothing
+like the actual cause.
+
+**The bypass is per-DOMAIN, and that bites when a mirror changes.** On
+2026-09-06 `1337x.to` started returning a hard Cloudflare block rather than
+a solvable challenge; FlareSolverr was fine and solved every other mirror at
+HTTP 200. Switching the indexer's Base Url to `1337x.st` should have been
+the whole fix, and instead Prowlarr refused to save it with `400 Unable to
+connect to indexer. Unexpected response status Forbidden`.
+
+The reason was this list. It named `1337x.to` only, so the new mirror was
+routed through the VPN proxy while FlareSolverr kept solving from the house
+IP, and the `cf_clearance` cookie was rejected for the mismatch. Exactly the
+original bug, resurfaced because the hostname changed. Every mirror in the
+definition's `links:` block is listed now, so a future mirror switch does
+not repeat it.
+
+Diagnosing a failing Cloudflare indexer, in order:
+
+1. Ask FlareSolverr directly, mirror by mirror. `error` with "Cloudflare has
+   blocked this request" means the site is refusing that IP; `ok` with page
+   status 200 means FlareSolverr is fine and the problem is downstream.
+2. If some mirrors answer and others do not, switch Base Url to a working
+   one **and add it to the bypass list first**, or the save fails with a
+   Forbidden that has nothing to do with the mirror.
+3. Only then consider the proxy. FlareSolverr has its own proxy field for
+   the case where the site blocks the house IP outright and the mirrors are
+   all blocked too, which would mean both it and Prowlarr exiting through
+   the VPN together. Do not set a Prowlarr proxy tag and the FlareSolverr
+   tag on the same indexer; that recreates the mismatch deliberately.
 
 **LazyLibrarian** is the odd one out twice over. Its proxy lives in
 `config.ini` under a `[PROXY]` section rather than in a database:
