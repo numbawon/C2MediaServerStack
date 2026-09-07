@@ -843,6 +843,11 @@ services:
   node-exporter:
     logging: *logging
     image: prom/node-exporter:latest
+    # Drops all Linux capabilities. This is a plain daemon: it binds no
+    # privileged port and drops no privileges of its own, so it needs
+    # none. Verified honoured by `docker stack deploy`, unlike
+    # security_opt/no-new-privileges, which Swarm accepts and ignores.
+    cap_drop: [ALL]
     environment:
       - TZ=${COMMON_TZ}
     volumes:
@@ -893,6 +898,11 @@ services:
   prometheus:
     logging: *logging
     image: prom/prometheus:latest
+    # Drops all Linux capabilities. This is a plain daemon: it binds no
+    # privileged port and drops no privileges of its own, so it needs
+    # none. Verified honoured by `docker stack deploy`, unlike
+    # security_opt/no-new-privileges, which Swarm accepts and ignores.
+    cap_drop: [ALL]
     environment:
       - TZ=${COMMON_TZ}
     volumes:
@@ -917,6 +927,11 @@ services:
   alertmanager:
     logging: *logging
     image: prom/alertmanager:latest
+    # Drops all Linux capabilities. This is a plain daemon: it binds no
+    # privileged port and drops no privileges of its own, so it needs
+    # none. Verified honoured by `docker stack deploy`, unlike
+    # security_opt/no-new-privileges, which Swarm accepts and ignores.
+    cap_drop: [ALL]
     environment:
       - TZ=${COMMON_TZ}
     command:
@@ -1207,6 +1222,11 @@ services:
   diun:
     logging: *logging
     image: crazymax/diun:latest
+    # Drops all Linux capabilities. This is a plain daemon: it binds no
+    # privileged port and drops no privileges of its own, so it needs
+    # none. Verified honoured by `docker stack deploy`, unlike
+    # security_opt/no-new-privileges, which Swarm accepts and ignores.
+    cap_drop: [ALL]
     # --config passed explicitly rather than relying on an env var:
     # Diun has two separate config systems (kong CLI flags, which are
     # unprefixed, and config-file keys, which transpose to DIUN_*), and
@@ -1228,6 +1248,11 @@ services:
   grafana:
     logging: *logging
     image: grafana/grafana:latest
+    # Drops all Linux capabilities. This is a plain daemon: it binds no
+    # privileged port and drops no privileges of its own, so it needs
+    # none. Verified honoured by `docker stack deploy`, unlike
+    # security_opt/no-new-privileges, which Swarm accepts and ignores.
+    cap_drop: [ALL]
     environment:
       - TZ=${COMMON_TZ}
       - GF_SECURITY_ADMIN_USER=admin
@@ -1287,6 +1312,11 @@ services:
   loki:
     logging: *logging
     image: grafana/loki:latest
+    # Drops all Linux capabilities. This is a plain daemon: it binds no
+    # privileged port and drops no privileges of its own, so it needs
+    # none. Verified honoured by `docker stack deploy`, unlike
+    # security_opt/no-new-privileges, which Swarm accepts and ignores.
+    cap_drop: [ALL]
     environment:
       - TZ=${COMMON_TZ}
     # Directory mount, not single-file -- same reasoning as promtail below.
@@ -1841,6 +1871,11 @@ services:
   promtail:
     logging: *logging
     image: grafana/promtail:latest
+    # Drops all Linux capabilities. This is a plain daemon: it binds no
+    # privileged port and drops no privileges of its own, so it needs
+    # none. Verified honoured by `docker stack deploy`, unlike
+    # security_opt/no-new-privileges, which Swarm accepts and ignores.
+    cap_drop: [ALL]
     environment:
       - TZ=${COMMON_TZ}
     # Directory mount, not a single-file one -- see the repo-wide fix for
