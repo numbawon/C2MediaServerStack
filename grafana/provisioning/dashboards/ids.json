@@ -1008,6 +1008,144 @@
     "defaults": {},
     "overrides": []
    }
+  },
+  {
+   "type": "row",
+   "title": "Cloudflare solvers",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 51
+   },
+   "panels": []
+  },
+  {
+   "type": "timeseries",
+   "title": "Solver success rate",
+   "description": "Share of targets each solver returned, averaged over the window. Both are asked for the SAME URLs on the same schedule, so the only variable is the solver. Tagging indexers to one solver each would have compared the sites instead, since sites differ enormously in difficulty.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 52
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "avg by (solver) (mediastack_solver_probe_success)",
+     "legendFormat": "{{solver}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "min": 0,
+     "max": 1,
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10
+     }
+    },
+    "overrides": []
+   },
+   "options": {}
+  },
+  {
+   "type": "timeseries",
+   "title": "Solve time",
+   "description": "Seconds per attempt. A solver that succeeds slowly is not equivalent to one that succeeds quickly: Prowlarr searches time out, so a slow solve becomes a failed search anyway.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 52
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "avg by (solver) (mediastack_solver_probe_seconds)",
+     "legendFormat": "{{solver}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "min": 0,
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 0
+     }
+    },
+    "overrides": []
+   },
+   "options": {}
+  },
+  {
+   "type": "table",
+   "title": "Per target, last run",
+   "description": "Which solver returned which mirror most recently. 1 is success, meaning status ok AND page 200; a solver answering cheerfully with a Cloudflare interstitial counts as 0.",
+   "gridPos": {
+    "h": 8,
+    "w": 24,
+    "x": 0,
+    "y": 60
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "format": "table",
+     "instant": true,
+     "expr": "mediastack_solver_probe_success"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "__name__": true,
+       "job": true,
+       "instance": true
+      }
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "showHeader": true
+   }
   }
  ],
  "templating": {

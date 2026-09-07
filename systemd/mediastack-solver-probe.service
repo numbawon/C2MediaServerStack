@@ -1,0 +1,23 @@
+# Head-to-head success rate for the Cloudflare solvers.
+# See scripts/solver-probe.py.
+#
+# Runs INSIDE a container, unlike the other collectors: the solvers are only
+# addressable on the `edge` overlay, which is not attachable from the host.
+#
+# Replace youruser with your actual repo path before installing.
+[Unit]
+Description=mediastack Cloudflare solver head-to-head probe
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/youruser/C2MediaServerStack
+ExecStart=/usr/bin/docker run --rm --network edge \
+  -v /home/youruser/C2MediaServerStack/scripts:/s:ro \
+  -v node_exporter_textfile:/textfile \
+  python:3.12-alpine python /s/solver-probe.py
+# Ten browser sessions at up to 60s each. The observed run is ~90s; this is
+# a ceiling for the case where every target stalls rather than fails fast.
+TimeoutStartSec=15m

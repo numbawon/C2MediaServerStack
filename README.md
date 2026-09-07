@@ -277,7 +277,52 @@ with a Cloudflare block. FlareSolverr runs on `edge` at the house IP, so
 those indexers are excluded from the proxy by hostname rather than
 tunnelled alongside the others.
 
-### Cloudflare-blocked indexers (FlareSolverr)
+### Cloudflare-blocked indexers: two solvers, measured
+
+Two solvers run side by side, **FlareSolverr** and **ByParr**. Both speak
+the same `/v1` API, so Prowlarr drives either through its FlareSolverr
+indexer-proxy type and only the host differs. Each has its own tag, so an
+indexer is pointed at one by tagging it.
+
+ByParr was added on 2026-09-06 after FlareSolverr proved unable to solve
+`1337x.to` at all, while answering every mirror of the same site fine.
+ByParr drives Camoufox rather than headless Chromium.
+
+**Tagging does not tell you which is better.** That was the first instinct
+and it is the wrong experiment: tagging splits indexers between solvers, so
+one is judged on one set of sites and the other on a different set, and
+sites differ enormously in difficulty. A solver handed the easy half looks
+perfect.
+
+`scripts/solver-probe.py` asks **both** solvers for the **same** URLs every
+30 minutes and exports a success rate and a solve time for each, so the only
+variable is the solver. Success means status `ok` **and** page 200: a solver
+that answers cheerfully with a Cloudflare interstitial has not succeeded,
+and counting that as success is how you end up trusting the wrong one. Solve
+time is recorded because Prowlarr's searches time out, so a slow solve
+becomes a failed search anyway.
+
+First run:
+
+```
+flaresolverr  4/5 targets   11-13s per success   fails 1337x.to outright
+byparr        5/5 targets    4-9s per success
+```
+
+On that evidence 1337x is tagged `byparr`. The **Cloudflare solvers** row on
+the IDS dashboard carries the running comparison; one run is a data point,
+not a verdict, and the panels are there to see whether it holds.
+
+This probe runs inside a container rather than under systemd directly,
+unlike every other collector here: the solvers are only addressable on the
+`edge` overlay, which is not attachable from the host.
+
+Do not put a Prowlarr proxy tag and a solver tag on the same indexer. The
+solver fetches from the house IP and Prowlarr would fetch through the VPN,
+and the `cf_clearance` cookie is bound to the address that solved the
+challenge. See the bypass-list notes above, which exist for exactly this.
+
+### FlareSolverr specifics
 
 Some public indexers sit behind Cloudflare's JS challenge and simply fail
 in Prowlarr. FlareSolverr runs a headless Chromium, solves the challenge,
@@ -1897,7 +1942,7 @@ sudo systemctl enable --now mediastack-backup-local.timer mediastack-backup-offs
 Several of these had install instructions scattered across other sections
 and several had none at all, which meant following this README left you
 without backup verification, without the VPN watchdog, and without log
-trimming. All ten:
+trimming. All eleven:
 
 | Timer | Schedule | What it does |
 |---|---|---|
@@ -1910,6 +1955,7 @@ trimming. All ten:
 | `mediastack-authentik-watchdog` | every 5 min | Exports Authentik account state so a new account raises an alert |
 | `mediastack-crowdsec-geo` | every 15 min | Exports CrowdSec alert sources with coordinates for the IDS world map |
 | `mediastack-router-exporter` | every 2 min | Collects CPU, memory, temperature, throughput and client counts from all three AiMesh routers over SSH |
+| `mediastack-solver-probe` | every 30 min | Asks both Cloudflare solvers for the same URLs and exports a success rate for each |
 | `mediastack-trim-logs` | hourly | Caps runaway container logs |
 
 ```bash
@@ -1922,7 +1968,7 @@ for u in backup-local backup-offsite verify-backups media-watchdog \
   sudo cp "systemd/mediastack-$u.timer" /etc/systemd/system/
 done
 sudo systemctl daemon-reload
-sudo systemctl enable --now mediastack-{backup-local,backup-offsite,verify-backups,media-watchdog,ai-digest,vpn-watchdog,trim-logs,authentik-watchdog,crowdsec-geo,router-exporter}.timer
+sudo systemctl enable --now mediastack-{backup-local,backup-offsite,verify-backups,media-watchdog,ai-digest,vpn-watchdog,trim-logs,authentik-watchdog,crowdsec-geo,router-exporter,solver-probe}.timer
 ```
 
 That loop substitutes the repo path rather than copying verbatim, which
