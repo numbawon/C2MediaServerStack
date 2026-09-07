@@ -750,13 +750,31 @@ opt-in per indexer:
   and `VPN`, an HTTP proxy pointing at `${COMMON_LAN_IP}:8888` with tag
   `vpn`. The FlareSolverr tag is `flare`, not `flaresolverr`; anything
   matching on tag names has to use the literal string.
-- **Tag an indexer `vpn` only when it actually needs the VPN**, meaning
-  the ISP or the site blocks the house IP outright. `nyaa.si` is the
-  current example: untagged it fails to connect, tagged `vpn` it returns
-  200.
+- **Tag `vpn` unless a solver forces otherwise.** Turning the app-level
+  proxy off makes the house IP the default, and left alone that would
+  quietly move every previously-proxied indexer onto it. So the standing
+  rule is the reverse of the mechanism: an indexer that does not need a
+  Cloudflare solver gets the `vpn` tag, which is where it was before.
+  Only indexers that need a solver stay on the house IP, and they have to,
+  because that is where the solver runs.
+- **Some indexers need the VPN to work at all**, where the ISP or the site
+  blocks the house IP. `nyaa.si` is the current example: untagged it fails
+  to connect, tagged `vpn` it returns 200.
 
 Never put a solver tag and the `vpn` tag on the same indexer. That
-recreates the original cookie mismatch on purpose.
+recreates the original cookie mismatch on purpose, and it is the reason
+the two rules above cannot be collapsed into one.
+
+The tradeoff is worth stating plainly, because the fix could have gone the
+other way. The requirement was only that the solver and Prowlarr share an
+exit IP; routing the solvers through the VPN too would have satisfied it
+equally. The house IP was chosen because residential addresses clear
+Cloudflare more easily than commercial VPN ranges, because a gluetun
+reconnect changes the exit IP and invalidates every cached `cf_clearance`,
+and because FlareSolverr v3 has no global proxy setting and Prowlarr
+exposes no field to pass one per request. The cost is that solver-tagged
+indexers see the house IP. Torrent traffic itself is unaffected: that is
+qBittorrent, which is still entirely inside the VPN.
 
 Diagnosing a failing indexer, in order:
 
