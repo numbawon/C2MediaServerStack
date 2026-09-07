@@ -767,14 +767,51 @@ the two rules above cannot be collapsed into one.
 
 The tradeoff is worth stating plainly, because the fix could have gone the
 other way. The requirement was only that the solver and Prowlarr share an
-exit IP; routing the solvers through the VPN too would have satisfied it
-equally. The house IP was chosen because residential addresses clear
-Cloudflare more easily than commercial VPN ranges, because a gluetun
-reconnect changes the exit IP and invalidates every cached `cf_clearance`,
-and because FlareSolverr v3 has no global proxy setting and Prowlarr
-exposes no field to pass one per request. The cost is that solver-tagged
-indexers see the house IP. Torrent traffic itself is unaffected: that is
-qBittorrent, which is still entirely inside the VPN.
+exit IP; routing the solvers through the VPN too would satisfy it equally.
+Three things were measured on 2026-09-06 rather than assumed, because the
+assumptions were wrong:
+
+- **VPN reputation is not the blocker here.** FlareSolverr solved
+  `1337x.st` through the gluetun proxy in 12.6s, against 12.5s direct.
+  The theory that commercial VPN ranges would fail Cloudflare where a
+  residential IP passes did not hold for this site. Do not repeat it as
+  fact without retesting.
+- **ByParr ignores the `proxy` field.** It accepts the field, answers
+  `Success`, and exits from the house IP regardless. Verified by asking
+  it to fetch an IP echo through the proxy: house IP all three ways,
+  where FlareSolverr correctly reported the gluetun exit. A solver that
+  silently discards a proxy setting looks exactly like one honouring it,
+  so any future check of this must confirm the egress address, never just
+  the success flag.
+- **FlareSolverr's inline credential form is broken.** `proxy: {"url":
+  "http://user:pass@host:8888"}` returns no page. The working form is
+  separate `username` and `password` keys.
+
+So the real blocker is plumbing, not reputation: **Prowlarr has no field
+to pass a proxy to its solver**, and FlareSolverr v3 dropped the global
+proxy setting, so there is no way to tell the solver to use the VPN from
+Prowlarr's side. Putting the solver in the VPN means putting its
+*container* in gluetun's namespace, which is `network_mode:
+service:vpn-client` and therefore compose-only, not a swarm service. That
+is the reason 1337x sits on the house IP, and it is a solvable one: a
+second FlareSolverr in `docker-compose.download.yml` alongside
+qBittorrent, port 8191 added to `FIREWALL_INPUT_PORTS`, registered as a
+second indexer proxy under its own tag.
+
+Torrent traffic itself is unaffected either way: that is qBittorrent,
+which is still entirely inside the VPN.
+
+**On rolling the VPN exit IP.** `SERVER_COUNTRIES` is set with no pinned
+server, so gluetun picks a new server, and a new exit IP, every time the
+container starts. It does not rotate on a timer while running. Today
+nothing depends on that address staying put: the `vpn`-tagged indexers
+make ordinary proxied requests with no IP-bound cookie, so a new exit
+just works. If a solver is ever moved behind the VPN that changes, since
+`cf_clearance` is pinned to the solving IP: a restart would invalidate the
+cached clearance, the next search would fail with a Cloudflare block, and
+the solver would re-solve on the new IP and recover. Self-healing, but
+with a window of failed searches. Pinning `SERVER_HOSTNAMES` removes the
+whole class of problem and is worth doing first if that move is made.
 
 Diagnosing a failing indexer, in order:
 
