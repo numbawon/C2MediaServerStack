@@ -351,6 +351,9 @@ services:
   cloudflared:
     logging: *logging
     image: cloudflare/cloudflared:latest
+    # Plain daemon: binds no privileged port, drops no privileges of
+    # its own. Needs no capabilities.
+    cap_drop: [ALL]
     command: tunnel --config /etc/cloudflared/config.yml run
     # Same musl AAAA problem Seerr hit, and it takes the WHOLE STACK down
     # rather than one app: Docker's embedded resolver forwards to the
@@ -817,6 +820,9 @@ services:
   homer:
     logging: *logging
     image: b4bz/homer:latest
+    # Plain daemon: binds no privileged port, drops no privileges of
+    # its own. Needs no capabilities.
+    cap_drop: [ALL]
     environment:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
@@ -970,6 +976,9 @@ services:
   alert-relay:
     logging: *logging
     image: python:3-alpine
+    # Plain daemon: binds no privileged port, drops no privileges of
+    # its own. Needs no capabilities.
+    cap_drop: [ALL]
     command: python /app/relay.py
     environment:
       - TZ=${COMMON_TZ}
@@ -1190,6 +1199,11 @@ services:
   ntfy:
     logging: *logging
     image: binwiederhier/ntfy:latest
+    # Needs exactly one capability: it listens on :80 inside the
+    # container, and binding a port below 1024 requires
+    # NET_BIND_SERVICE. Everything else goes.
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
     command: serve
     environment:
       - TZ=${COMMON_TZ}
@@ -1856,6 +1870,9 @@ services:
   blackbox-exporter:
     logging: *logging
     image: prom/blackbox-exporter:latest
+    # Plain daemon: binds no privileged port, drops no privileges of
+    # its own. Needs no capabilities.
+    cap_drop: [ALL]
     command:
       - --config.file=/etc/blackbox/blackbox.yml
     environment:
