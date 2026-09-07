@@ -51,7 +51,7 @@ and actually understand what they're running, not just copy-paste it.
 | **Tautulli** | Plex watch-history/stats. |
 | **Homer** | The dashboard -- one page linking to everything else. |
 | **Organizarr** | Custom-built settings hub for the `*arr` apps -- see below. Admin tier. |
-| **FlareSolverr** | Solves Cloudflare's JS challenge for the public indexers that would otherwise fail in Prowlarr. No UI, internal API only. |
+| **ByParr** | Solves Cloudflare's JS challenge for the public indexers that would otherwise fail in Prowlarr. No UI, internal API only. |
 | **PinePods** | Podcasts, reading the existing library off disk rather than re-downloading it. Household tier, native OIDC. See "Podcasts (PinePods)". |
 | **Tdarr** | Transcoding pipeline, GPU-accelerated. See "Transcoding". |
 | **Beets** | Music tagging and organisation before Navidrome ever sees a file. No web UI worth exposing. |
@@ -278,79 +278,87 @@ the VPN proxy".
 
 Cloudflare-protected indexers need both halves on the same route. The
 `cf_clearance` cookie a solver obtains is bound to the solving IP, so
-ByParr/FlareSolverr and Prowlarr's follow-up request all use gluetun's
+ByParr and Prowlarr's follow-up request both use gluetun's
 proxy. A solver tag selects the browser; global proxy settings keep every
 request on the same VPN exit.
 
-### Cloudflare-blocked indexers: two solvers, measured
+### Cloudflare-blocked indexers: ByParr
 
-Two solvers run side by side, **FlareSolverr** and **ByParr**. Both speak
-the same `/v1` API, so Prowlarr drives either through its FlareSolverr
-indexer-proxy type and only the host differs. Each has its own tag, so an
-indexer is pointed at one by tagging it.
+Some public indexers sit behind Cloudflare's JS challenge and simply fail in
+Prowlarr. **ByParr** drives Camoufox, a patched Firefox, solves the
+challenge, and returns the `cf_clearance` cookie. Prowlarr supports this
+natively: **Settings -> Indexers -> Indexer Proxies -> + -> FlareSolverr**
+(the proxy *type*, which ByParr's `/v1` API is compatible with), host
+`http://byparr:8191`, tag `byparr`, then apply that tag to only the indexers
+that need it. Tagging everything routes every search through a browser for
+no reason.
 
-ByParr was added on 2026-09-06 after FlareSolverr proved unable to solve
-`1337x.to` at all, while answering every mirror of the same site fine.
-ByParr drives Camoufox rather than headless Chromium.
+**The solver and Prowlarr must share an exit IP.** Cloudflare binds
+`cf_clearance` to the address that solved the challenge, so if the solver
+and Prowlarr leave by different routes the cookie is rejected on first use.
+Both go through gluetun: ByParr via `PROXY_SERVER`, Prowlarr via its global
+proxy. This is why Prowlarr's global proxy must stay enabled and why public
+indexer hostnames must never appear in its bypass list.
 
-**Tagging does not tell you which is better.** That was the first instinct
-and it is the wrong experiment: tagging splits indexers between solvers, so
-one is judged on one set of sites and the other on a different set, and
-sites differ enormously in difficulty. A solver handed the easy half looks
-perfect.
+#### Why FlareSolverr was removed, 2026-09-06
 
-`scripts/solver-probe.py` asks **both** solvers for the **same** URLs every
-30 minutes and exports a success rate and a solve time for each, so the only
-variable is the solver. Success means status `ok` **and** page 200: a solver
-that answers cheerfully with a Cloudflare interstitial has not succeeded,
-and counting that as success is how you end up trusting the wrong one. Solve
-time is recorded because Prowlarr's searches time out, so a slow solve
-becomes a failed search anyway.
+FlareSolverr ran alongside ByParr until it was found to be leaking. It is
+gone rather than kept as a fallback, and the reason is worth recording
+because the failure was invisible.
 
-First run:
+Asking each solver to fetch an IP echo and comparing the answer against the
+gluetun exit:
+
+| Solver | Mechanism | Result |
+|---|---|---|
+| ByParr | `PROXY_SERVER` env | VPN exit, 8 of 8 |
+| FlareSolverr | `PROXY_URL` env | house IP, 8 of 9 |
+| FlareSolverr | explicit per-request `proxy` | house IP, 3 of 4 |
+
+FlareSolverr reads the variables, they are present in its process, and its
+source consumes them. It still mostly exited direct. The pattern was that
+the first request after an idle period was proxied and reused ones were not,
+which points at its browser-instance pooling handing back a driver built
+without the proxy. Neither mechanism was reliable, which made it both an IP
+leak and a guaranteed `cf_clearance` mismatch.
+
+**Both solvers reported `Success` while exiting from the wrong address.** Any
+future check of solver proxying has to compare the observed egress IP; the
+success flag proves nothing. That is the durable lesson here.
+
+`scripts/solver-probe.py` went with it. It asked both solvers for the same
+five 1337x mirrors on a timer, which meant FlareSolverr's half left from the
+house IP, at the site the rest of the stack tunnels away from. Its own
+docstring warned that this load pattern is what gets an address blocked.
+
+#### Where the numbers come from
+
+`scripts/prowlarr-indexer-metrics.py` is the measurement. Prowlarr already
+records every RSS poll and every search with a success flag, a timestamp and
+an elapsed time, per indexer. Reading those costs nothing, adds no load, and
+cannot provoke a block. Solver attribution comes from the indexer's tag.
 
 ```
-flaresolverr  4/5 targets   11-13s per success   fails 1337x.to outright
-byparr        5/5 targets    4-9s per success
+1337x            solver=byparr   321/322   99.7%
+EZTV             solver=byparr     20/20  100.0%
+The Pirate Bay   solver=none     274/274  100.0%
+TorrentDownload  solver=none     274/274  100.0%
+Nyaa.si          solver=none       62/62  100.0%
 ```
 
-On that evidence 1337x is tagged `byparr`.
+The deleted probe measured the wrong thing three ways, which is worth
+keeping in mind before writing another one: it fetched homepages while
+Prowlarr fetches search pages with parameters and reuses sessions; it only
+targeted 1337x mirrors, so it largely measured one site's Cloudflare
+configuration rather than solver capability; and it generated the load it
+measured.
 
-### Where the numbers should actually come from
-
-The probe above is a **canary**, running every 4 hours. It is not the
-measurement, for three reasons worth stating because they are easy to miss:
-
-- It fetches homepages. Prowlarr fetches search pages with parameters and
-  reuses sessions. A solver can pass one and fail the other.
-- It only targets 1337x mirrors, so it largely measures one site's
-  Cloudflare configuration rather than solver capability.
-- **It generates the load it measures.** Ten browser sessions every 30
-  minutes was ~96 requests per day per target from one address against five
-  URLs of a single site, which is exactly the pattern that gets an IP
-  blocked. That is why it now runs every 4 hours instead: a probe that
-  provokes the failure it is measuring is worse than no probe.
-
-`scripts/prowlarr-indexer-metrics.py` is the real measurement. Prowlarr
-already records every RSS poll and every search with a success flag, a
-timestamp and an elapsed time, per indexer, and there were 15,794 of them
-sitting unused. Reading those costs nothing, adds no load, and cannot
-provoke a block. Solver attribution comes from the indexer's tag.
-
-```
-1337x            solver=byparr    50/54   92.6%
-The Pirate Bay   solver=none    323/323  100.0%
-TorrentDownload  solver=none    323/323  100.0%
-YTS              solver=none      48/48  100.0%
-```
-
-**How to run a real A/B.** Because attribution follows the tag, retagging an
-indexer moves its future traffic to the other solver. Leave 1337x on
-`byparr` for a week, switch to `flaresolverr` for a week, and compare the
-24h success rate across the two periods. Same site, same query mix, real
-traffic, one variable. That is the experiment tagging can honestly support,
-and it is not the same as running both solvers on different indexers
-simultaneously, which compares the sites.
+Attribution follows the tag, so if a second solver is ever added, retagging
+an indexer moves its future traffic across. Leave one site on solver A for a
+week, switch to solver B for a week, compare the 24h success rates. Same
+site, same query mix, real traffic, one variable. That is a fair experiment,
+unlike running two solvers on different indexers at once, which compares the
+sites rather than the solvers.
 
 One caveat the collector reports on itself: it pages backwards through
 history until it reaches the window edge, and if it hits the page cap first
@@ -359,42 +367,23 @@ the counts cover less than 24h and every rate is wrong.
 `ProwlarrMetricsWindowTruncated` alerts on it, rather than letting a partial
 window read as a whole one.
 
-This probe runs inside a container rather than under systemd directly,
-unlike every other collector here: the solvers are only addressable on the
-`edge` overlay, which is not attachable from the host.
+It runs inside a container rather than under systemd directly, unlike most
+collectors here: Prowlarr is only addressable on the `edge` overlay, which
+is not attachable from the host.
 
-Do not put a Prowlarr proxy tag and a solver tag on the same indexer. The
-solver fetches from the house IP and Prowlarr would fetch through the VPN,
-and the `cf_clearance` cookie is bound to the address that solved the
-challenge. See the bypass-list notes above, which exist for exactly this.
+#### Other notes
 
-### FlareSolverr specifics
+ByParr is unreliable against Cloudflare Turnstile, as FlareSolverr was;
+when an indexer stays broken with the tag applied, this is usually why.
 
-Some public indexers sit behind Cloudflare's JS challenge and simply fail
-in Prowlarr. FlareSolverr runs a headless Chromium, solves the challenge,
-and returns the `cf_clearance` cookie. Prowlarr supports it natively:
-**Settings -> Indexers -> Indexer Proxies -> + -> FlareSolverr**, host
-`http://flaresolverr:8191`, give it a tag such as `cloudflare`, then apply
-that tag to only the indexers that need it. Tagging everything routes
-every search through a browser for no reason.
+It carries a memory limit, and is the only service here that needs one:
+every request spawns a browser, and that is the one workload in this stack
+that can run away.
 
-It runs on `edge` next to Prowlarr rather than behind the VPN because the
-`cf_clearance` cookie is bound to the IP and User-Agent that solved the
-challenge -- if FlareSolverr exits from a different address than Prowlarr,
-the cookie is rejected on first use.
-
-Two honest limitations. FlareSolverr handles the older JS "I'm Under
-Attack" challenge well but is unreliable against Cloudflare Turnstile,
-which more sites are adopting; when an indexer stays broken with the tag
-applied, this is usually why. And it is the one service here with a memory
-limit, because every request spawns a Chromium and upstream has a long
-history of memory growth under sustained use.
-
-For private trackers, check whether the tracker offers a real API or
-Torznab endpoint before reaching for FlareSolverr -- "blocked by
-Cloudflare" often just means the indexer definition is HTML-scraping a
-site that has a sanctioned API, and the API path does not break every
-time the challenge changes.
+For private trackers, check whether the tracker offers a real API or Torznab
+endpoint before reaching for a solver. "Blocked by Cloudflare" often just
+means the indexer definition is HTML-scraping a site that has a sanctioned
+API, and the API path does not break every time the challenge changes.
 
 ### Using the VPN as a proxy from the rest of your LAN
 
@@ -710,7 +699,7 @@ All four are Servarr apps and take identical values:
 | Port | `8888` |
 | Username / Password | from `secrets/httpproxy_*.txt` |
 | Bypass Proxy for Local Addresses | on |
-| Ignored Addresses | `localhost,127.0.0.1,10.0.*,172.16.*,192.168.*,qbittorrent,prowlarr,sonarr,radarr,lidarr,lazylibrarian,bazarr,flaresolverr,byparr,vpn-client` |
+| Ignored Addresses | `localhost,127.0.0.1,10.0.*,172.16.*,192.168.*,qbittorrent,prowlarr,sonarr,radarr,lidarr,lazylibrarian,bazarr,byparr,vpn-client` |
 
 The ignored-addresses list is not redundant with bypass-for-local. These
 apps reach each other by *service name* on the overlay, and a bare name
@@ -725,55 +714,22 @@ Prowlarr's global proxy is enabled. Its bypass list contains only local
 addresses and service names; public indexer hostnames never belong there.
 Every ordinary indexer request therefore exits through gluetun.
 
-Both solvers are *configured* to use gluetun as their upstream proxy, with
-wrappers reading `httpproxy_user` and `httpproxy_password` from Swarm
-secrets so credentials stay out of the stack file and service environment.
-This shared egress is mandatory because Cloudflare binds `cf_clearance` to
-the IP that solved the challenge.
+ByParr uses gluetun as its upstream proxy via `PROXY_SERVER`, with a wrapper
+reading `httpproxy_user` and `httpproxy_password` from Swarm secrets so
+credentials stay out of the stack file and the service environment. This
+shared egress is mandatory because Cloudflare binds `cf_clearance` to the IP
+that solved the challenge, and it is verified: ByParr exited via the VPN in
+8 of 8 samples.
 
-**Only ByParr actually honours it.** Measured on 2026-09-06 by asking each
-solver to fetch an IP echo and comparing the answer to the gluetun exit:
+FlareSolverr was removed on 2026-09-06 for failing exactly this. See "Why
+FlareSolverr was removed" above for the measurements. The rule that outlived
+it: **verify a solver's observed egress IP, never its success flag**, because
+a solver will report `Success` while exiting from the wrong address.
 
-| Solver | Mechanism | Result |
-|---|---|---|
-| ByParr | `PROXY_SERVER` env | VPN exit, 8 of 8 |
-| FlareSolverr | `PROXY_URL` env | house IP, 8 of 9 |
-| FlareSolverr | explicit per-request `proxy` | house IP, 3 of 4 |
-
-FlareSolverr reads the variables (they are present in its process and its
-source consumes them), and it still mostly exits direct. The pattern is
-that the first request after an idle period is proxied and reused ones are
-not, which points at its browser-instance pooling: a driver created without
-the proxy gets handed out again. Neither mechanism is reliable, so
-**FlareSolverr must be treated as unproxied.**
-
-Consequences, and they are the reason this is documented rather than
-quietly tolerated:
-
-- **Do not tag any indexer `flare`.** FlareSolverr would solve from the
-  house IP while Prowlarr fetches through the VPN, so `cf_clearance` is
-  rejected and the indexer fails with a Cloudflare block. That is the exact
-  bug this whole design removes, mirrored.
-- **`scripts/solver-probe.py` drove that leak on a timer.** It asks both
-  solvers for five 1337x mirrors, so FlareSolverr's half went out from the
-  house IP. The repo timer says 4h; the installed copy was still the
-  original 30min, which is 240 house-IP requests a day at the mirrors, and
-  the script's own docstring warns that this load pattern is what gets an
-  address blocked. The timer is stopped. Re-enable it only if FlareSolverr
-  is removed or fixed, and reinstall the timer so repo and installed agree.
-- **The probe's comparison is no longer meaningful** regardless, because it
-  measures a proxied solver against an unproxied one. Real per-indexer
-  outcomes come from `scripts/prowlarr-indexer-metrics.py` instead.
-
-Any future check of solver proxying must compare the observed egress
-address. Both solvers report `Success` while exiting from the wrong one, so
-the success flag proves nothing.
-
-Settings -> Indexers -> Indexer Proxies contains `ByParr` (tag `byparr`)
-and `FlareSolverr` (tag `flare`). Add exactly one solver tag only when an
-indexer needs a browser, and in practice that tag is `byparr`. The older
-`VPN` indexer-proxy entry and tag remain harmless but redundant now that
-Prowlarr's global proxy covers all external requests.
+Settings -> Indexers -> Indexer Proxies contains `ByParr` (tag `byparr`).
+Tag an indexer only when it needs a browser. The older `VPN` indexer-proxy
+entry and tag remain harmless but redundant now that Prowlarr's global proxy
+covers all external requests.
 
 A challenge page (`cf-mitigated: challenge`) is solvable. Cloudflare error
 1006 means the VPN exit itself is banned; restart `vpn-client` to select
@@ -2173,7 +2129,6 @@ trimming. All twelve:
 | `mediastack-authentik-watchdog` | every 5 min | Exports Authentik account state so a new account raises an alert |
 | `mediastack-crowdsec-geo` | every 15 min | Exports CrowdSec alert sources with coordinates for the IDS world map |
 | `mediastack-router-exporter` | every 2 min | Collects CPU, memory, temperature, throughput and client counts from all three AiMesh routers over SSH |
-| `mediastack-solver-probe` | every 4 h | Canary: asks both Cloudflare solvers for the same URLs. Deliberately infrequent, it generates the load it measures |
 | `mediastack-prowlarr-metrics` | every 15 min | The real measurement: summarises Prowlarr's own query outcomes per indexer and solver |
 | `mediastack-trim-logs` | hourly | Caps runaway container logs |
 
@@ -2187,7 +2142,7 @@ for u in backup-local backup-offsite verify-backups media-watchdog \
   sudo cp "systemd/mediastack-$u.timer" /etc/systemd/system/
 done
 sudo systemctl daemon-reload
-sudo systemctl enable --now mediastack-{backup-local,backup-offsite,verify-backups,media-watchdog,ai-digest,vpn-watchdog,trim-logs,authentik-watchdog,crowdsec-geo,router-exporter,solver-probe,prowlarr-metrics}.timer
+sudo systemctl enable --now mediastack-{backup-local,backup-offsite,verify-backups,media-watchdog,ai-digest,vpn-watchdog,trim-logs,authentik-watchdog,crowdsec-geo,router-exporter,prowlarr-metrics}.timer
 ```
 
 That loop substitutes the repo path rather than copying verbatim, which

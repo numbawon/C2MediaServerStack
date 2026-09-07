@@ -609,53 +609,25 @@ services:
   # the indexers that actually need it. Tagging everything sends every
   # search through a headless browser for no reason.
   #
-  # Its browser uses gluetun's authenticated HTTP proxy. Cloudflare binds a
-  # cf_clearance cookie to the solving IP, so Prowlarr's global proxy must
-  # stay enabled to send its follow-up request through the same VPN exit.
+  # ByParr drives Camoufox rather than headless Chromium. It replaced
+  # FlareSolverr outright on 2026-09-06, which is worth recording because
+  # the reason was not success rate.
+  #
+  # Cloudflare binds cf_clearance to the IP that solved the challenge, so
+  # the solver and Prowlarr's follow-up request must share an exit. Both
+  # use gluetun's authenticated proxy: this service via PROXY_SERVER,
+  # Prowlarr via its global proxy, which must stay enabled.
+  #
+  # FlareSolverr could not hold up its half. It reads PROXY_URL and its
+  # source consumes it, yet it exited from the house IP in 8 of 9 samples,
+  # and in 3 of 4 even when handed an explicit per-request proxy, seemingly
+  # reusing browser instances built without one. That is an IP leak and a
+  # guaranteed cf_clearance mismatch, so it was removed rather than left as
+  # a tempting fallback. Both solvers report Success while exiting from the
+  # wrong address, so verify the observed egress IP, never the success flag.
   #
   # No Traefik labels on purpose: this is an internal API with no UI worth
   # exposing, so it stays reachable only from inside the overlay.
-  flaresolverr:
-    logging: *logging
-    image: ghcr.io/flaresolverr/flaresolverr:latest
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        export PROXY_USERNAME="$$(cat /run/secrets/httpproxy_user)"
-        export PROXY_PASSWORD="$$(cat /run/secrets/httpproxy_password)"
-        exec /usr/local/bin/python -u /app/flaresolverr.py
-    environment:
-      - TZ=${COMMON_TZ}
-      # INFO logs include the generated proxy request, including credentials.
-      - LOG_LEVEL=warning
-      - PROXY_URL=http://${COMMON_LAN_IP}:8888
-    secrets:
-      - httpproxy_user
-      - httpproxy_password
-    networks:
-      - edge
-    deploy:
-      resources:
-        limits:
-          # The only service in this stack with a memory ceiling, and the
-          # only one that needs one: each request spawns a headless
-          # Chromium, and upstream has a long history of memory growth
-          # under sustained use. Everything else here has a predictable
-          # footprint. If it does run away, Swarm kills and restarts just
-          # this container instead of letting it lean on the whole host.
-          memory: 1536M
-
-  # A second Cloudflare solver, running ALONGSIDE FlareSolverr rather than
-  # replacing it. Same /v1 API, so Prowlarr treats it as another
-  # "FlareSolverr" indexer proxy and no app-side code differs.
-  #
-  # It exists because FlareSolverr's success rate against newer Cloudflare
-  # has degraded. ByParr drives Camoufox rather than plain headless Chromium.
-  # Its browser uses the same authenticated gluetun proxy as FlareSolverr.
-  #
-  # Whether that is true HERE is not taken on faith. scripts/solver-probe.py
-  # asks both solvers for the same URLs on a timer and exports a success
-  # rate for each, so the choice is made on this network's own numbers.
   byparr:
     logging: *logging
     image: ghcr.io/thephaseless/byparr:latest
@@ -676,10 +648,12 @@ services:
     deploy:
       resources:
         limits:
-          # Higher than FlareSolverr's 1536M: Camoufox is a patched Firefox
-          # and carries a larger resident set than headless Chromium. Same
-          # reasoning for having a ceiling at all, a browser per request is
-          # the one workload here that can run away.
+          # Camoufox is a patched Firefox and carries a larger resident set
+          # than the headless Chromium the old FlareSolverr service used,
+          # which ran at 1536M. A browser per request is the one workload
+          # here that can run away, so it keeps a ceiling: if it does, Swarm
+          # kills and restarts just this container rather than letting it
+          # lean on the whole host.
           memory: 2560M
 
   # Reads Plex's own watch/library stats via Plex's API + a token generated
@@ -1172,8 +1146,8 @@ services:
       # requests, which honours NO_PROXY from the environment even when a
       # proxies dict is passed explicitly. Bare names match as suffixes,
       # so the service names cover the overlay.
-      - NO_PROXY=localhost,127.0.0.1,10.0.1.0/24,192.168.0.0/16,qbittorrent,prowlarr,sonarr,radarr,lidarr,lazylibrarian,bazarr,flaresolverr,byparr,vpn-client
-      - no_proxy=localhost,127.0.0.1,10.0.1.0/24,192.168.0.0/16,qbittorrent,prowlarr,sonarr,radarr,lidarr,lazylibrarian,bazarr,flaresolverr,byparr,vpn-client
+      - NO_PROXY=localhost,127.0.0.1,10.0.1.0/24,192.168.0.0/16,qbittorrent,prowlarr,sonarr,radarr,lidarr,lazylibrarian,bazarr,byparr,vpn-client
+      - no_proxy=localhost,127.0.0.1,10.0.1.0/24,192.168.0.0/16,qbittorrent,prowlarr,sonarr,radarr,lidarr,lazylibrarian,bazarr,byparr,vpn-client
     volumes:
       - ${COMMON_CONFIG}/lazylibrarian:/config
       - ${COMMON_MEDIA}/EBooks:/books

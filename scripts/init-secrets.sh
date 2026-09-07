@@ -79,10 +79,10 @@ write_local_secret nordlynx_private_key.txt "$nord_key"
 unset nord_key
 
 # Credentials for gluetun's LAN HTTP proxy. The file copies are consumed by
-# the standalone download stack; matching Swarm secrets let ByParr and
-# FlareSolverr use the same proxy without exposing credentials in service
-# environment variables. Preserve existing files on reruns because every
-# configured proxy client already holds these values.
+# the standalone download stack; matching Swarm secrets let ByParr use the
+# same proxy without exposing credentials in service environment variables.
+# Preserve existing files on reruns because every configured proxy client
+# already holds these values.
 httpproxy_user="$(read_or_create_local_secret httpproxy_user.txt "proxy")"
 httpproxy_password="$(read_or_create_local_secret httpproxy_password.txt "$(random_password)")"
 create_swarm_secret httpproxy_user "$httpproxy_user"
