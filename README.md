@@ -677,18 +677,21 @@ of their config from Recyclarr. The rest are genuinely manual.
 
 Sonarr, Radarr, LazyLibrarian and Prowlarr are swarm services on the
 house IP; only qBittorrent is behind the VPN (see "Why only qBittorrent
-is behind the VPN"). All four are configured to send their outbound
+is behind the VPN"). Sonarr, Radarr and LazyLibrarian send their outbound
 traffic through gluetun's authenticated HTTP proxy at
-`${COMMON_LAN_IP}:8888`, so indexer requests still exit through the
+`${COMMON_LAN_IP}:8888`, so their indexer requests still exit through the
 tunnel. Credentials are the ones in `secrets/httpproxy_user.txt` and
 `secrets/httpproxy_password.txt`.
 
-Three of the four store this in a database or config file rather than in
+**Prowlarr is deliberately not in that list any more.** It uses
+per-indexer proxies instead, for reasons in the next section.
+
+These apps store this in a database or config file rather than in
 compose, which is why it is in the table above. Only the LazyLibrarian
 bypass list is declared, and only because it has to be an env var.
 
-**Sonarr / Radarr / Prowlarr** -- Settings -> General -> Proxy. All three
-are Servarr apps and take identical values:
+**Sonarr / Radarr** -- Settings -> General -> Proxy. Both are Servarr
+apps and take identical values:
 
 | Field | Value |
 |---|---|
@@ -698,7 +701,7 @@ are Servarr apps and take identical values:
 | Port | `8888` |
 | Username / Password | from `secrets/httpproxy_*.txt` |
 | Bypass Proxy for Local Addresses | on |
-| Ignored Addresses | `localhost,127.0.0.1,10.0.*,172.16.*,192.168.*,qbittorrent,prowlarr,sonarr,radarr,lazylibrarian,flaresolverr,vpn-client` |
+| Ignored Addresses | `localhost,127.0.0.1,10.0.*,172.16.*,192.168.*,qbittorrent,prowlarr,sonarr,radarr,lazylibrarian,flaresolverr,byparr,vpn-client` |
 
 The ignored-addresses list is not redundant with bypass-for-local. These
 apps reach each other by *service name* on the overlay, and a bare name
@@ -707,40 +710,76 @@ listed explicitly Sonarr's calls to qBittorrent and Prowlarr would go out
 to gluetun and come back. Slower at best, and the gluetun firewall can
 refuse them outright.
 
-Prowlarr additionally carries every 1337x mirror in that list. That is the
-FlareSolverr exception described above, and it is per-host because
-Prowlarr's app-level proxy has no per-indexer exclusion. Any future indexer
-given the `cloudflare` tag needs its hostname added here too, otherwise it
-will start failing with a Cloudflare block for reasons that look nothing
-like the actual cause.
+### Why Prowlarr uses per-indexer proxies instead of an app-level one
 
-**The bypass is per-DOMAIN, and that bites when a mirror changes.** On
-2026-09-06 `1337x.to` started returning a hard Cloudflare block rather than
-a solvable challenge; FlareSolverr was fine and solved every other mirror at
-HTTP 200. Switching the indexer's Base Url to `1337x.st` should have been
-the whole fix, and instead Prowlarr refused to save it with `400 Unable to
-connect to indexer. Unexpected response status Forbidden`.
+Prowlarr ran with the same app-level proxy until 2026-09-06, when adding
+any new indexer became impossible. Every candidate failed with `Unable to
+access <site>, blocked by CloudFlare Protection`, which is a message that
+points at the wrong thing entirely.
 
-The reason was this list. It named `1337x.to` only, so the new mirror was
-routed through the VPN proxy while FlareSolverr kept solving from the house
-IP, and the `cf_clearance` cookie was rejected for the mismatch. Exactly the
-original bug, resurfaced because the hostname changed. Every mirror in the
-definition's `links:` block is listed now, so a future mirror switch does
-not repeat it.
+The app-level proxy is all-or-nothing: every request leaves through the
+VPN unless the hostname appears in Prowlarr's bypass list. The solvers,
+FlareSolverr and ByParr, run as ordinary swarm services on the house IP
+and have no such redirection. So for a Cloudflare-protected indexer the
+solver would obtain a `cf_clearance` cookie from the house IP, Prowlarr
+would then present that cookie from the VPN exit IP, and Cloudflare would
+reject it, because `cf_clearance` is bound to the address that solved the
+challenge.
 
-Diagnosing a failing Cloudflare indexer, in order:
+The result was that a working indexer needed **two** things: a solver tag
+*and* its hostname in the bypass list. The first is discoverable. The
+second is invisible, and its absence produces an error naming Cloudflare
+and the site rather than the proxy. Testing the combinations makes it
+plain:
 
-1. Ask FlareSolverr directly, mirror by mirror. `error` with "Cloudflare has
-   blocked this request" means the site is refusing that IP; `ok` with page
-   status 200 means FlareSolverr is fine and the problem is downstream.
-2. If some mirrors answer and others do not, switch Base Url to a working
-   one **and add it to the bypass list first**, or the save fails with a
-   Forbidden that has nothing to do with the mirror.
-3. Only then consider the proxy. FlareSolverr has its own proxy field for
-   the case where the site blocks the house IP outright and the mirrors are
-   all blocked too, which would mean both it and Prowlarr exiting through
-   the VPN together. Do not set a Prowlarr proxy tag and the FlareSolverr
-   tag on the same indexer; that recreates the mismatch deliberately.
+```
+solver tag + hostname in bypass  ->  200  works
+solver tag, NOT in bypass        ->  400  "blocked by CloudFlare Protection"
+no solver tag, hostname in bypass->  400  needs the solver
+```
+
+So the model was inverted. The app-level proxy is off, and the VPN is now
+opt-in per indexer:
+
+- **Default: no proxy.** Prowlarr exits on the house IP, which is the
+  same address the solvers use, so `cf_clearance` matches and Cloudflare
+  indexers work with a solver tag alone. No bypass list to maintain, and
+  no failure mode that lies about its cause.
+- **Settings -> Indexers -> Indexer Proxies** holds three entries, each
+  applied by tag: `FlareSolverr` (tag `flare`), `ByParr` (tag `byparr`),
+  and `VPN`, an HTTP proxy pointing at `${COMMON_LAN_IP}:8888` with tag
+  `vpn`. The FlareSolverr tag is `flare`, not `flaresolverr`; anything
+  matching on tag names has to use the literal string.
+- **Tag an indexer `vpn` only when it actually needs the VPN**, meaning
+  the ISP or the site blocks the house IP outright. `nyaa.si` is the
+  current example: untagged it fails to connect, tagged `vpn` it returns
+  200.
+
+Never put a solver tag and the `vpn` tag on the same indexer. That
+recreates the original cookie mismatch on purpose.
+
+Diagnosing a failing indexer, in order:
+
+1. **Read the error literally, but distrust the Cloudflare wording.** A
+   connection or DNS/SSL failure means the site is unreachable from the
+   house IP, so try the `vpn` tag. A Cloudflare block means the challenge
+   was not solved, so try a solver tag.
+2. **Ask the solver directly** before blaming it. `POST /v1` with
+   `{"cmd":"request.get","url":"https://<site>/"}` to `byparr:8191` or
+   `flaresolverr:8191` from the `edge` network. `status: ok` with page
+   status 200 means the solver is fine and the problem is downstream.
+3. **Check for a 429.** Repeated testing rate-limits you, and Prowlarr
+   reports that as a generic "Unable to connect to indexer". It resolves
+   itself; retesting immediately does not help.
+4. **Consider that the site is simply dead.** Of 14 untested public
+   indexers surveyed on 2026-09-06, 10 passed; the 4 failures were sites
+   that no longer resolve or no longer serve. A failing indexer is not
+   automatically a stack problem.
+
+Mirror changes are no longer a special case. The old bypass list named
+hostnames, so switching 1337x from `1337x.to` to `1337x.st` failed to
+save with a Forbidden that had nothing to do with the mirror. With no
+bypass list in play, a mirror switch is just a Base Url edit.
 
 **LazyLibrarian** is the odd one out twice over. Its proxy lives in
 `config.ini` under a `[PROXY]` section rather than in a database:
@@ -779,13 +818,14 @@ the host connection table while making an app do something outbound:
 ```bash
 # in one shell
 watch -n0.5 "ss -tn | grep :8888"
-# in another: force a metadata refresh, or in Prowlarr test all indexers
+# in another: force a metadata refresh in Sonarr or Radarr
 ```
 
 Connections to `${COMMON_LAN_IP}:8888` should appear while the refresh
-runs. Prowlarr's **Test All Indexers** button is the most direct check,
-since a misconfigured proxy fails the tests outright rather than quietly
-falling back to a direct connection.
+runs. Use Sonarr or Radarr for this, not Prowlarr: Prowlarr no longer
+carries an app-level proxy, so its indexer tests deliberately do not
+touch port 8888 unless the indexer is tagged `vpn`. Testing a `vpn`-tagged
+indexer is the direct check on that path.
 
 ### Why some of it cannot be declared
 
