@@ -282,6 +282,63 @@ ByParr and Prowlarr's follow-up request both use gluetun's
 proxy. A solver tag selects the browser; global proxy settings keep every
 request on the same VPN exit.
 
+### What actually keeps the torrent traffic covered
+
+Audited 2026-09-06, by observation rather than by reading the config. All
+of this concerns qBittorrent, since that is the only thing joining swarms.
+
+| Check | State |
+|---|---|
+| qBittorrent egress | The gluetun exit, not the house IP |
+| Kill switch | `-P OUTPUT DROP`; the only public destination allowed off-tunnel is the WireGuard endpoint |
+| IPv6 | None in the namespace, so that leak class cannot exist |
+| DNS | `127.0.0.1`, gluetun's resolver, forwarding to NordVPN inside the tunnel |
+| Anonymous mode / encryption | On, encryption forced |
+| UPnP | Off |
+| Namespace restarts | `vpn-watchdog.sh` restarts every `service:vpn-client` member when the exit IP changes |
+
+The routing is worth understanding, because the main table looks wrong at a
+glance. Its default points at the docker gwbridge, not the tunnel. Policy
+rule 101 is what matters: everything without the WireGuard fwmark goes to
+table 51820, whose default is `tun0`. If `tun0` dies that table empties,
+traffic falls through to the gwbridge, and the firewall drops it. It fails
+closed.
+
+Two hardening changes on top of that:
+
+**qBittorrent is bound to `tun0`** (`Session\InterfaceName`, set through the
+WebUI API so it persists rather than being overwritten on shutdown). Nothing
+inside qBittorrent previously knew about the VPN; it was protected purely by
+the namespace and the firewall. Binding means that if those rules are ever
+rebuilt wrong, qBittorrent refuses to use another interface instead of
+quietly using it. It fails in the safe direction: no `tun0`, no peers.
+
+**The exit is pinned to specific servers** via `COMMON_VPN_SERVERS` /
+`SERVER_HOSTNAMES`. Only `SERVER_COUNTRIES` was set before, so gluetun drew a
+new server, and a new exit IP, on every container start. Since ByParr solves
+Cloudflare challenges through this tunnel and `cf_clearance` is bound to the
+solving IP, every restart invalidated the cached clearance. It self-heals,
+but pinning removes the churn. Use several hostnames rather than one: gluetun
+picks among them, so a single entry means a dead server takes the tunnel down
+and the kill switch stops everything behind it.
+
+Note the endpoint IP and the exit IP differ: a pinned server's WireGuard
+endpoint and the address you actually appear from are two different hosts on
+NordVPN's side. Pinning stabilises which server you land on, not an address
+equal to the endpoint, so check the observed exit with
+`docker exec vpn-client wget -qO- https://api.ipify.org` rather than reading
+it off the firewall rule.
+
+`connection_status: firewalled` in qBittorrent is expected and not a fault:
+NordVPN does not offer port forwarding, so inbound connections are
+impossible and only outbound ones are made. It affects speed, never safety.
+
+Things deliberately not done, because they are oversold: protocol encryption
+does not hide you from peers in a swarm, it defeats ISP shaping, and it is
+already on. Anonymous mode hides the client fingerprint, not the address. IP
+blocklists sound protective but monitoring outfits rotate faster than the
+lists. Moving off port 6881 buys nothing behind a VPN.
+
 ### Cloudflare-blocked indexers: ByParr
 
 Some public indexers sit behind Cloudflare's JS challenge and simply fail in

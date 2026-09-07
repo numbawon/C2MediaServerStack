@@ -62,6 +62,17 @@ services:
       - VPN_SERVICE_PROVIDER=nordvpn
       - VPN_TYPE=wireguard
       - SERVER_COUNTRIES=${COMMON_VPN_COUNTRY}
+      # Pin the exit to a handful of specific servers rather than letting
+      # gluetun draw any server in the country on every start. Cloudflare
+      # binds cf_clearance to the solving IP and ByParr solves through this
+      # tunnel, so a new exit IP invalidates every cached clearance and the
+      # next searches fail until it re-solves. It self-heals; this just stops
+      # the churn, and keeps the firewall's WireGuard endpoint rule stable.
+      #
+      # Several hostnames, not one: gluetun picks among them, so a single
+      # entry would mean a dead server takes the tunnel down and the kill
+      # switch stops everything behind it. Same city keeps latency even.
+      - SERVER_HOSTNAMES=${COMMON_VPN_SERVERS}
       - TZ=${COMMON_TZ}
 
       # gluetun's firewall drops everything not explicitly allowed. These
