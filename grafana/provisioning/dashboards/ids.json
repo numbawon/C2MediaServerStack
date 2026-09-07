@@ -1146,6 +1146,85 @@
    "options": {
     "showHeader": true
    }
+  },
+  {
+   "type": "timeseries",
+   "title": "Indexer success rate, real traffic",
+   "description": "Share of Prowlarr's actual RSS polls and searches that succeeded, over a rolling 24h window. This is the number to trust: real queries against real search endpoints, no synthetic load, and nothing that could provoke the blocks it measures. The solver panels above are a canary running every 4 hours; this is the measurement.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 68
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "legendFormat": "{{indexer}} ({{solver}})",
+     "expr": "sum by (indexer,solver) (mediastack_prowlarr_queries{result=\"success\"}) / sum by (indexer,solver) (mediastack_prowlarr_queries)"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "min": 0,
+     "max": 1,
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 0
+     }
+    },
+    "overrides": []
+   },
+   "options": {}
+  },
+  {
+   "type": "timeseries",
+   "title": "Indexer response time, real traffic",
+   "description": "Mean elapsed time Prowlarr itself recorded per indexer. An indexer behind a solver carries the solve in this number, which is why a slow solver shows up here as a slow indexer.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 68
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "legendFormat": "{{indexer}} ({{solver}})",
+     "expr": "mediastack_prowlarr_query_elapsed_ms"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms",
+     "min": 0,
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 0
+     }
+    },
+    "overrides": []
+   },
+   "options": {}
   }
  ],
  "templating": {

@@ -1,0 +1,24 @@
+# Real Prowlarr query outcomes per indexer, attributed to its Cloudflare
+# solver. See scripts/prowlarr-indexer-metrics.py.
+#
+# Runs in a container: Prowlarr is only addressable on the `edge` overlay,
+# which is not attachable from the host.
+#
+# Replace youruser with your actual repo path before installing.
+[Unit]
+Description=mediastack Prowlarr indexer outcome metrics
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/youruser/C2MediaServerStack
+# The API key is read from Prowlarr's own config at run time rather than
+# duplicated into a unit file or an env file that would then drift.
+ExecStart=/bin/sh -c 'exec /usr/bin/docker run --rm --network edge \
+  -v /home/youruser/C2MediaServerStack/scripts:/s:ro \
+  -v node_exporter_textfile:/textfile \
+  -e PROWLARR_API_KEY="$(grep -o "<ApiKey>[^<]*" /home/youruser/C2MediaServerStack/.appdata/prowlarr/config.xml | cut -c9-)" \
+  python:3.12-alpine python /s/prowlarr-indexer-metrics.py'
+TimeoutStartSec=10m

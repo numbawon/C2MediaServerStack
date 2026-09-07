@@ -309,9 +309,50 @@ flaresolverr  4/5 targets   11-13s per success   fails 1337x.to outright
 byparr        5/5 targets    4-9s per success
 ```
 
-On that evidence 1337x is tagged `byparr`. The **Cloudflare solvers** row on
-the IDS dashboard carries the running comparison; one run is a data point,
-not a verdict, and the panels are there to see whether it holds.
+On that evidence 1337x is tagged `byparr`.
+
+### Where the numbers should actually come from
+
+The probe above is a **canary**, running every 4 hours. It is not the
+measurement, for three reasons worth stating because they are easy to miss:
+
+- It fetches homepages. Prowlarr fetches search pages with parameters and
+  reuses sessions. A solver can pass one and fail the other.
+- It only targets 1337x mirrors, so it largely measures one site's
+  Cloudflare configuration rather than solver capability.
+- **It generates the load it measures.** Ten browser sessions every 30
+  minutes was ~96 requests per day per target from one address against five
+  URLs of a single site, which is exactly the pattern that gets an IP
+  blocked. That is why it now runs every 4 hours instead: a probe that
+  provokes the failure it is measuring is worse than no probe.
+
+`scripts/prowlarr-indexer-metrics.py` is the real measurement. Prowlarr
+already records every RSS poll and every search with a success flag, a
+timestamp and an elapsed time, per indexer, and there were 15,794 of them
+sitting unused. Reading those costs nothing, adds no load, and cannot
+provoke a block. Solver attribution comes from the indexer's tag.
+
+```
+1337x            solver=byparr    50/54   92.6%
+The Pirate Bay   solver=none    323/323  100.0%
+TorrentDownload  solver=none    323/323  100.0%
+YTS              solver=none      48/48  100.0%
+```
+
+**How to run a real A/B.** Because attribution follows the tag, retagging an
+indexer moves its future traffic to the other solver. Leave 1337x on
+`byparr` for a week, switch to `flaresolverr` for a week, and compare the
+24h success rate across the two periods. Same site, same query mix, real
+traffic, one variable. That is the experiment tagging can honestly support,
+and it is not the same as running both solvers on different indexers
+simultaneously, which compares the sites.
+
+One caveat the collector reports on itself: it pages backwards through
+history until it reaches the window edge, and if it hits the page cap first
+the counts cover less than 24h and every rate is wrong.
+`mediastack_prowlarr_metrics_window_complete` is 0 when that happens and
+`ProwlarrMetricsWindowTruncated` alerts on it, rather than letting a partial
+window read as a whole one.
 
 This probe runs inside a container rather than under systemd directly,
 unlike every other collector here: the solvers are only addressable on the
@@ -1942,7 +1983,7 @@ sudo systemctl enable --now mediastack-backup-local.timer mediastack-backup-offs
 Several of these had install instructions scattered across other sections
 and several had none at all, which meant following this README left you
 without backup verification, without the VPN watchdog, and without log
-trimming. All eleven:
+trimming. All twelve:
 
 | Timer | Schedule | What it does |
 |---|---|---|
@@ -1955,7 +1996,8 @@ trimming. All eleven:
 | `mediastack-authentik-watchdog` | every 5 min | Exports Authentik account state so a new account raises an alert |
 | `mediastack-crowdsec-geo` | every 15 min | Exports CrowdSec alert sources with coordinates for the IDS world map |
 | `mediastack-router-exporter` | every 2 min | Collects CPU, memory, temperature, throughput and client counts from all three AiMesh routers over SSH |
-| `mediastack-solver-probe` | every 30 min | Asks both Cloudflare solvers for the same URLs and exports a success rate for each |
+| `mediastack-solver-probe` | every 4 h | Canary: asks both Cloudflare solvers for the same URLs. Deliberately infrequent, it generates the load it measures |
+| `mediastack-prowlarr-metrics` | every 15 min | The real measurement: summarises Prowlarr's own query outcomes per indexer and solver |
 | `mediastack-trim-logs` | hourly | Caps runaway container logs |
 
 ```bash
@@ -1968,7 +2010,7 @@ for u in backup-local backup-offsite verify-backups media-watchdog \
   sudo cp "systemd/mediastack-$u.timer" /etc/systemd/system/
 done
 sudo systemctl daemon-reload
-sudo systemctl enable --now mediastack-{backup-local,backup-offsite,verify-backups,media-watchdog,ai-digest,vpn-watchdog,trim-logs,authentik-watchdog,crowdsec-geo,router-exporter,solver-probe}.timer
+sudo systemctl enable --now mediastack-{backup-local,backup-offsite,verify-backups,media-watchdog,ai-digest,vpn-watchdog,trim-logs,authentik-watchdog,crowdsec-geo,router-exporter,solver-probe,prowlarr-metrics}.timer
 ```
 
 That loop substitutes the repo path rather than copying verbatim, which
@@ -2702,7 +2744,7 @@ Prometheus (rules/) --> Alertmanager --> alert-relay --> ntfy --> phone
 
 ### Every alert, and what it means
 
-Fifty-three rules across `alerts.yml` and `ids.yml`. Until now the README
+Fifty-five rules across `alerts.yml` and `ids.yml`. Until now the README
 named three of them, so an alert arriving on your phone at 3 a.m. sent you
 grepping the rules files to find out what it meant. Each rule still carries
 its full reasoning as a comment beside it; this is the index.
@@ -2724,6 +2766,9 @@ grep -hE "^      - alert:|severity:|summary:" prometheus/rules/*.yml
 | `BackupRestoreTestStale` | warning | No successful restore test in over 45 days |
 | `BackupSnapshotsMissing` | critical | Off-site repository has fewer than 2 snapshots |
 | `BackupVerificationStale` | warning | Backup verification has not run in over 9 days |
+| **Indexers** | | |
+| `IndexerFailureRateHigh` | warning | <label> failing <label> of queries |
+| `ProwlarrMetricsWindowTruncated` | warning | Indexer metrics cover less than the full window |
 | **Routers** | | |
 | `RouterUnreachable` | warning | Router not answering: <label> |
 | `RouterTemperatureHigh` | critical | <label> <label> at <label>C |
