@@ -224,6 +224,20 @@ http:
         - authentik
       service: qbittorrent
 
+    # i2pd's web console. Behind authentik, and that is not optional: the
+    # console can reconfigure the router, read its tunnels and shut it
+    # down, and i2pd ships it with no authentication of its own. It is
+    # published to no host port for the same reason, so this is the only
+    # way in.
+    i2pd:
+      rule: 'Host(`i2p.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+        - websecure
+      middlewares:
+        - authentik
+      service: i2pd
+
     # Plex is deliberately NOT behind the authentik middleware: Plex's own
     # mobile/TV/cast apps authenticate via Plex's own OAuth flow and can't
     # complete a browser-redirect SSO challenge. Plex's own account system
@@ -329,6 +343,11 @@ http:
       loadBalancer:
         servers:
           - url: "http://qbittorrent:8080"
+
+    i2pd:
+      loadBalancer:
+        servers:
+          - url: "http://i2pd:7070"
 
     plex:
       loadBalancer:

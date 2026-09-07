@@ -1,0 +1,92 @@
+# I2P router. Standalone (non-swarm) compose, deployed with:
+#   ./scripts/deploy.sh i2p
+#
+# WHAT THIS IS FOR
+#
+# Some torrent trackers exist only inside I2P and have no clearnet address
+# at all; Postman (tracker2.postman.i2p) is the main one. Reaching them
+# needs a router participating in the network, which is what this is.
+#
+# I2P is not a proxy and not a second VPN. It is an overlay network with no
+# exit to the clearnet: traffic between I2P peers never leaves it, and a
+# peer sees your I2P destination rather than your IP. Torrenting is a
+# first-class use here, unlike Tor, where it is forbidden and breaks the
+# anonymity of everyone else on the circuit.
+#
+# WHY IT IS NOT BEHIND THE VPN
+#
+# qBittorrent shares gluetun's namespace; this deliberately does not.
+# NordVPN offers no port forwarding, so an I2P router behind it can never
+# accept inbound tunnels. I2P allocates bandwidth toward peers that carry
+# traffic for others, so a permanently firewalled router is both slow for
+# you and useless to the network. I2P already provides the anonymity the
+# VPN would be duplicating; the only thing the VPN would add is hiding
+# from the ISP that you run I2P at all.
+#
+# qBittorrent still reaches it, over the LAN address rather than by
+# container name. Its resolver is gluetun's (127.0.0.1 -> NordVPN upstreams
+# through the tunnel), which cannot resolve Docker service names, so a
+# hostname here would silently fail to connect. Same reason the *arrs point
+# at COMMON_LAN_IP:8888 for the HTTP proxy rather than at `vpn-client`.
+
+name: mediastack-i2p
+
+services:
+  i2pd:
+    image: purplei2p/i2pd:latest
+    container_name: i2pd
+    user: "${COMMON_PUID}:${COMMON_PGID}"
+    # Needs no capabilities: it binds nothing below 1024 and drops no
+    # privileges of its own. Honoured here because this is plain compose;
+    # note security_opt/no-new-privileges would be ignored in the Swarm
+    # stack, but works in these standalone files.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - --loglevel=warn
+      # Web console. Bound to all interfaces INSIDE the container only; it
+      # is published to nothing, and reached solely through Traefik, which
+      # puts Authentik in front. The console can reconfigure the router and
+      # read tunnel state, and it ships with no authentication of its own,
+      # so it must never be published directly.
+      - --http.address=0.0.0.0
+      - --http.port=7070
+      # i2pd validates the Host header on the console and answers "403 host
+      # mismatch" to anything it does not expect, which includes every
+      # request Traefik forwards. This is a DNS-rebinding guard and worth
+      # keeping, so name the hostname rather than turning the check off.
+      - --http.hostname=i2p.${COMMON_DOMAIN}
+      # SAM bridge. This is the interface qBittorrent speaks; it is what
+      # makes I2P torrents work at all.
+      - --sam.enabled=true
+      - --sam.address=0.0.0.0
+      - --sam.port=7656
+      # Fixed transport port so it can be forwarded on the router. I2P
+      # works without a forward, in "firewalled" mode, just slowly.
+      - --port=12857
+      # No --ipv4/--ipv6 flags here. i2pd treats them as bare switches and
+      # exits with "option '--ipv4' does not take any arguments" if given a
+      # value, which restart-loops the container. The defaults are already
+      # IPv4 on, IPv6 off.
+      # Modest share: this is a media host, not a dedicated relay.
+      - --bandwidth=L
+      - --share=25
+    ports:
+      # SAM, bound to the LAN address specifically rather than 0.0.0.0.
+      # gluetun's FIREWALL_OUTBOUND_SUBNETS already allows the LAN, so
+      # qBittorrent can reach it from inside the VPN namespace.
+      - "${COMMON_LAN_IP}:7656:7656"
+      # I2P transport, inbound from other routers. This one is meant to be
+      # reachable, and is the port to forward on the router.
+      - "12857:12857/tcp"
+      - "12857:12857/udp"
+    volumes:
+      - ${COMMON_CONFIG}/i2pd:/home/i2pd/data
+    networks:
+      - edge
+    restart: unless-stopped
+
+networks:
+  edge:
+    external: true   # the attachable overlay created by the swarm stack
