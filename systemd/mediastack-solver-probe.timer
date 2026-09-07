@@ -1,0 +1,12 @@
+[Unit]
+Description=Compare Cloudflare solvers every 30 minutes
+
+[Timer]
+# Every 30 minutes. Each run drives ten real browsers, so this is
+# deliberately far slower than the other collectors. Half-hourly still gives
+# ~48 samples a day per solver per target, which is plenty to see a trend.
+OnBootSec=10min
+OnUnitActiveSec=30min
+
+[Install]
+WantedBy=timers.target

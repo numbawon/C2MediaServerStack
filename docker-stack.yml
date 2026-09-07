@@ -630,6 +630,34 @@ services:
           # this container instead of letting it lean on the whole host.
           memory: 1536M
 
+  # A second Cloudflare solver, running ALONGSIDE FlareSolverr rather than
+  # replacing it. Same /v1 API, so Prowlarr treats it as another
+  # "FlareSolverr" indexer proxy and no app-side code differs.
+  #
+  # It exists because FlareSolverr's success rate against newer Cloudflare
+  # has degraded: on 2026-09-06 it could not solve 1337x.to at all while
+  # every mirror answered fine. ByParr drives Camoufox rather than plain
+  # headless Chromium, which is the part that reportedly holds up better.
+  #
+  # Whether that is true HERE is not taken on faith. scripts/solver-probe.py
+  # asks both solvers for the same URLs on a timer and exports a success
+  # rate for each, so the choice is made on this network's own numbers.
+  byparr:
+    logging: *logging
+    image: ghcr.io/thephaseless/byparr:latest
+    environment:
+      - TZ=${COMMON_TZ}
+    networks:
+      - edge
+    deploy:
+      resources:
+        limits:
+          # Higher than FlareSolverr's 1536M: Camoufox is a patched Firefox
+          # and carries a larger resident set than headless Chromium. Same
+          # reasoning for having a ceiling at all, a browser per request is
+          # the one workload here that can run away.
+          memory: 2560M
+
   # Reads Plex's own watch/library stats via Plex's API + a token generated
   # through Tautulli's own first-boot wizard (Plex account sign-in) -- can't
   # be scripted, same as every other app's first-boot in this stack.
