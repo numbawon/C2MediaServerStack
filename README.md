@@ -2385,6 +2385,43 @@ Loki, and CrowdSec has already made its decisions from the alerts long
 before a file gets this big. Keeping `eve.json.1` would double the disk
 for data nobody reads.
 
+### Verifying Suricata actually has rules
+
+An IDS with zero rules looks exactly like a healthy one: the container is
+up, the exporter answers, the dashboards render, and nothing alerts except
+`SuricataNoRulesLoaded`. This has happened here once already, when the
+ruleset lived in an anonymous volume and was lost on recreate. Do not judge
+it by whether the container is running.
+
+Ask the running engine over its unix socket. This is the only answer that
+counts, because it reports what the live process loaded rather than what is
+on disk:
+
+```bash
+docker exec suricata suricatasc -c ruleset-stats
+# {"message":[{"id":0,"rules_loaded":47911,"rules_failed":0,...}],"return":"OK"}
+```
+
+Two things that look like faults and are not:
+
+- **The rules file has far more lines than the rule count.** 68625 lines
+  yielding 47911 rules is normal; the file carries comments and blanks.
+- **`suricata -T` printing only a `local.rules` warning and exiting 1.**
+  Test mode treats the missing-file pattern as fatal even though the engine
+  starts fine and loads the full ruleset. Create the file once and the test
+  becomes usable as a health check again:
+
+  ```bash
+  docker exec -u root suricata sh -c \
+    'touch /var/lib/suricata/rules/local.rules && \
+     chown suricata:suricata /var/lib/suricata/rules/local.rules'
+  ```
+
+  It lives in the `suricata_rules` named volume, so it survives recreates.
+  Ownership matters: a root-owned file in that directory is the other way
+  this has broken before, since Suricata drops to the `suricata` user and
+  then cannot read its own ruleset.
+
 ### Reading the logs
 
 Everything lands in Loki and is read through Grafana at
