@@ -62,6 +62,19 @@ services:
       - --sam.enabled=true
       - --sam.address=0.0.0.0
       - --sam.port=7656
+      # HTTP proxy, for reaching .i2p sites in a browser. Needed to FIND
+      # torrents at all: the trackers' own index pages are themselves .i2p
+      # addresses and resolve nowhere else.
+      #
+      # It defaults to loopback inside the container, which is unreachable
+      # from anywhere. Binding 0.0.0.0 here is safe because the publish
+      # below pins it to the LAN address, and because this proxy is not an
+      # open relay: with no outproxy configured, i2pd serves .i2p
+      # destinations and refuses clearnet ones. That is why it needs no
+      # credentials, unlike gluetun's HTTP proxy, which does exit to the
+      # internet and would be an open relay without them.
+      - --httpproxy.address=0.0.0.0
+      - --httpproxy.port=4444
       # Fixed transport port so it can be forwarded on the router. I2P
       # works without a forward, in "firewalled" mode, just slowly.
       - --port=12857
@@ -77,6 +90,8 @@ services:
       # gluetun's FIREWALL_OUTBOUND_SUBNETS already allows the LAN, so
       # qBittorrent can reach it from inside the VPN namespace.
       - "${COMMON_LAN_IP}:7656:7656"
+      # HTTP proxy, LAN only. Point a browser here to open .i2p addresses.
+      - "${COMMON_LAN_IP}:4444:4444"
       # I2P transport, inbound from other routers. This one is meant to be
       # reachable, and is the port to forward on the router.
       - "12857:12857/tcp"
