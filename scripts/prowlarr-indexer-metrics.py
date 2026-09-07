@@ -3,9 +3,10 @@
 
 WHY THIS REPLACES THE SYNTHETIC PROBE AS THE PRIMARY SIGNAL
 
-scripts/solver-probe.py asks both Cloudflare solvers for the same URLs and
-compares them. It is a fair comparison and it measures the wrong thing three
-ways:
+This replaced scripts/solver-probe.py, which asked both Cloudflare solvers
+for the same URLs and compared them. That probe was deleted along with
+FlareSolverr on 2026-09-06. It was a fair comparison and it measured the
+wrong thing three ways:
 
   - It fetches homepages. Prowlarr fetches SEARCH pages with parameters and
     reuses sessions. A solver can pass one and fail the other.
@@ -21,9 +22,11 @@ with a success flag, a timestamp and an elapsed time, per indexer. Real
 traffic, no extra load, no risk of provoking a block. This reads that.
 
 The solver is attributed through the indexer's tag, so an indexer tagged
-`byparr` contributes to byparr's numbers. Retag an indexer and its future
-traffic counts toward the other solver, which makes a genuine A/B possible
-on the SAME site over time rather than comparing different sites.
+`byparr` contributes to byparr's numbers. That made a genuine A/B possible
+on the SAME site over time rather than comparing different sites. ByParr is
+now the only solver, so this reads as a per-indexer success rate; the
+attribution stays because it is how a second solver would be evaluated if
+one is ever added.
 
 Read-only against Prowlarr's API.
 
@@ -71,11 +74,13 @@ def main():
 
     # indexer id -> (name, solver) via tag labels
     tags = {t["id"]: t["label"] for t in api("tag")}
-    # The literal tag strings in use, not the pretty names. `flare` is the
-    # FlareSolverr tag and does NOT match the proxy's display name, so a
-    # set built from display names silently attributes those indexers to
-    # "none" and the whole A/B comparison reads as if nothing uses
-    # FlareSolverr. `cloudflare` predates ByParr and meant FlareSolverr.
+    # The literal tag strings, not the proxy's display name. These differed
+    # once: FlareSolverr's tag was `flare` while its proxy was named
+    # "FlareSolverr", so matching on display names attributed those indexers
+    # to "none" and the numbers read as though nothing used it. FlareSolverr
+    # was removed on 2026-09-06, but the old tags stay mapped so history
+    # from before then still attributes correctly rather than vanishing
+    # into "none".
     solver_aliases = {"byparr": "byparr", "flare": "flaresolverr",
                       "flaresolverr": "flaresolverr", "cloudflare": "flaresolverr"}
     indexers = {}
