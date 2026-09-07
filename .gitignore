@@ -35,3 +35,9 @@ prometheus/targets/*.json
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Local GitHub Copilot instructions, agents, and repository-scoped state
+.github/copilot-instructions.md
+.github/instructions/
+.github/agents/
+.copilot/

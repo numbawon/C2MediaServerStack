@@ -19,6 +19,9 @@ set +a
 
 case "${1:-}" in
   stack)
+    docker build --quiet \
+      --tag c2mediaserverstack/pinepods:0.9.0-subscription-null-fixes \
+      --file pinepods/Dockerfile pinepods >/dev/null
     docker stack deploy -c docker-stack.yml mediastack
     ;;
   download)

@@ -35,6 +35,16 @@ write_local_secret() {
   echo "Wrote secrets/$file"
 }
 
+read_or_create_local_secret() {
+  local file="$1" value="$2"
+  if [ -f "secrets/$file" ]; then
+    cat "secrets/$file"
+  else
+    write_local_secret "$file" "$value" >&2
+    printf '%s' "$value"
+  fi
+}
+
 random_password() {
   # openssl's base64 encoder wraps output at 64 chars; command substitution
   # only strips a *trailing* newline, not one embedded mid-string, so a
@@ -68,11 +78,16 @@ echo
 write_local_secret nordlynx_private_key.txt "$nord_key"
 unset nord_key
 
-# Credentials for gluetun's LAN HTTP proxy. Generated rather than prompted:
-# nothing external issues these, they just have to be known to whoever
-# configures a client. Read them back with `cat secrets/httpproxy_*.txt`.
-write_local_secret httpproxy_user.txt "proxy"
-write_local_secret httpproxy_password.txt "$(random_password)"
+# Credentials for gluetun's LAN HTTP proxy. The file copies are consumed by
+# the standalone download stack; matching Swarm secrets let ByParr and
+# FlareSolverr use the same proxy without exposing credentials in service
+# environment variables. Preserve existing files on reruns because every
+# configured proxy client already holds these values.
+httpproxy_user="$(read_or_create_local_secret httpproxy_user.txt "proxy")"
+httpproxy_password="$(read_or_create_local_secret httpproxy_password.txt "$(random_password)")"
+create_swarm_secret httpproxy_user "$httpproxy_user"
+create_swarm_secret httpproxy_password "$httpproxy_password"
+unset httpproxy_user httpproxy_password
 echo "Generated LAN proxy credentials: secrets/httpproxy_user.txt / httpproxy_password.txt"
 
 echo "Plex claim tokens expire ~4 minutes after being issued at https://plex.tv/claim"
@@ -82,6 +97,7 @@ unset plex_claim
 
 echo
 echo "Done. Swarm secrets: postgres_password, redis_password, grafana_admin_password,"
-echo "authentik_secret_key, cloudflare_tunnel_token."
+echo "authentik_secret_key, cloudflare_tunnel_token, httpproxy_user,"
+echo "httpproxy_password."
 echo "Local files: secrets/nordlynx_private_key.txt, secrets/httpproxy_user.txt,"
 echo "             secrets/httpproxy_password.txt, secrets/plex_claim.txt"
