@@ -2385,6 +2385,86 @@ Loki, and CrowdSec has already made its decisions from the alerts long
 before a file gets this big. Keeping `eve.json.1` would double the disk
 for data nobody reads.
 
+### I2P, and the trackers that only exist inside it
+
+Some torrent trackers have no clearnet address at all and can only be
+reached from inside I2P; Postman (`tracker2.postman.i2p`) is the main one.
+`docker-compose.i2p.yml` runs an `i2pd` router so those are reachable.
+
+I2P is not a second VPN and not a proxy. It is an overlay network with no
+clearnet exit: traffic between peers never leaves it, and a peer sees your
+I2P destination rather than your IP. Torrenting is a first-class use, unlike
+Tor, where it is forbidden and degrades the network for everyone else.
+
+**It is deliberately NOT behind the VPN**, unlike qBittorrent. NordVPN has
+no port forwarding, so a router behind it can never accept inbound tunnels,
+and I2P allocates bandwidth toward peers that carry traffic for others. A
+permanently firewalled router is slow for you and useless to the network.
+I2P already provides the anonymity the VPN would duplicate; the VPN would
+only hide from the ISP that you run I2P at all.
+
+qBittorrent still reaches it, at `COMMON_LAN_IP:7656` rather than by
+container name. Its resolver is gluetun's, which forwards to NordVPN
+upstreams through the tunnel and cannot resolve Docker service names, so a
+hostname there fails silently. Same reason the *arrs point at
+`COMMON_LAN_IP:8888` for the HTTP proxy. gluetun's
+`FIREWALL_OUTBOUND_SUBNETS` already allows the LAN, so the SAM connection is
+permitted.
+
+#### Using an I2P tracker
+
+qBittorrent has native I2P support and is already configured for it:
+
+| Setting | Value |
+|---|---|
+| `i2p_enabled` | true |
+| `i2p_address` / `i2p_port` | `COMMON_LAN_IP` / 7656 (SAM bridge) |
+| `i2p_mixed_mode` | **false** |
+
+Then just add the torrent. A magnet or `.torrent` whose tracker is a `.i2p`
+address routes over I2P automatically; qBittorrent opens a SAM session on
+the first such torrent, not at startup, so an idle log is not a fault.
+Nothing else changes: clearnet torrents keep using the VPN exactly as
+before, and the two swarms are entirely separate sets of peers.
+
+**Leave `i2p_mixed_mode` off.** On, it lets I2P torrents also connect to
+clearnet peers, which defeats the entire point by exposing the VPN exit as
+a participant in a swarm that is supposed to be I2P-only.
+
+Set expectations: I2P is slow. Multi-hop tunnels in both directions, and
+swarms are far smaller than clearnet. It is worth it for material that
+exists nowhere else, not as a general replacement.
+
+#### The console, and why it is gated
+
+The web console is at `i2p.<domain>` behind Authentik. That is not
+optional: it can reconfigure the router, read its tunnels and shut it down,
+and i2pd ships it with no authentication of its own. It is published to no
+host port, so the Traefik route is the only way in.
+
+i2pd also validates the `Host` header and answers `403 host mismatch` to
+anything unexpected, which includes everything Traefik forwards. That is a
+DNS-rebinding guard worth keeping, so the compose file names the hostname
+with `--http.hostname` rather than disabling the check.
+
+#### Two things that look broken and are not
+
+- **`Network status: Firewalled`.** Port 12857 (TCP and UDP) is not
+  forwarded to this host, so other routers cannot open tunnels inward. I2P
+  works firewalled; it is just slower, and the router contributes less. Fix
+  it by forwarding 12857 on the router to `COMMON_LAN_IP`.
+- **A wall of `No profile yet` and `has not been created in 15 seconds`
+  warnings on a fresh router.** Normal bootstrap. It takes tens of minutes
+  to build a peer profile and a working tunnel pool. Judge it by tunnel
+  creation success rate on the console, not by the log.
+
+One genuine gotcha in the image: its entrypoint runs
+`ln -s /i2pd_certificates $DATA_DIR/certificates` unconditionally on every
+start, so every restart after the first logs a harmless
+`ln: ... Permission denied`. Also do not pass `--ipv4=true` or
+`--ipv6=false`; i2pd treats those as bare switches, exits with `option
+'--ipv4' does not take any arguments`, and restart-loops the container.
+
 ### Verifying Suricata actually has rules
 
 An IDS with zero rules looks exactly like a healthy one: the container is
