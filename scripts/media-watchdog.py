@@ -151,17 +151,25 @@ def main():
             problems.append({"check": "pinepods_db", "detail": str(exc)[:200]})
             pods, eps = [], []
 
+        # Keyed by podcast NAME, but PinePods is multi-user and each
+        # subscription is its own podcastid with its own episode rows. Two
+        # accounts subscribed to one show therefore yield two Podcasts rows
+        # and two full sets of Episodes. Collapsing on the episode URL keeps
+        # the counts describing the show rather than the number of people
+        # listening to it, which is what "does disk match the database"
+        # actually asks.
         by_pod = {}
         for row in eps:
             if len(row) < 5:
                 continue
             name, url, title, dur, art = row[0], row[1], row[2], row[3], row[4]
-            d = by_pod.setdefault(name, {"rows": [], "zero_dur": 0, "no_art": 0})
-            d["rows"].append((url, title))
-            if dur in ("", "0"):
-                d["zero_dur"] += 1
-            if art == "":
-                d["no_art"] += 1
+            d = by_pod.setdefault(name, {"eps": {}})
+            d["eps"][url] = (title, dur, art)
+
+        for d in by_pod.values():
+            d["rows"] = [(u, t) for u, (t, _dur, _art) in d["eps"].items()]
+            d["zero_dur"] = sum(1 for (_t, dur, _a) in d["eps"].values() if dur in ("", "0"))
+            d["no_art"] = sum(1 for (_t, _d, art) in d["eps"].values() if art == "")
 
         db_names = {p[1] for p in pods if len(p) > 1}
 
@@ -192,10 +200,19 @@ def main():
                                  "detail": "%d file(s) carry an ID3 COMM frame, which will fail "
                                            "the next import of this folder" % comm})
 
+        # One emission per podcast NAME, not per Podcasts row. Emitting per
+        # row produced two identical metric lines for every show more than
+        # one account subscribes to, and node_exporter's textfile collector
+        # rejects duplicate name+label pairs: node_textfile_scrape_error
+        # went to 1 and the whole file stopped parsing.
+        seen_names = set()
         for row in pods:
             if len(row) < 2:
                 continue
             name = row[1]
+            if name in seen_names:
+                continue
+            seen_names.add(name)
             d = by_pod.get(name, {"rows": [], "zero_dur": 0, "no_art": 0})
             n_db = len(d["rows"])
             metric("mediastack_media_podcast_episodes_in_db", n_db, podcast=name)
