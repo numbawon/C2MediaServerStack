@@ -71,14 +71,18 @@ def main():
 
     # indexer id -> (name, solver) via tag labels
     tags = {t["id"]: t["label"] for t in api("tag")}
-    solver_labels = {"byparr", "flaresolverr", "cloudflare"}
+    # The literal tag strings in use, not the pretty names. `flare` is the
+    # FlareSolverr tag and does NOT match the proxy's display name, so a
+    # set built from display names silently attributes those indexers to
+    # "none" and the whole A/B comparison reads as if nothing uses
+    # FlareSolverr. `cloudflare` predates ByParr and meant FlareSolverr.
+    solver_aliases = {"byparr": "byparr", "flare": "flaresolverr",
+                      "flaresolverr": "flaresolverr", "cloudflare": "flaresolverr"}
     indexers = {}
     for i in api("indexer"):
         labels = [tags.get(t, "") for t in (i.get("tags") or [])]
-        solver = next((l for l in labels if l in solver_labels), "none")
-        # `cloudflare` predates ByParr and means FlareSolverr
-        if solver == "cloudflare":
-            solver = "flaresolverr"
+        solver = next((solver_aliases[l] for l in labels
+                       if l in solver_aliases), "none")
         indexers[i["id"]] = (i.get("name", str(i["id"])), solver)
 
     cutoff = datetime.now(timezone.utc) - timedelta(hours=WINDOW_HOURS)

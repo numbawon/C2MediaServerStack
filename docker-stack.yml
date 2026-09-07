@@ -1146,8 +1146,8 @@ services:
       # requests, which honours NO_PROXY from the environment even when a
       # proxies dict is passed explicitly. Bare names match as suffixes,
       # so the service names cover the overlay.
-      - NO_PROXY=localhost,127.0.0.1,10.0.1.0/24,192.168.0.0/16,qbittorrent,prowlarr,sonarr,radarr,flaresolverr,vpn-client
-      - no_proxy=localhost,127.0.0.1,10.0.1.0/24,192.168.0.0/16,qbittorrent,prowlarr,sonarr,radarr,flaresolverr,vpn-client
+      - NO_PROXY=localhost,127.0.0.1,10.0.1.0/24,192.168.0.0/16,qbittorrent,prowlarr,sonarr,radarr,flaresolverr,byparr,vpn-client
+      - no_proxy=localhost,127.0.0.1,10.0.1.0/24,192.168.0.0/16,qbittorrent,prowlarr,sonarr,radarr,flaresolverr,byparr,vpn-client
     volumes:
       - ${COMMON_CONFIG}/lazylibrarian:/config
       - ${COMMON_MEDIA}/EBooks:/books
