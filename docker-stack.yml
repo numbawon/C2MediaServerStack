@@ -790,6 +790,12 @@ services:
       # family, so nothing else about the client changes.
       - CLEANUPARR_URL=http://cleanuparr:11011
       - CLEANUPARR_CONFIG_PATH=/data/cleanuparr/users.db
+      # Seerr is a connection consumer too: it holds its own Sonarr/Radarr
+      # entries and they broke silently during the *arr move off the VPN
+      # namespace, still pointing at vpn-client. Its key lives in its own
+      # settings.json under main.apiKey, hence a third config format.
+      - SEERR_URL=http://seerr:5055
+      - SEERR_CONFIG_PATH=/data/seerr/settings.json
     volumes:
       - ${COMMON_CONFIG}/sonarr:/data/sonarr:ro
       - ${COMMON_CONFIG}/radarr:/data/radarr:ro
@@ -798,6 +804,7 @@ services:
       - ${COMMON_CONFIG}/bazarr:/data/bazarr:ro
       - ${COMMON_CONFIG}/lazylibrarian:/data/lazylibrarian:ro
       - ${COMMON_CONFIG}/cleanuparr:/data/cleanuparr:ro
+      - ${COMMON_CONFIG}/seerr:/data/seerr:ro
       - ${COMMON_CONFIG}/organizarr:/state
     networks:
       - edge
