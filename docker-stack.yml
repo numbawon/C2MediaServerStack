@@ -778,12 +778,18 @@ services:
       - BAZARR_CONFIG_PATH=/data/bazarr/config/config.yaml
       - LAZYLIBRARIAN_URL=http://lazylibrarian:5299
       - LAZYLIBRARIAN_CONFIG_PATH=/data/lazylibrarian/config.ini
-      # Reachability only -- Cleanuparr has its own API but not the
-      # shared *arr settings shape, so there is nothing to edit here. It
-      # earns a slot because it acts on the same download clients and
-      # queues, so "is it actually up" belongs on the same page. No
-      # CONFIG_PATH: it needs no API key for its health endpoint.
+      # Cleanuparr keeps its own settings shape, so Organizarr does not
+      # edit them the way it edits the *arr apps. What it DOES do is wire
+      # the *arr instances into Cleanuparr, which needs every one of their
+      # URLs and API keys -- a pile of copy-paste on a fresh deploy, out of
+      # config files Organizarr has already read.
+      #
+      # CONFIG_PATH points at users.db, not a text config: Cleanuparr keeps
+      # its API key on the user row, written once its first-run wizard is
+      # done. Its API then takes the same X-Api-Key header as the servarr
+      # family, so nothing else about the client changes.
       - CLEANUPARR_URL=http://cleanuparr:11011
+      - CLEANUPARR_CONFIG_PATH=/data/cleanuparr/users.db
     volumes:
       - ${COMMON_CONFIG}/sonarr:/data/sonarr:ro
       - ${COMMON_CONFIG}/radarr:/data/radarr:ro
@@ -791,6 +797,7 @@ services:
       - ${COMMON_CONFIG}/prowlarr:/data/prowlarr:ro
       - ${COMMON_CONFIG}/bazarr:/data/bazarr:ro
       - ${COMMON_CONFIG}/lazylibrarian:/data/lazylibrarian:ro
+      - ${COMMON_CONFIG}/cleanuparr:/data/cleanuparr:ro
       - ${COMMON_CONFIG}/organizarr:/state
     networks:
       - edge
