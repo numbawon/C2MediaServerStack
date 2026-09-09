@@ -2441,8 +2441,10 @@ SAM is only half of it. The tracker index pages are themselves `.i2p`
 addresses and resolve nowhere else, so browsing needs i2pd's HTTP proxy,
 published on the LAN at `COMMON_LAN_IP:4444`.
 
-Point a browser at it as an HTTP proxy and `http://tracker2.postman.i2p/`
-opens. In Firefox that is Settings -> Network Settings -> Manual proxy
+A SOCKS proxy is published alongside it on `COMMON_LAN_IP:4447`, same
+`.i2p`-only behaviour, for clients that prefer SOCKS to HTTP.
+
+Point a browser at the HTTP one and `http://tracker2.postman.i2p/` opens. In Firefox that is Settings -> Network Settings -> Manual proxy
 configuration, HTTP Proxy `COMMON_LAN_IP` port 4444, with "Also use this
 proxy for HTTPS" left OFF: I2P sites are plain HTTP inside the tunnel, and
 i2pd will not CONNECT to clearnet hosts anyway.
@@ -2476,6 +2478,34 @@ i2pd also validates the `Host` header and answers `403 host mismatch` to
 anything unexpected, which includes everything Traefik forwards. That is a
 DNS-rebinding guard worth keeping, so the compose file names the hostname
 with `--http.hostname` rather than disabling the check.
+
+#### Why Prowlarr cannot drive the I2P tracker
+
+Prowlarr ships two Postman definitions, both pointing at
+`http://tracker2.postman.i2p/`, so the indexer exists. It still cannot be
+used here, and the reason is worth recording because it looks like a
+missing setting.
+
+Prowlarr validates every indexer proxy by reaching a **clearnet** host
+through it. i2pd refuses clearnet on both its HTTP and SOCKS proxies, since
+no outproxy is configured. Measured:
+
+```
+socks5h -> tracker2.postman.i2p   302   works
+socks5h -> example.com            000   refused
+http    -> CONNECT example.com    000   refused
+Prowlarr save, Http/Socks5/Socks4  400  "Unable to connect to proxy"
+```
+
+That refusal is the same property that makes these proxies safe to expose
+on the LAN without credentials. The two requirements are directly opposed,
+so no proxy type passes. The only way to satisfy Prowlarr is to give i2pd
+an outproxy, which turns an unauthenticated LAN-exposed proxy into one that
+can reach the whole internet. Not worth it for one tracker.
+
+The working path is manual and already covered above: browse the tracker
+over the HTTP proxy, add the torrent to qBittorrent, and it routes over SAM
+on its own.
 
 #### Two things that look broken and are not
 
