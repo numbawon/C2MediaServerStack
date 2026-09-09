@@ -108,7 +108,7 @@ secrets:
   # ntfy's first boot (`ntfy token add`), see README.
   ntfy_relay_token:
     external: true
-  crowdsec_bouncer_key:
+  crowdsec_bouncer_key_v2:
     external: true
   # Cloudflare API token for the ACME DNS-01 challenge. Zone:Read +
   # DNS:Edit, scoped to this zone. Created out of band:
@@ -314,7 +314,7 @@ services:
       - edge
       - internal
     secrets:
-      - crowdsec_bouncer_key
+      - crowdsec_bouncer_key_v2
       - cloudflare_dns_token
     # mode: host, NOT the default ingress. Swarm's routing mesh SNATs every
     # connection to the ingress network's gateway, so the real client IP

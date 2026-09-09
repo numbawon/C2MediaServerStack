@@ -13,9 +13,16 @@
 # Traefik reconnects and finds its key revoked.
 #
 # Recovery, if it happens again: read the key out of Traefik's own secret
-# and hand it straight back.
-#   docker exec <traefik> cat /run/secrets/crowdsec_bouncer_key
-#   docker exec <crowdsec> cscli bouncers add traefik-bouncer --key <that>
+# and hand it straight back. Check dynamic.yml for the current secret
+# name -- it is versioned, and was rotated to _v2 on 2026-09-09.
+#   docker exec <traefik> cat /run/secrets/crowdsec_bouncer_key_v2
+#   docker exec <crowdsec> cscli bouncers add traefik-bouncer-vN --key <that>
+#
+# Rotating deliberately is safe if the order is add-then-delete: register
+# the new key under a NEW name, create the new secret, point
+# crowdsecLapiKeyFile at it, deploy, confirm benign traffic still returns
+# 302, and only then delete the old bouncer and secret. Both keys are
+# valid at once, so there is no window where Traefik has no working key.
 #
 # Stale-looking rows with an old last_pull are just previous Traefik
 # container IPs. They cost nothing. Leave them.
