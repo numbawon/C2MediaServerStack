@@ -75,6 +75,15 @@ services:
       # internet and would be an open relay without them.
       - --httpproxy.address=0.0.0.0
       - --httpproxy.port=4444
+      # SOCKS proxy, for clients that cannot use the HTTP one. Prowlarr
+      # validates an HTTP proxy with a CONNECT tunnel to a clearnet host,
+      # which i2pd correctly refuses -- it serves .i2p only, which is why
+      # neither proxy needs credentials. SOCKS negotiates differently, so
+      # it is the way to let Prowlarr reach the Postman tracker without
+      # giving i2pd an outproxy and turning it into an open relay.
+      - --socksproxy.enabled=true
+      - --socksproxy.address=0.0.0.0
+      - --socksproxy.port=4447
       # Fixed transport port so it can be forwarded on the router. I2P
       # works without a forward, in "firewalled" mode, just slowly.
       - --port=12857
@@ -92,6 +101,8 @@ services:
       - "${COMMON_LAN_IP}:7656:7656"
       # HTTP proxy, LAN only. Point a browser here to open .i2p addresses.
       - "${COMMON_LAN_IP}:4444:4444"
+      # SOCKS, LAN only, same reasoning.
+      - "${COMMON_LAN_IP}:4447:4447"
       # I2P transport, inbound from other routers. This one is meant to be
       # reachable, and is the port to forward on the router.
       - "12857:12857/tcp"
