@@ -118,7 +118,7 @@ http:
           crowdsecMode: stream
           crowdsecLapiHost: crowdsec:8080
           crowdsecLapiScheme: http
-          crowdsecLapiKeyFile: /run/secrets/crowdsec_bouncer_key
+          crowdsecLapiKeyFile: /run/secrets/crowdsec_bouncer_key_v2
           # Trust the tunnel's forwarded client IP, or every ban would be
           # evaluated against cloudflared's address instead of the attacker.
           forwardedHeadersTrustedIPs:
