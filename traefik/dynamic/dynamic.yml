@@ -139,17 +139,29 @@ http:
           # above: those ask whether an IP misbehaves over time, this asks
           # whether one request is an attack.
           #
-          # Both Block flags are OFF deliberately. FailureBlock=false means
-          # a rule match is recorded and NOT acted on, so this is a trial
-          # that cannot lock anyone out. UnreachableBlock=false means a
-          # CrowdSec outage degrades to "no inspection" rather than
-          # 403-ing every request on the site -- the same fail-open choice
-          # as stream mode above, and the reason the earlier bouncer key
-          # deletion took the whole site down was precisely that the
-          # default is to fail closed.
+          # FailureBlock is ON as of 2026-09-09, after a detect-only trial.
+          # The trial is what justifies it: 106 alerts recorded, 36 distinct
+          # external sources across Google Cloud, Oracle and Cloudflare WARP,
+          # and NOT ONE from a real user. The only two internal-looking
+          # entries were deliberate tests of this stack ("trusted-ip
+          # exemption test" from the host, "bouncer verification" from
+          # 203.0.113.99, which is TEST-NET-3). The top rule by volume was
+          # vpatch-CVE-2025-29927 at 31 hits, a real virtual patch.
+          #
+          # That those 36 sources stayed DISTINCT also proves
+          # X-Forwarded-For is being honoured. Had it not been, every alert
+          # would have collapsed onto cloudflared's own address, and turning
+          # this on would have banned the tunnel and taken the site down
+          # for everyone. Re-check that before enabling this anywhere else.
+          #
+          # UnreachableBlock stays OFF. A CrowdSec outage degrades to "no
+          # inspection" rather than 403-ing every request -- the same
+          # fail-open choice as stream mode above, and the reason the
+          # earlier bouncer key deletion took the whole site down was
+          # precisely that the default is to fail closed.
           crowdsecAppsecEnabled: true
           crowdsecAppsecHost: crowdsec:7422
-          crowdsecAppsecFailureBlock: false
+          crowdsecAppsecFailureBlock: true
           crowdsecAppsecUnreachableBlock: false
 
     # overseerr.<domain> still has a live DNS record pointing at this tunnel

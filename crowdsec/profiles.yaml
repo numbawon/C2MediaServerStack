@@ -1,10 +1,83 @@
-# Which alerts become decisions, and which of them notify.
+# DO NOT "TIDY UP" BOUNCER REGISTRATIONS.
+#
+# `cscli bouncers delete <name>` deletes the bouncer's API KEY along with
+# the row. The Traefik plugin then authenticates with a key CrowdSec no
+# longer knows, and because the plugin fails CLOSED on an auth failure,
+# every request to every site returns 403. Benign traffic included.
+#
+# This was done on 2026-09-09 while clearing four registrations that
+# looked stale, and it took the whole site down for several minutes --
+# the second time this exact mistake has been made here. What made it
+# convincing was that blocking kept working with zero registrations,
+# which reads as proof the rows are cosmetic. They are, right up until
+# Traefik reconnects and finds its key revoked.
+#
+# Recovery, if it happens again: read the key out of Traefik's own secret
+# and hand it straight back.
+#   docker exec <traefik> cat /run/secrets/crowdsec_bouncer_key
+#   docker exec <crowdsec> cscli bouncers add traefik-bouncer --key <that>
+#
+# Stale-looking rows with an old last_pull are just previous Traefik
+# container IPs. They cost nothing. Leave them.
+
+# Which alerts become decisions, how long each ban lasts, and which of them
+# notify.
 #
 # Same shape as the CrowdSec default, with the alertmanager notifier
 # attached. Without naming it here the plugin file is loaded and then
 # never used, which looks identical to working right up until the first
 # real attack produces silence.
+#
+# ESCALATION, added 2026-09-09. Previously every ban was a flat 4h, so a
+# host probing for CVEs for the tenth time got exactly what a single
+# mistyped login got. Profiles are evaluated top to bottom and the first
+# match with `on_success: break` wins, so the specific cases have to come
+# BEFORE the catch-all or they never fire.
+#
+# Durations are deliberately conservative at the top end. Everything here
+# is reversible with `cscli decisions delete --ip <ip>`, but a week-long
+# ban on a shared CGNAT address is a week of someone else's outage, which
+# is why nothing goes beyond that and why the LAN is whitelisted upstream.
 
+# --- Repeat offenders -------------------------------------------------
+# CrowdSec re-alerts on an IP that is already banned. Events > 20 in one
+# alert means sustained abuse rather than a burst, so it earns a week.
+name: repeat_offender
+filters:
+ - Alert.Remediation == true && Alert.GetScope() == "Ip" && Alert.EventsCount > 20
+decisions:
+ - type: ban
+   duration: 168h
+notifications:
+ - alertmanager
+on_success: break
+
+---
+# --- Exploitation attempts --------------------------------------------
+# A CVE probe or a WAF rule match is not ambiguous the way a failed login
+# is: there is no legitimate reason to send a log4shell string or a
+# traversal payload at this host. 24h rather than 4h.
+#
+# The vpatch- prefix covers appsec-virtual-patching, which is what fired
+# 31 times during the detect-only trial.
+name: exploit_attempt
+filters:
+ - |
+   Alert.Remediation == true && Alert.GetScope() == "Ip" &&
+   (Alert.GetScenario() contains "cve" ||
+    Alert.GetScenario() contains "vpatch" ||
+    Alert.GetScenario() contains "appsec" ||
+    Alert.GetScenario() contains "traversal" ||
+    Alert.GetScenario() contains "exploit")
+decisions:
+ - type: ban
+   duration: 24h
+notifications:
+ - alertmanager
+on_success: break
+
+---
+# --- Everything else --------------------------------------------------
 name: default_ip_remediation
 filters:
  - Alert.Remediation == true && Alert.GetScope() == "Ip"
