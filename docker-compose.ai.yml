@@ -88,6 +88,45 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------
+  # Kokoro -- text to speech, OpenAI-compatible.
+  #
+  # Open WebUI ships two LOCAL TTS options and neither works here:
+  #
+  #   Kokoro.js (browser)  runs the model client-side on WebGPU/WASM. It
+  #                        loads, enumerates voices, reports success, and
+  #                        plays silence. No error at any layer.
+  #   Transformers (server) is SpeechT5, and its speaker embeddings come
+  #                        from cmu-arctic-xvectors, a SCRIPT-based dataset.
+  #                        datasets v4 removed script support, so it dies
+  #                        with "Dataset scripts are no longer supported"
+  #                        and returns 500. Upstream bug, not config.
+  #
+  # This is the same Kokoro model the browser option uses, run server-side
+  # at full precision. Open WebUI POSTs text and receives a WAV, so none of
+  # the browser's WASM, WebGPU, dtype or voice-name variables apply, and it
+  # works identically on a phone.
+  #
+  # CPU image on purpose. Kokoro is 82M parameters and fast enough on this
+  # box, while the GPU has 8 GB shared with Ollama models up to 5.2 GB --
+  # a 1-2 GB TTS model resident there would cause evictions for no gain.
+  #
+  # On the `ai` bridge only, same reasoning as Ollama: an unauthenticated
+  # inference API that exactly one container needs to reach. No Traefik
+  # router, nothing published to the LAN.
+  # ---------------------------------------------------------------------
+  kokoro:
+    logging: *logging
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    container_name: kokoro
+    environment:
+      - TZ=${COMMON_TZ}
+    volumes:
+      - ${COMMON_APPDATA}/kokoro:/app/api/src/models
+    networks:
+      - ai
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------
   # Open WebUI -- the browser front end and the only thing exposed.
   # ---------------------------------------------------------------------
   open-webui:
@@ -99,6 +138,31 @@ services:
     environment:
       - TZ=${COMMON_TZ}
       - OLLAMA_BASE_URL=http://ollama:11434
+
+      # Text to speech via the kokoro service above. "openai" here names
+      # the PROTOCOL, not the company -- it is the OpenAI-compatible
+      # /v1/audio/speech shape, served locally. Nothing leaves the box, and
+      # the key is required by the client library but never checked.
+      #
+      # THESE ARE SEEDS, NOT SETTINGS. Open WebUI reads AUDIO_TTS_* only
+      # when the key is absent from its own config table; after that the
+      # stored value wins and the variable is ignored completely. On this
+      # instance they were inert from the moment they were written: the
+      # table already held engine="transformers" and an api_base_url of
+      # api.openai.com, so every request kept landing in _tts_transformers
+      # and 500ing no matter what compose said. They are kept so a FRESH
+      # deploy comes up correct.
+      #
+      # To change it on a running instance, change it in Admin Settings ->
+      # Audio, or write the config table directly:
+      #   audio.tts.engine=openai  audio.tts.model=kokoro
+      #   audio.tts.openai.api_base_url=http://kokoro:8880/v1
+      #   audio.tts.voice=af_heart
+      - AUDIO_TTS_ENGINE=openai
+      - AUDIO_TTS_OPENAI_API_BASE_URL=http://kokoro:8880/v1
+      - AUDIO_TTS_OPENAI_API_KEY=not-needed
+      - AUDIO_TTS_MODEL=kokoro
+      - AUDIO_TTS_VOICE=af_heart
       - WEBUI_URL=https://ai.${COMMON_DOMAIN}
       # Signs session cookies. Without it Open WebUI generates a new one
       # on every start and logs everybody out on each restart.
