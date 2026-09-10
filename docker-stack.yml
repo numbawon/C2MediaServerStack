@@ -123,6 +123,28 @@ secrets:
   httpproxy_password:
     external: true
 
+# CAPABILITY DROPPING
+#
+# 41 of 46 services drop all Linux capabilities; the rest are listed below
+# with the reason. Where a cap_add appears it is what the image needs to
+# step down from root to its own user at startup, nothing more.
+#
+# Applied in batches with a deploy and a functional check between each,
+# rather than in one sweep, because a wrong set produces a container that
+# exits 1 immediately with nothing useful in its log. These five failed
+# that way and are deliberately left alone:
+#
+#   byparr      drives a browser; the sandbox wants privileges a drop takes
+#   cadvisor    reads the host's cgroups, devices and docker socket by design
+#   cleanuparr  exits 1 under cap_drop ALL, cause not yet identified
+#   crowdsec    same, and it is the blocking layer, so not worth guessing at
+#   pinepods    same, and it is a locally built image
+#
+# security_opt: no-new-privileges is NOT here on purpose. Swarm accepts the
+# key and silently ignores it -- verified through an actual stack deploy,
+# where NoNewPrivileges stayed false whatever the file said. cap_drop and
+# read_only ARE honoured.
+
 services:
 
   # ---------------------------------------------------------------------
@@ -132,6 +154,10 @@ services:
   docker-socket-proxy:
     logging: *logging
     image: tecnativa/docker-socket-proxy:latest
+    # Drops all capabilities. Any cap_add here is what the image needs to
+    # step down from root to its own user at startup, nothing more.
+    cap_drop: [ALL]
+    cap_add: [SETGID, SETUID, DAC_OVERRIDE, CHOWN]
     environment:
       TZ: ${COMMON_TZ}
       CONTAINERS: 1
@@ -188,6 +214,12 @@ services:
     # services in the README. Diun notifies when v3.8 ships; the bump is
     # a decision, not an automatic update.
     image: traefik:v3.7
+    # Keeps exactly one capability: it binds :80 and :443 on the host, and
+    # a port below 1024 needs NET_BIND_SERVICE. Everything else goes. If
+    # this is ever wrong the whole site 000s, so verify benign traffic
+    # returns 302 immediately after changing it.
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
     command:
       # Traefik v3 split the docker provider in two; swarmMode=true on the
       # classic docker provider was removed. Use the dedicated swarm provider.
@@ -389,6 +421,10 @@ services:
   authentik-server:
     logging: *logging
     image: ghcr.io/goauthentik/server:2026.8
+    # Drops all capabilities. Any cap_add here is what the image needs to
+    # step down from root to its own user at startup, nothing more.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE]
     command: server
     environment:
       - TZ=${COMMON_TZ}
@@ -425,6 +461,10 @@ services:
   authentik-worker:
     logging: *logging
     image: ghcr.io/goauthentik/server:2026.8
+    # Drops all capabilities. Any cap_add here is what the image needs to
+    # step down from root to its own user at startup, nothing more.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE]
     command: worker
     environment:
       - TZ=${COMMON_TZ}
@@ -449,6 +489,11 @@ services:
     # Major-version jumps can break the on-disk data format -- pinned to
     # :16 (patches float), same reasoning as Traefik/Authentik above.
     image: postgres:16
+    # Database image: the entrypoint starts as root to fix data-directory
+    # ownership, then setuids to its own unprivileged user. Those two steps
+    # are what these capabilities are for.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
     environment:
       - TZ=${COMMON_TZ}
       - POSTGRES_USER=authentik
@@ -464,6 +509,11 @@ services:
   redis:
     logging: *logging
     image: redis:7-alpine
+    # Database image: the entrypoint starts as root to fix data-directory
+    # ownership, then setuids to its own unprivileged user. Those two steps
+    # are what these capabilities are for.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE]
     environment:
       - TZ=${COMMON_TZ}
     command: >
@@ -492,6 +542,9 @@ services:
     # across the CE->EE image swap per Portainer's own upgrade docs; log
     # back in after this deploys and it'll prompt for the license key.
     image: portainer/portainer-ee:sts
+    # Drops all capabilities. Any cap_add here is what the image needs to
+    # step down from root to its own user at startup, nothing more.
+    cap_drop: [ALL]
     environment:
       - TZ=${COMMON_TZ}
     command: -H tcp://docker-socket-proxy:2375
@@ -513,6 +566,11 @@ services:
   lidarr:
     logging: *logging
     image: linuxserver/lidarr:latest
+    # linuxserver image: s6 starts as root and drops to PUID/PGID, which
+    # needs exactly these. A blanket cap_drop ALL kills it at boot with a
+    # non-zero exit and no useful message.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
     environment:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
@@ -534,6 +592,11 @@ services:
   bazarr:
     logging: *logging
     image: linuxserver/bazarr:latest
+    # linuxserver image: s6 starts as root and drops to PUID/PGID, which
+    # needs exactly these. A blanket cap_drop ALL kills it at boot with a
+    # non-zero exit and no useful message.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
     environment:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
@@ -555,6 +618,9 @@ services:
   seerr:
     logging: *logging
     image: ghcr.io/seerr-team/seerr:latest
+    # Plain daemon: binds no privileged port and drops no privileges of
+    # its own, so it needs no capabilities.
+    cap_drop: [ALL]
     # No PUID/PGID -- unlike the LinuxServer images, this runs as the
     # baked-in `node` user (UID 1000), which happens to already match
     # COMMON_PUID/COMMON_PGID on this host.
@@ -590,6 +656,11 @@ services:
   prowlarr:
     logging: *logging
     image: linuxserver/prowlarr:latest
+    # linuxserver image: s6 starts as root and drops to PUID/PGID, which
+    # needs exactly these. A blanket cap_drop ALL kills it at boot with a
+    # non-zero exit and no useful message.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
     environment:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
@@ -665,6 +736,11 @@ services:
   tautulli:
     logging: *logging
     image: linuxserver/tautulli:latest
+    # linuxserver image: s6 starts as root and drops to PUID/PGID, which
+    # needs exactly these. A blanket cap_drop ALL kills it at boot with a
+    # non-zero exit and no useful message.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
     environment:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
@@ -699,6 +775,9 @@ services:
     # entirely (that's an LSIO-only convention); it wants the container's
     # actual user set instead, which is what `user:` below does.
     image: deluan/navidrome:latest
+    # Plain daemon: binds no privileged port and drops no privileges of
+    # its own, so it needs no capabilities.
+    cap_drop: [ALL]
     user: "${COMMON_PUID}:${COMMON_PGID}"
     environment:
       - TZ=${COMMON_TZ}
@@ -756,6 +835,9 @@ services:
   organizarr:
     logging: *logging
     image: ghcr.io/numbawon/organizarr:latest
+    # Plain daemon: binds no privileged port and drops no privileges of
+    # its own, so it needs no capabilities.
+    cap_drop: [ALL]
     # CONTAINER label, not deploy.labels. Diun runs both a swarm provider
     # (reads service labels) and a docker provider (reads container
     # labels), so excluding this image needs the label in BOTH places or
@@ -1080,6 +1162,11 @@ services:
     # postgres:18 image moved its data directory, and mounting the volume
     # at the old path produces overlay2 errors on Linux hosts.
     image: postgres:18
+    # Database image: the entrypoint starts as root to fix data-directory
+    # ownership, then setuids to its own unprivileged user. Those two steps
+    # are what these capabilities are for.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
     environment:
       - TZ=${COMMON_TZ}
       - POSTGRES_USER=pinepods
@@ -1094,6 +1181,11 @@ services:
   pinepods-valkey:
     logging: *logging
     image: docker.io/valkey/valkey:8-bookworm
+    # Database image: the entrypoint starts as root to fix data-directory
+    # ownership, then setuids to its own unprivileged user. Those two steps
+    # are what these capabilities are for.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE]
     environment:
       - TZ=${COMMON_TZ}
     networks:
@@ -1126,6 +1218,11 @@ services:
   sonarr:
     logging: *logging
     image: linuxserver/sonarr:latest
+    # linuxserver image: s6 starts as root and drops to PUID/PGID, which
+    # needs exactly these. A blanket cap_drop ALL kills it at boot with a
+    # non-zero exit and no useful message.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
     environment:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
@@ -1148,6 +1245,11 @@ services:
   radarr:
     logging: *logging
     image: linuxserver/radarr:latest
+    # linuxserver image: s6 starts as root and drops to PUID/PGID, which
+    # needs exactly these. A blanket cap_drop ALL kills it at boot with a
+    # non-zero exit and no useful message.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
     environment:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
@@ -1170,6 +1272,11 @@ services:
   lazylibrarian:
     logging: *logging
     image: linuxserver/lazylibrarian:latest
+    # linuxserver image: s6 starts as root and drops to PUID/PGID, which
+    # needs exactly these. A blanket cap_drop ALL kills it at boot with a
+    # non-zero exit and no useful message.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
     environment:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
@@ -1386,6 +1493,9 @@ services:
     # decision, and would need the configs in recyclarr/configs/ rechecked
     # against whatever schema 9 expects.
     image: ghcr.io/recyclarr/recyclarr:8
+    # Plain daemon: binds no privileged port and drops no privileges of
+    # its own, so it needs no capabilities.
+    cap_drop: [ALL]
     environment:
       - TZ=${COMMON_TZ}
       - CRON_SCHEDULE=@daily
@@ -1500,6 +1610,10 @@ services:
   # ---------------------------------------------------------------------
   files:
     image: copyparty/ac:latest
+    # Drops all capabilities. Any cap_add here is what the image needs to
+    # step down from root to its own user at startup, nothing more.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE]
     command:
       # copyparty has no accounts: Authentik is the login, and everyone
       # arrives already authenticated. Left alone its UI still shows a
@@ -1569,6 +1683,10 @@ services:
   # ---------------------------------------------------------------------
   browse:
     image: copyparty/ac:latest
+    # Drops all capabilities. Any cap_add here is what the image needs to
+    # step down from root to its own user at startup, nothing more.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE]
     command:
       - -v
       - /w/media:media:r
@@ -1642,6 +1760,9 @@ services:
   flood:
     logging: *logging
     image: jesec/flood:latest
+    # Plain daemon: binds no privileged port and drops no privileges of
+    # its own, so it needs no capabilities.
+    cap_drop: [ALL]
     # The image ships uid 1001 ("download"), which owns nothing else here
     # and cannot write a freshly created named volume. Running it as the
     # stack's own PUID keeps one uid across every service and matches the
@@ -1704,6 +1825,11 @@ services:
   beets:
     logging: *logging
     image: lscr.io/linuxserver/beets:latest
+    # linuxserver image: s6 starts as root and drops to PUID/PGID, which
+    # needs exactly these. A blanket cap_drop ALL kills it at boot with a
+    # non-zero exit and no useful message.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
     environment:
       - TZ=${COMMON_TZ}
       - PUID=${COMMON_PUID}
@@ -1734,6 +1860,9 @@ services:
   audiobookshelf:
     logging: *logging
     image: ghcr.io/advplyr/audiobookshelf:latest
+    # Plain daemon: binds no privileged port and drops no privileges of
+    # its own, so it needs no capabilities.
+    cap_drop: [ALL]
     # Runs as the owning user, not root. The image defaults to uid 0 and
     # ignores PUID/PGID (that is a LinuxServer convention and this is not a
     # LinuxServer image), so without this every file it wrote into
@@ -1786,6 +1915,10 @@ services:
   immich-server:
     logging: *logging
     image: ghcr.io/immich-app/immich-server:release
+    # Drops all capabilities. Any cap_add here is what the image needs to
+    # step down from root to its own user at startup, nothing more.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE]
     environment:
       - TZ=${COMMON_TZ}
       - DB_HOSTNAME=immich-postgres
@@ -1828,6 +1961,9 @@ services:
   immich-machine-learning:
     logging: *logging
     image: ghcr.io/immich-app/immich-machine-learning:release
+    # Plain daemon: binds no privileged port and drops no privileges of
+    # its own, so it needs no capabilities.
+    cap_drop: [ALL]
     environment:
       - TZ=${COMMON_TZ}
     volumes:
@@ -1849,6 +1985,11 @@ services:
     # extensions Immich's search depends on, and Immich checks for them
     # at startup.
     image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
+    # Database image: the entrypoint starts as root to fix data-directory
+    # ownership, then setuids to its own unprivileged user. Those two steps
+    # are what these capabilities are for.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
     environment:
       - TZ=${COMMON_TZ}
       - POSTGRES_USER=immich
@@ -1863,6 +2004,11 @@ services:
   immich-redis:
     logging: *logging
     image: docker.io/valkey/valkey:8-bookworm
+    # Database image: the entrypoint starts as root to fix data-directory
+    # ownership, then setuids to its own unprivileged user. Those two steps
+    # are what these capabilities are for.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE]
     environment:
       - TZ=${COMMON_TZ}
     networks:
