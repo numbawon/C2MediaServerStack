@@ -170,6 +170,17 @@ def main():
     if not args.notify:
         return 0
 
+    # An unreachable bridge is already covered by BridgeUnreachable and
+    # TargetDown, which page immediately. Pushing a daily "still
+    # unreachable, 0.0 of 5 days" on top of that is pure noise, and during
+    # a long outage it is noise that arrives every morning until someone
+    # mutes the channel -- which is how the alerts that DO matter stop
+    # being read. Print it, do not push it.
+    if not reach:
+        print("\nnot pushed: bridge unreachable, which the alert rules "
+              "already cover")
+        return 0
+
     payload = json.dumps({"alerts": [{
         "status": "firing",
         "labels": {"alertname": "BridgeWatchReview", "severity": "warning",
