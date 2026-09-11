@@ -24,6 +24,17 @@ mkdir -p "$OUT"
 
 # Gated apps sit behind Authentik forward-auth and answer 302 to a login
 # page. That is the correct healthy response, not an error.
+# The filtering bridge's own node_exporter (OPNsense os-node_exporter).
+# Skipped entirely when COMMON_BRIDGE_HOST is unset, so a deployment
+# without a bridge does not get a permanently-down scrape target.
+if [ -n "${COMMON_BRIDGE_HOST:-}" ]; then
+cat > "$OUT/bridge-node.json" <<JSON
+[{"targets": ["${COMMON_BRIDGE_HOST}:9100"], "labels": {"role": "filtering-bridge"}}]
+JSON
+else
+  echo '[]' > "$OUT/bridge-node.json"
+fi
+
 cat > "$OUT/blackbox-gated.json" <<JSON
 [
   {

@@ -46,6 +46,20 @@ scrape_configs:
   # is git-ignored, with a .example alongside it.
   #
   # Generate the real files with scripts/gen-prometheus-targets.sh.
+  # OPNsense's own node_exporter plugin on the filtering bridge. Host
+  # metrics only -- CPU, memory, interfaces, disk. Suricata's health comes
+  # from scripts/bridge-exporter.py over SSH instead, because the plugin
+  # knows nothing about it.
+  #
+  # Target comes from a file for the same reason as the blackbox jobs
+  # below: the bridge's LAN address stays out of version control.
+  #
+  # The bridge is NOT scraped over the tunnel, so if it is unreachable this
+  # job goes down while everything else keeps working.
+  - job_name: bridge-node
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/bridge-node.json"]
+
   - job_name: blackbox-gated
     metrics_path: /probe
     params:

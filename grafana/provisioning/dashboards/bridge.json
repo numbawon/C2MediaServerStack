@@ -1,0 +1,755 @@
+{
+  "uid": "bridge",
+  "title": "Filtering bridge (IDS)",
+  "tags": [
+    "mediastack",
+    "network",
+    "ids",
+    "bridge"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0,
+        "refresh": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "IPS readiness",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Bridge reachable",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "mediastack_bridge_reachable",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": true,
+          "legendFormat": "{{host}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "up",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "description": "0 means the exporter could not SSH in. Every other panel is stale when this is 0.",
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Suricata running",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 3,
+        "y": 1,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "mediastack_bridge_suricata_up",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": true,
+          "legendFormat": "{{host}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "STOPPED",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "running",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "description": "Suricata's own process, checked with sudo pgrep. FreeBSD hides other users' processes, so an unprivileged check reports 0 while it is running.",
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Suricata uptime",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "mediastack_bridge_uptime_seconds",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": true,
+          "legendFormat": "uptime"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 900
+              },
+              {
+                "color": "green",
+                "value": 3600
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "How long Suricata has been up. A restart zeroes every counter on this dashboard, so a drop here explains an apparent rate spike or a cumulative figure that suddenly got smaller. It also resets the watch: stability has to be measured across a single run.",
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Drop rate, live",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 9,
+        "y": 1,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * rate(mediastack_bridge_stat{stat=\"capture.kernel_drops\"}[15m]) / clamp_min(rate(mediastack_bridge_stat{stat=\"capture.kernel_packets\"}[15m]), 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": true,
+          "legendFormat": "{{host}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.1
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "THE number for the IPS decision. Rate over 15m, not the cumulative average, so a startup burst ages out and ongoing loss stays visible. In IDS a dropped packet is a missed alert; in IPS the same pressure becomes latency and stalled connections.",
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Cumulative drops",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 14,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * mediastack_bridge_stat{stat=\"capture.kernel_drops\"} / clamp_min(mediastack_bridge_stat{stat=\"capture.kernel_packets\"}, 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": true,
+          "legendFormat": "{{host}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "description": "Since Suricata started. Includes any startup burst, so compare it against the live rate rather than reading it alone.",
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Memcap pressure",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "mediastack_bridge_stat{stat=\"memcap_pressure\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": true,
+          "legendFormat": "now"
+        },
+        {
+          "refId": "B",
+          "expr": "mediastack_bridge_stat{stat=\"memcap_pressure_max\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": true,
+          "legendFormat": "peak"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "description": "How close the flow and stream tables are to their ceiling. Sustained pressure means the next traffic spike drops flows, and in IPS that is a dropped connection rather than a missed alert.",
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Last collected",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 21,
+        "y": 1,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - mediastack_bridge_exporter_last_run_timestamp_seconds",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": true,
+          "legendFormat": "age"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 300
+              },
+              {
+                "color": "red",
+                "value": 900
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Age of the newest sample. Anything over a few minutes means the collector is failing and the rest of this dashboard is history.",
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Drop rate over time",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * rate(mediastack_bridge_stat{stat=\"capture.kernel_drops\"}[15m]) / clamp_min(rate(mediastack_bridge_stat{stat=\"capture.kernel_packets\"}[15m]), 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": false,
+          "legendFormat": "{{host}} drop %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "description": "Watch the SHAPE across the five days, not the value. Flat near zero with occasional spikes at peak hours is workable. A rising floor means the bridge is falling behind and IPS would start cutting real traffic."
+    },
+    {
+      "type": "timeseries",
+      "title": "Packets per second",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(mediastack_bridge_stat{stat=\"capture.kernel_packets\"}[15m])",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": false,
+          "legendFormat": "seen"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(mediastack_bridge_stat{stat=\"capture.kernel_drops\"}[15m])",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": false,
+          "legendFormat": "dropped"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "description": "Throughput alongside loss. Drops that track traffic peaks are a capacity limit; drops that persist through quiet periods are a configuration or hardware problem."
+    },
+    {
+      "type": "row",
+      "title": "Stream integrity",
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Reassembly gaps and errors",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(mediastack_bridge_stat{stat=\"tcp.reassembly_gap\"}[30m])",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": false,
+          "legendFormat": "tcp reassembly gap"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(mediastack_bridge_stat{stat=\"app_layer.error.tls.gap\"}[30m])",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": false,
+          "legendFormat": "tls gap"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(mediastack_bridge_stat{stat=\"tcp.invalid_checksum\"}[30m])",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": false,
+          "legendFormat": "invalid checksum"
+        },
+        {
+          "refId": "D",
+          "expr": "rate(mediastack_bridge_stat{stat=\"tcp.overlap\"}[30m])",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": false,
+          "legendFormat": "tcp overlap"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 0,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "description": "The downstream symptom of dropped packets: streams Suricata could not reassemble. These rising alongside the drop rate confirms the loss is real rather than a counter artefact."
+    },
+    {
+      "type": "timeseries",
+      "title": "Active flows",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "mediastack_bridge_stat{stat=\"flow.tcp\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": false,
+          "legendFormat": "tcp"
+        },
+        {
+          "refId": "B",
+          "expr": "mediastack_bridge_stat{stat=\"flow.udp\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": false,
+          "legendFormat": "udp"
+        },
+        {
+          "refId": "C",
+          "expr": "mediastack_bridge_stat{stat=\"flow.icmpv4\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": false,
+          "legendFormat": "icmpv4"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "description": "Flow table occupancy. Read with memcap pressure: high flows plus rising pressure is the combination that makes IPS risky."
+    },
+    {
+      "type": "row",
+      "title": "IDS activity",
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Alerts raised",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(mediastack_bridge_stat{stat=\"detect.alert\"}[30m])",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": false,
+          "legendFormat": "alerts"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(mediastack_bridge_stat{stat=\"detect.alerts_suppressed\"}[30m])",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": false,
+          "legendFormat": "suppressed"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "description": "Suppressed alerts matter before enabling IPS: a suppressed alert in IDS is silence, but the same rule in IPS may be what drops the packet. Review the suppression list before switching."
+    },
+    {
+      "type": "table",
+      "title": "Alert signatures seen",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 23,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(20, mediastack_bridge_alerts)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "description": "From the tail of eve.json, so it is a recent sample rather than a full history. Every signature here would ACT in IPS mode -- this is the list to read before switching, because a false positive stops being noise and starts being a blocked connection.",
+      "options": {
+        "showHeader": true
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "instance": true,
+              "host": true
+            },
+            "renameByName": {
+              "Value": "count"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
