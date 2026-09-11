@@ -808,6 +808,52 @@ services:
         - "traefik.http.services.navidrome.loadbalancer.server.port=4533"
 
   # ---------------------------------------------------------------------
+  # Komga -- comics and manga server, reading ${COMMON_MEDIA}/Comics.
+  # Mylar3 is what fills that tree; this only reads it.
+  #
+  # Split routers, for the same reason as Navidrome above: comic readers
+  # (Mihon, Panels, Chunky) and Kobo sync authenticate with HTTP Basic or
+  # an API key against /api, /opds, /sse and /kobo. None of them can
+  # complete Authentik's browser login redirect, so forward-auth on those
+  # paths breaks every client that is not a browser, and breaks it in the
+  # confusing way: the app reports bad credentials when the credentials
+  # are fine. Those prefixes get an ungated router and lean on Komga's
+  # own accounts instead, exactly the trade Navidrome's /rest makes.
+  #
+  # The browser UI therefore asks for a Komga login after Authentik has
+  # already let you in. Komga speaks OIDC, so that second prompt can be
+  # removed later by pointing it at Authentik the way Portainer is.
+  # ---------------------------------------------------------------------
+  komga:
+    logging: *logging
+    image: gotson/komga:latest
+    # Official image, not a LinuxServer one: it ignores PUID/PGID (that is
+    # an LSIO convention) and wants the container's actual user set, which
+    # is what `user:` does. Same as navidrome.
+    cap_drop: [ALL]
+    user: "${COMMON_PUID}:${COMMON_PGID}"
+    environment:
+      - TZ=${COMMON_TZ}
+    volumes:
+      - ${COMMON_CONFIG}/komga:/config
+      # Read-only on purpose. Mylar3 owns writes to this tree, and a
+      # reader that can also rewrite files is how two managers end up
+      # fighting over the same filenames. Komga's database and generated
+      # thumbnails live in /config, so it never needs to write here.
+      - ${COMMON_MEDIA}/Comics:/data:ro
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.komga.rule=Host(`komga.${COMMON_DOMAIN}`) && !PathPrefix(`/api`) && !PathPrefix(`/opds`) && !PathPrefix(`/sse`) && !PathPrefix(`/kobo`)"
+        - "traefik.http.routers.komga.entrypoints=web,websecure"
+        - "traefik.http.routers.komga.middlewares=authentik@file"
+        - "traefik.http.routers.komga-api.rule=Host(`komga.${COMMON_DOMAIN}`) && (PathPrefix(`/api`) || PathPrefix(`/opds`) || PathPrefix(`/sse`) || PathPrefix(`/kobo`))"
+        - "traefik.http.routers.komga-api.entrypoints=web,websecure"
+        - "traefik.http.services.komga.loadbalancer.server.port=25600"
+
+  # ---------------------------------------------------------------------
   # Organizarr -- a small hub for the settings that are actually painful
   # to keep straight by hand across the *arr apps (auth method,
   # download-client host/port, Prowlarr's app/indexer sync). Talks to
@@ -858,6 +904,14 @@ services:
       - BAZARR_CONFIG_PATH=/data/bazarr/config/config.yaml
       - LAZYLIBRARIAN_URL=http://lazylibrarian:5299
       - LAZYLIBRARIAN_CONFIG_PATH=/data/lazylibrarian/config.ini
+      # Mylar3 keeps its key in config.ini under [API], which the same ini
+      # reader already handles. Detection only: unlike LazyLibrarian, its
+      # API has no readCFG/writeCFG pair, so there is nothing to build a
+      # settings editor on and Organizarr does not pretend otherwise.
+      - MYLAR3_URL=http://mylar3:8090
+      # /config/mylar/config.ini, not /config/config.ini: Mylar3 keeps
+      # its whole data directory a level down from the mount point.
+      - MYLAR3_CONFIG_PATH=/data/mylar3/mylar/config.ini
       # Cleanuparr keeps its own settings shape, so Organizarr does not
       # edit them the way it edits the *arr apps. What it DOES do is wire
       # the *arr instances into Cleanuparr, which needs every one of their
@@ -883,6 +937,7 @@ services:
       - ${COMMON_CONFIG}/prowlarr:/data/prowlarr:ro
       - ${COMMON_CONFIG}/bazarr:/data/bazarr:ro
       - ${COMMON_CONFIG}/lazylibrarian:/data/lazylibrarian:ro
+      - ${COMMON_CONFIG}/mylar3:/data/mylar3:ro
       - ${COMMON_CONFIG}/cleanuparr:/data/cleanuparr:ro
       - ${COMMON_CONFIG}/seerr:/data/seerr:ro
       - ${COMMON_CONFIG}/organizarr:/state
@@ -1313,6 +1368,43 @@ services:
         - "traefik.http.routers.lazylibrarian.entrypoints=web,websecure"
         - "traefik.http.routers.lazylibrarian.middlewares=authentik@file"
         - "traefik.http.services.lazylibrarian.loadbalancer.server.port=5299"
+
+  # ---------------------------------------------------------------------
+  # Mylar3 -- the *arr for comics. Tracks series, watches for new issues
+  # and hands them to the download client, then files them into
+  # ${COMMON_MEDIA}/Comics for Komga to read.
+  #
+  # Indexers come from Prowlarr, which supports Mylar as an application
+  # sync target. Organizarr can add that entry for you: it holds both
+  # URLs and both API keys already.
+  # ---------------------------------------------------------------------
+  mylar3:
+    logging: *logging
+    image: linuxserver/mylar3:latest
+    # linuxserver image: s6 starts as root and drops to PUID/PGID, which
+    # needs exactly these. A blanket cap_drop ALL kills it at boot with a
+    # non-zero exit and no useful message.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+    volumes:
+      - ${COMMON_CONFIG}/mylar3:/config
+      # Writable, unlike Komga's mount: this is the process that files
+      # issues into the library.
+      - ${COMMON_MEDIA}/Comics:/comics
+      - ${COMMON_DOWNLOADS}:/downloads
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.mylar3.rule=Host(`mylar3.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.mylar3.entrypoints=web,websecure"
+        - "traefik.http.routers.mylar3.middlewares=authentik@file"
+        - "traefik.http.services.mylar3.loadbalancer.server.port=8090"
 
   # ---------------------------------------------------------------------
   # ntfy -- push notifications. The ONE internet-reachable service that
