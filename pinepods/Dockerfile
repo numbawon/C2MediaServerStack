@@ -1,6 +1,6 @@
 FROM rust:alpine AS api-builder
 
-ARG PINEPODS_COMMIT=8f99b9ba54c59435fe0e28c79317cf719a49b7f6
+ARG PINEPODS_COMMIT=09c3dcd459bf8e1b8732f26cfa42b3e99064f4ae
 
 RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static patch wget
 
