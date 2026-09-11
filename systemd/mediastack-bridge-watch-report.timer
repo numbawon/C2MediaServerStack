@@ -2,11 +2,15 @@
 Description=Send the filtering bridge watch report
 
 [Timer]
-# Absolute date, so this fires once and then sits inactive rather than
-# nagging every week. Set for the review point of the five day watch that
-# began when Suricata restarted on the bridge; change the date if the
-# watch restarts, which it does any time Suricata does.
-OnCalendar=2026-09-15 09:00:00
+# Daily through the observation period. A single ping at the end would
+# only tell you the verdict; a daily one tells you the trend, which is
+# what actually decides whether the drop rate has structure or is just
+# noise. The report says how many of the five days are in hand, so it is
+# self-limiting: it will not claim GO early.
+#
+# Turn it off when the watch is over:
+#   sudo systemctl disable --now mediastack-bridge-watch-report.timer
+OnCalendar=*-*-* 09:00:00
 AccuracySec=1min
 # If the box is asleep or off at 09:00, send on the next boot instead of
 # silently skipping. A reminder that can be missed is not a reminder.
