@@ -836,11 +836,22 @@ services:
       - TZ=${COMMON_TZ}
     volumes:
       - ${COMMON_CONFIG}/komga:/config
-      # Read-only on purpose. Mylar3 owns writes to this tree, and a
-      # reader that can also rewrite files is how two managers end up
-      # fighting over the same filenames. Komga's database and generated
-      # thumbnails live in /config, so it never needs to write here.
-      - ${COMMON_MEDIA}/Comics:/data:ro
+      # Writable, despite Mylar3 also owning this tree. Komga's file
+      # operations are real and all of them need it:
+      #   DELETE /api/v1/books/{id}/file        remove a book from disk
+      #   DELETE /api/v1/series/{id}/file       remove a series from disk
+      #   POST   /api/v1/page-hashes/{h}/delete-all|delete-match
+      #                                         strip duplicate/ad pages,
+      #                                         which rewrites the archive
+      # This was :ro at first on the theory that a reader which can also
+      # rewrite files is how two managers start fighting. That was
+      # overcautious: none of the above happens on its own, they are
+      # deliberate admin actions, and :ro did not prevent a conflict so
+      # much as silently remove the repair tooling.
+      #
+      # Komga's database and thumbnails still live in /config, so ordinary
+      # scanning and metadata work touches nothing here.
+      - ${COMMON_MEDIA}/Comics:/data
     networks:
       - edge
     deploy:
