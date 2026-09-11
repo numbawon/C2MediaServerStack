@@ -1022,11 +1022,18 @@ Four hops, and each one is configured somewhere different:
    `${COMMON_MEDIA}/Comics`. qBittorrent, Mylar3 and Sonarr all see the
    download tree at the same `/downloads` path, so no remote path mapping
    is needed.
-4. **Komga -> readers.** Komga mounts the same tree at `/data`,
-   **read-only**, and needs a library pointing at it. Without that library
-   Komga shows nothing no matter how much Mylar3 files, and nothing warns
-   you: an empty Komga looks identical to a Komga that has not been given
-   a library.
+4. **Komga -> readers.** Komga mounts the same tree at `/data`, and needs
+   a library pointing at it. Without that library Komga shows nothing no
+   matter how much Mylar3 files, and nothing warns you: an empty Komga
+   looks identical to a Komga that has not been given a library.
+
+   That mount is **read-write**, not read-only, even though Mylar3 also
+   writes there. Komga's file operations genuinely need it: deleting a
+   book or series from disk, and the duplicate-page tooling
+   (`/api/v1/page-hashes/{hash}/delete-all|delete-match`) which strips
+   repeated ad pages by rewriting the archive. None of that happens
+   automatically, so the two do not race; read-only simply removed the
+   repair tooling without preventing anything.
 
 Mylar3's API has to be on for Prowlarr and Organizarr to talk to it
 (`api_enabled = True`). It ships off, with `api_key = None` as a literal
