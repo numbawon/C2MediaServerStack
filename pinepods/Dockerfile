@@ -70,6 +70,25 @@ COPY --from=api-builder /src/database_functions/ /pinepods/database_functions/
 # directions, so a newly drifting file fails the build AND a file that
 # stops drifting fails it too, which keeps the allow list honest rather
 # than letting it rot into a pile of stale exemptions.
+# yt-dlp self-updates at runtime now that migration 059 turned on yt-dlp
+# management, and it could not: the binary and /usr/local/bin are both
+# root-owned while the app runs as PUID/PGID, so every scheduler tick
+# logged "Unable to write to /usr/local/bin/yt-dlp" and kept the old copy.
+#
+# It needs the DIRECTORY writable, not just the file: the updater writes
+# <path>.new and renames over the original. Making /usr/local/bin writable
+# would let the app replace any binary in it, pinepods-api included, so
+# yt-dlp gets its own directory and a symlink keeps it on PATH. It is a
+# PyInstaller one-file build, so it resolves the symlink and updates the
+# real path in the writable directory.
+#
+# 1000:1000 matches COMMON_PUID/COMMON_PGID. If those change, the update
+# fails exactly as before: a warning, and the existing binary is kept.
+RUN mkdir -p /opt/yt-dlp \
+ && mv /usr/local/bin/yt-dlp /opt/yt-dlp/yt-dlp \
+ && ln -s /opt/yt-dlp/yt-dlp /usr/local/bin/yt-dlp \
+ && chown -R 1000:1000 /opt/yt-dlp
+
 COPY --from=api-builder /tmp/src-manifest.txt /tmp/src-manifest.txt
 COPY base-divergence.allow /tmp/base-divergence.allow
 RUN set -eu; \
