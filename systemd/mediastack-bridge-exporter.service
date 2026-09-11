@@ -1,0 +1,22 @@
+[Unit]
+# Suricata health from the transparent filtering bridge (OPNsense), read
+# over SSH. Read-only: it never writes to the bridge.
+#
+# Install: substitute the real path for /home/youruser, then
+#   sudo cp systemd/mediastack-bridge-exporter.* /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mediastack-bridge-exporter.timer
+Description=mediastack filtering bridge metrics export
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Runs as the user whose SSH key the bridge trusts, not root: the key and
+# known_hosts live in that user's home. Same reason as router-exporter.
+User=youruser
+WorkingDirectory=/home/youruser/C2MediaServerStack
+EnvironmentFile=/home/youruser/C2MediaServerStack/.env
+ExecStart=/usr/bin/python3 /home/youruser/C2MediaServerStack/scripts/bridge-exporter.py
+TimeoutStartSec=2m

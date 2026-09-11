@@ -1,0 +1,13 @@
+[Unit]
+Description=Run the filtering bridge metrics export periodically
+
+[Timer]
+# Every 2 minutes. Suricata writes a stats block on its own interval and
+# this only tails a log, so the cost is one SSH round trip. Frequent
+# enough that a five-day drop-rate watch has real resolution.
+OnBootSec=3min
+OnUnitActiveSec=2min
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target
