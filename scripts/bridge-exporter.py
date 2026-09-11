@@ -203,7 +203,15 @@ def main():
         print("failed writing metrics: %s" % p.stderr.strip(), file=sys.stderr)
         return 1
     print("  wrote %s in %.1fs" % (METRIC_FILE, time.time() - started))
-    return 0 if out else 1
+    # Exit 0 even when the bridge did not answer. Writing
+    # mediastack_bridge_reachable=0 IS this collector doing its job, and
+    # BridgeUnreachable is what raises the alarm. Returning non-zero made
+    # systemd mark the unit failed every two minutes for as long as the
+    # bridge was down -- 56 failures an hour, thousands across an outage,
+    # which is how a genuine failure later gets lost in the scroll. Only a
+    # failure to WRITE metrics is this unit's failure, and that path
+    # returns 1 above.
+    return 0
 
 
 if __name__ == "__main__":
