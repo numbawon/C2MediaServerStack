@@ -1,0 +1,16 @@
+[Unit]
+Description=Send the filtering bridge watch report
+
+[Timer]
+# Absolute date, so this fires once and then sits inactive rather than
+# nagging every week. Set for the review point of the five day watch that
+# began when Suricata restarted on the bridge; change the date if the
+# watch restarts, which it does any time Suricata does.
+OnCalendar=2026-09-15 09:00:00
+AccuracySec=1min
+# If the box is asleep or off at 09:00, send on the next boot instead of
+# silently skipping. A reminder that can be missed is not a reminder.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
