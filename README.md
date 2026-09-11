@@ -708,6 +708,9 @@ rebuilt from memory.
 | Seerr's Plex link and service connections | Seerr UI | `seerr_config` | yes |
 | qBittorrent WebUI credentials and settings | qBittorrent UI | `qbittorrent_config` | yes |
 | Navidrome users | Navidrome UI | `navidrome_config` | yes |
+| Komga OIDC client id/secret (`.appdata/komga/application.yml`, git-ignored) | hand-written file | `komga_config` | yes |
+| Komga libraries, per-user library access and age ratings | Komga UI | `komga_config` | yes |
+| Mylar3 comic location, qBittorrent client, synced indexers | Mylar3 UI / Prowlarr app sync | `mylar3_config` | yes |
 | Pi-hole blocklists and groups | Pi-hole UI | `pihole_config` | yes |
 | Tdarr libraries and flows | Tdarr UI | `tdarr_configs`, `tdarr_server` | yes |
 | CrowdSec machine and bouncer registrations | `cscli` | `crowdsec_config`, `crowdsec_data` | yes |
@@ -999,6 +1002,36 @@ Where a reconcile script is worth writing, the `init-ntfy.sh` pattern is
 the one to copy: values from the repo, credentials from `secrets/`,
 applied against the app's API after deploy, and a header that says
 plainly it is a step you run rather than something compose enforces.
+
+### The comics chain
+
+Four hops, and each one is configured somewhere different:
+
+1. **Prowlarr -> Mylar3.** Mylar3 is registered in Prowlarr as an
+   application (implementation `Mylar`, `fullSync`, categories `[7030]
+   Books/Comics`). Prowlarr pushes its indexers in; do not add indexers
+   inside Mylar3 by hand or the next sync will fight you.
+2. **Mylar3 -> qBittorrent.** `torrent_downloader = 5` (qbittorrent) with
+   `qbittorrent_host = http://qbittorrent:8080`. There is no
+   `qbittorrent_port` setting -- the host field is a full URL, because
+   Mylar3 hands it straight to qbittorrent-api. Username and password are
+   empty on purpose: qBittorrent has `WebUI\AuthSubnetWhitelist=10.0.1.0/24`
+   enabled and every app on `edge` falls inside it, which is the same
+   reason Sonarr's client has no credentials either.
+3. **Mylar3 -> disk.** `destination_dir = /comics`, which is
+   `${COMMON_MEDIA}/Comics`. qBittorrent, Mylar3 and Sonarr all see the
+   download tree at the same `/downloads` path, so no remote path mapping
+   is needed.
+4. **Komga -> readers.** Komga mounts the same tree at `/data`,
+   **read-only**, and needs a library pointing at it. Without that library
+   Komga shows nothing no matter how much Mylar3 files, and nothing warns
+   you: an empty Komga looks identical to a Komga that has not been given
+   a library.
+
+Mylar3's API has to be on for Prowlarr and Organizarr to talk to it
+(`api_enabled = True`). It ships off, with `api_key = None` as a literal
+string rather than an empty value, which is its own trap: read back
+naively that looks like a key.
 
 ## Authentik first boot
 
