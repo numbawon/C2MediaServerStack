@@ -154,6 +154,16 @@ def main():
     lines.append("")
     lines.append(verdict)
 
+    # The watch is finished, so this daily report has done its job. Say so
+    # here rather than from a separate timer set to a guessed date: this
+    # fires exactly when the window is genuinely complete, and if Suricata
+    # restarts the clock resets and the reminder correctly goes away again.
+    if days >= WATCH_DAYS:
+        lines.append("")
+        lines.append("Watch complete. Stop this daily report with:")
+        lines.append("  sudo systemctl disable --now "
+                     "mediastack-bridge-watch-report.timer")
+
     body = "\n".join(lines)
     print(body)
 
