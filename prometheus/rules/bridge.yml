@@ -1,0 +1,167 @@
+# Transparent filtering bridge (OPNsense, separate box from the stack).
+#
+# These are deliberately NOT in ids.yml. That file watches the Suricata
+# running inside the stack, on job="suricata", with its own metric names.
+# The bridge is a second, independent engine on a different host, and
+# folding the two together would make an alert ambiguous about which
+# engine is in trouble at the moment you most need to know.
+#
+# Written for a specific decision: whether to switch this bridge from IDS
+# to IPS. In IDS mode a dropped packet is a missed alert. In IPS mode the
+# same drop is a dropped connection, i.e. someone's stream stops. So the
+# drop rules below are sized to answer "would enabling IPS break traffic",
+# not merely "is detection lossy".
+#
+# severity drives ntfy priority, see the header of alerts.yml.
+
+groups:
+  - name: bridge
+    rules:
+      # --- Can we see the box at all ---------------------------------
+      # up{job="bridge-node"} is already covered by the generic TargetDown
+      # in alerts.yml. This one is different: it says the SSH collector
+      # could not reach the bridge, which fails independently of the
+      # node_exporter scrape. Either alone is survivable; both firing
+      # means the box is gone rather than one path being broken.
+      - alert: BridgeUnreachable
+        expr: mediastack_bridge_reachable == 0
+        for: 10m
+        labels:
+          severity: warning
+          service: bridge
+        annotations:
+          summary: "Filtering bridge is not answering over SSH"
+          description: >-
+            The metrics collector cannot reach the bridge. Suricata may
+            still be running and filtering, but nothing can observe it,
+            so treat every other bridge alert as unreliable until this
+            clears.
+
+      # --- Is the collector itself still running ----------------------
+      # The textfile persists after the collector dies, so node_exporter
+      # keeps serving the last values and the dashboard looks alive while
+      # showing frozen numbers. This is the rule that catches that, and
+      # it is the failure mode most likely to quietly end the watch.
+      - alert: BridgeMetricsStale
+        expr: time() - mediastack_bridge_exporter_last_run_timestamp_seconds > 900
+        for: 5m
+        labels:
+          severity: warning
+          service: bridge
+        annotations:
+          summary: "Bridge metrics have not updated in {{ $value | humanizeDuration }}"
+          description: >-
+            The exporter timer runs every 2 minutes. Nothing has been
+            written for 15, so the dashboard is showing stale values that
+            still look current. Check mediastack-bridge-exporter.timer.
+
+      # --- Is Suricata running on it ----------------------------------
+      # Guarded on reachable==1 so an SSH outage pages once, not twice:
+      # when the box is unreachable the collector reports suricata_up=0
+      # because it cannot tell, which is not the same as Suricata dying.
+      - alert: BridgeSuricataDown
+        expr: mediastack_bridge_suricata_up == 0 and mediastack_bridge_reachable == 1
+        for: 10m
+        labels:
+          severity: critical
+          service: bridge
+        annotations:
+          summary: "Suricata is not running on the filtering bridge"
+          description: >-
+            The bridge is reachable but no Suricata process is present.
+            Traffic is still passing, unfiltered and uninspected.
+
+      # --- Did it restart under us ------------------------------------
+      # Every counter on the bridge dashboard resets to zero on restart.
+      # Without this, that reset reads as a rate spike, or as a cumulative
+      # figure that mysteriously got smaller. It also restarts the clock
+      # on the stability watch: five days of evidence means five days
+      # within a single run.
+      - alert: BridgeSuricataRestarted
+        expr: mediastack_bridge_uptime_seconds < 600
+        labels:
+          severity: info
+          service: bridge
+        annotations:
+          summary: "Suricata on the bridge restarted {{ $value | humanizeDuration }} ago"
+          description: >-
+            All packet and alert counters have reset. Any rate spike or
+            drop in cumulative totals around this time is the restart,
+            not a traffic event.
+
+      # --- Is it keeping up -------------------------------------------
+      # ignoring(stat) is load-bearing, not decoration: both sides of the
+      # division come from the same metric and differ only in the `stat`
+      # label, and PromQL matches binary operators on every label by
+      # default. Without it the two sides never join and the expression
+      # returns empty, which an alert cannot distinguish from "healthy".
+      #
+      # Rate over a window, never cumulative drops/packets. The cumulative
+      # ratio blends a burst at startup into the current picture and will
+      # support whatever conclusion you already had: on this bridge it read
+      # 3.6% while adjacent 5 minute intervals ran at 0.00% and 4.77%.
+      - alert: BridgeDroppingPackets
+        expr: >
+          rate(mediastack_bridge_stat{stat="capture.kernel_drops"}[15m])
+            / ignoring(stat) clamp_min(rate(mediastack_bridge_stat{stat="capture.kernel_packets"}[15m]), 1) > 0.05
+        for: 30m
+        labels:
+          severity: warning
+          service: bridge
+        annotations:
+          summary: "Bridge Suricata dropping {{ $value | humanizePercentage }} of packets"
+          description: >-
+            Sustained loss in IDS mode means detection has gaps. Do not
+            enable IPS while this is firing: the same shortfall becomes
+            dropped connections rather than missed alerts.
+
+      # --- Is it badly behind -----------------------------------------
+      - alert: BridgeDroppingPacketsSeverely
+        expr: >
+          rate(mediastack_bridge_stat{stat="capture.kernel_drops"}[15m])
+            / ignoring(stat) clamp_min(rate(mediastack_bridge_stat{stat="capture.kernel_packets"}[15m]), 1) > 0.20
+        for: 15m
+        labels:
+          severity: critical
+          service: bridge
+        annotations:
+          summary: "Bridge Suricata dropping {{ $value | humanizePercentage }} of packets"
+          description: >-
+            One packet in five is never inspected. Detection is
+            substantially blind, and IPS in this state would be visibly
+            breaking traffic.
+
+      # --- Is it about to run out of room -----------------------------
+      # memcap_pressure is how close the flow and stream tables are to
+      # their ceiling. At the ceiling, the next spike evicts flows. In IDS
+      # that loses visibility; in IPS it drops the connection outright,
+      # which is why this matters more than its current value of 5
+      # suggests.
+      - alert: BridgeMemcapPressure
+        expr: mediastack_bridge_stat{stat="memcap_pressure"} > 80
+        for: 15m
+        labels:
+          severity: warning
+          service: bridge
+        annotations:
+          summary: "Bridge flow tables at {{ $value }}% of capacity"
+          description: >-
+            Sustained pressure means the next traffic spike starts
+            evicting flows. Raise the memcap before enabling IPS.
+
+      # --- Is something actually happening ----------------------------
+      # Deliberately blunt. The baseline here is a couple of alerts total,
+      # so this only speaks up for a change of kind, not of degree, and
+      # will not chatter during a quiet week.
+      - alert: BridgeAlertSurge
+        expr: increase(mediastack_bridge_stat{stat="detect.alert"}[1h]) > 50
+        for: 10m
+        labels:
+          severity: warning
+          service: bridge
+        annotations:
+          summary: "{{ $value | humanize }} IDS alerts on the bridge in the last hour"
+          description: >-
+            Well above this bridge's baseline. Check the signature table
+            on the bridge dashboard before enabling IPS: whatever is
+            firing would be getting blocked.

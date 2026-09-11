@@ -227,7 +227,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * rate(mediastack_bridge_stat{stat=\"capture.kernel_drops\"}[15m]) / clamp_min(rate(mediastack_bridge_stat{stat=\"capture.kernel_packets\"}[15m]), 1)",
+          "expr": "100 * rate(mediastack_bridge_stat{stat=\"capture.kernel_drops\"}[15m]) / ignoring(stat) clamp_min(rate(mediastack_bridge_stat{stat=\"capture.kernel_packets\"}[15m]), 1)",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -290,7 +290,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * mediastack_bridge_stat{stat=\"capture.kernel_drops\"} / clamp_min(mediastack_bridge_stat{stat=\"capture.kernel_packets\"}, 1)",
+          "expr": "100 * mediastack_bridge_stat{stat=\"capture.kernel_drops\"} / ignoring(stat) clamp_min(mediastack_bridge_stat{stat=\"capture.kernel_packets\"}, 1)",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -441,7 +441,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * rate(mediastack_bridge_stat{stat=\"capture.kernel_drops\"}[15m]) / clamp_min(rate(mediastack_bridge_stat{stat=\"capture.kernel_packets\"}[15m]), 1)",
+          "expr": "100 * rate(mediastack_bridge_stat{stat=\"capture.kernel_drops\"}[15m]) / ignoring(stat) clamp_min(rate(mediastack_bridge_stat{stat=\"capture.kernel_packets\"}[15m]), 1)",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
