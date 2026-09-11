@@ -851,6 +851,22 @@ services:
         - "traefik.http.routers.komga.middlewares=authentik@file"
         - "traefik.http.routers.komga-api.rule=Host(`komga.${COMMON_DOMAIN}`) && (PathPrefix(`/api`) || PathPrefix(`/opds`) || PathPrefix(`/sse`) || PathPrefix(`/kobo`))"
         - "traefik.http.routers.komga-api.entrypoints=web,websecure"
+        # /api/v1/claim is the one path under /api that must NOT be
+        # ungated. On a Komga with no users yet it takes an unauthenticated
+        # POST and makes the caller the administrator, so leaving it open
+        # to the internet hands the server to whoever finds the hostname
+        # first -- and it reopens every time the database is reset or
+        # restored empty, which is precisely when nobody is watching.
+        # Priority must clear the OTHER router's default, and that default
+        # is the rule's length in characters -- komga-api's rule runs to
+        # about 118 of them. A number that looks decisively large, like
+        # 100, is silently smaller than that and loses, sending claim
+        # requests back to the ungated router with nothing in the logs to
+        # say so. Hence a value nothing can accidentally exceed.
+        - "traefik.http.routers.komga-claim.rule=Host(`komga.${COMMON_DOMAIN}`) && PathPrefix(`/api/v1/claim`)"
+        - "traefik.http.routers.komga-claim.entrypoints=web,websecure"
+        - "traefik.http.routers.komga-claim.middlewares=authentik@file"
+        - "traefik.http.routers.komga-claim.priority=1000"
         - "traefik.http.services.komga.loadbalancer.server.port=25600"
 
   # ---------------------------------------------------------------------

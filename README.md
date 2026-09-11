@@ -41,7 +41,8 @@ and actually understand what they're running, not just copy-paste it.
 | **Cleanuparr** | Removes stalled, blocked and known-malware downloads from the *arr queues and re-searches. Admin tier, because it deletes things. |
 | **Audiobookshelf** | Audiobooks. Household tier, native OIDC, deliberately not forward-auth gated. Podcasts moved to PinePods, which is built for them. |
 | **Immich** | Photos and video. Household tier, native OIDC, deliberately not forward-auth gated. Runs its own Postgres and Redis. |
-| **Sonarr, Radarr, Lidarr, LazyLibrarian** | Library management for TV, movies, music, and ebooks -- find, grab, rename, organize. |
+| **Sonarr, Radarr, Lidarr, LazyLibrarian, Mylar3** | Library management for TV, movies, music, ebooks and comics -- find, grab, rename, organize. |
+| **Komga** | Comics and manga server, reading `Comics/`. Mylar3 fills that tree; Komga mounts it read-only so two managers never fight over the same filenames. Its client paths are not forward-auth gated (see below), and `/api/v1/claim` is gated separately because it can hand over admin on an empty database. |
 | **Bazarr** | Subtitle management for Sonarr/Radarr's libraries. |
 | **Prowlarr** | Centralized indexer management -- add an indexer once, it syncs to every `*arr` app instead of configuring each separately. |
 | **Seerr** | The request front-end (actively-maintained Overseerr fork) -- where you or your family actually ask for something to be added. |
@@ -564,10 +565,10 @@ cloudflared tunnel create mediastack
 #   grep -ohE 'Host\(`[^`]+`\)' docker-stack.yml traefik/dynamic/dynamic.yml \
 #     | sort -u
 # As of writing: ai, alertmanager, audiobookshelf, auth, bazarr, browse,
-# cleanuparr, files, flood, grafana, immich, lazylibrarian, lidarr,
-# navidrome, ntfy, organizarr, overseerr, pihole, plex, podcasts,
-# portainer, prometheus, prowlarr, qbittorrent, radarr, seerr, sonarr,
-# tautulli, tdarr, terminal, traefik, and the bare domain for homer:
+# cleanuparr, files, flood, grafana, i2p, immich, komga, lazylibrarian,
+# lidarr, mylar3, navidrome, ntfy, organizarr, overseerr, pihole, plex,
+# podcasts, portainer, prometheus, prowlarr, qbittorrent, radarr, seerr,
+# sonarr, tautulli, tdarr, terminal, traefik, and the bare domain for homer:
 cloudflared tunnel route dns mediastack <sub>.yourdomain.com
 # Grab the tunnel token for init-secrets.sh next: Cloudflare Zero Trust
 # dashboard -> Networks -> Tunnels -> mediastack -> Configure -> copy token
@@ -1090,6 +1091,7 @@ Movies/          -> Radarr, Plex, Bazarr
 TV/              -> Sonarr, Plex, Bazarr
 Music/           -> Lidarr, Plex, Navidrome
 EBooks/          -> LazyLibrarian, Plex
+Comics/          -> Mylar3 (writes), Komga (reads, mounted read-only)
 Pictures/        -> Immich, as a read-only External Library
 (anything else)  -> Plex only, via its full data mount
 ```
@@ -2691,7 +2693,7 @@ whatever timezone you are viewing from.
 
 ## The apps that are not forward-auth gated
 
-Eight services deliberately carry no `authentik@file` middleware, for one
+Nine services deliberately carry no `authentik@file` middleware, for one
 of two reasons: **a native client that cannot complete a browser login
 redirect**, or **real OIDC of their own**, where the gate would only mean
 logging in twice.
@@ -2700,6 +2702,7 @@ logging in twice.
 |---|---|---|
 | Plex | its own TV/mobile apps | Plex's own account system |
 | Navidrome `/rest/*` | Subsonic API clients | per-person Subsonic password |
+| Komga `/api`, `/opds`, `/sse`, `/kobo` | Mihon, Panels, Chunky, Kobo sync | Komga's own accounts and per-user library restrictions |
 | ntfy | Android app holds a persistent connection | Cloudflare Access service token + ntfy tokens |
 | Audiobookshelf | mobile app | native OIDC against Authentik |
 | PinePods | mobile apps hold long-lived sessions | native OIDC against Authentik |
@@ -2711,6 +2714,31 @@ Putting the forward-auth gate in front of any of them does not "add
 security", it breaks the app: every API call gets bounced to a login
 page the client cannot render. **Do not add `authentik@file` to these
 routers for consistency.**
+
+**Komga's `/api/v1/claim` is the exception inside the exception.** On a
+Komga with no users yet, that path takes an unauthenticated POST and makes
+the caller the administrator. Ungated and public, it hands the server to
+whoever finds the hostname first, and it reopens every time the database
+is reset or restored empty, which is exactly when nobody is watching. It
+therefore has a third router of its own that *is* gated, at
+`priority=1000`.
+
+That number is not arbitrary and must not be "tidied" down. Traefik's
+default router priority is **the rule's length in characters**, and the
+ungated `komga-api` rule runs to about 118 of them. A value that looks
+decisively large, such as 100, is silently smaller and loses: claim
+requests go back to the ungated router, nothing appears in the logs, and
+the only symptom is that `/api/v1/claim` answers `200` instead of
+redirecting. Check it with:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://komga.<domain>/api/v1/claim   # want 302
+curl -s -o /dev/null -w '%{http_code}\n' https://komga.<domain>/opds/v1.2/catalog  # want 401
+```
+
+A `302` on the first means Authentik is holding the claim path. A `401` on
+the second means Komga's own auth is carrying the client paths, which is
+the whole premise of leaving them ungated.
 
 Audiobookshelf and Immich are pattern 3 (real OIDC), not pattern 1. The
 Authentik side is already created (`Audiobookshelf OIDC`, `Immich OIDC`
