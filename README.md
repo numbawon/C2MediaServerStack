@@ -2702,7 +2702,7 @@ logging in twice.
 |---|---|---|
 | Plex | its own TV/mobile apps | Plex's own account system |
 | Navidrome `/rest/*` | Subsonic API clients | per-person Subsonic password |
-| Komga `/api`, `/opds`, `/sse`, `/kobo` | Mihon, Panels, Chunky, Kobo sync | Komga's own accounts and per-user library restrictions |
+| Komga | has real OIDC, gate would be a second login; its client paths (`/api`, `/opds`, `/sse`, `/kobo`) also carry Mihon, Panels, Chunky and Kobo sync, which cannot follow a login redirect | native OIDC against Authentik, `Family` binding on the application, plus Komga's own per-user library restrictions and age ratings |
 | ntfy | Android app holds a persistent connection | Cloudflare Access service token + ntfy tokens |
 | Audiobookshelf | mobile app | native OIDC against Authentik |
 | PinePods | mobile apps hold long-lived sessions | native OIDC against Authentik |
@@ -2714,6 +2714,8 @@ Putting the forward-auth gate in front of any of them does not "add
 security", it breaks the app: every API call gets bounced to a login
 page the client cannot render. **Do not add `authentik@file` to these
 routers for consistency.**
+
+Komga is pattern 3 (real OIDC), configured in `.appdata/komga/application.yml`, which is git-ignored because it holds the client secret. Two things about it are worth knowing. Komga matches an incoming identity to an existing account **by email**, so an Authentik user whose address matches an existing Komga user lands on that account and keeps its roles; anyone else gets a fresh, non-admin account because `oauth2-account-creation` is on. And Komga has **no group-to-role mapping at all** — adding a `groups` scope achieves nothing. Who may log in is decided solely by the Authentik application's group binding; what they can see is decided inside Komga.
 
 **Komga's `/api/v1/claim` is the exception inside the exception.** On a
 Komga with no users yet, that path takes an unauthenticated POST and makes

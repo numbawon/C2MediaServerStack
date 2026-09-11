@@ -848,7 +848,16 @@ services:
         - "traefik.enable=true"
         - "traefik.http.routers.komga.rule=Host(`komga.${COMMON_DOMAIN}`) && !PathPrefix(`/api`) && !PathPrefix(`/opds`) && !PathPrefix(`/sse`) && !PathPrefix(`/kobo`)"
         - "traefik.http.routers.komga.entrypoints=web,websecure"
-        - "traefik.http.routers.komga.middlewares=authentik@file"
+        # No authentik@file here: Komga has real OIDC against Authentik, so
+        # the forward-auth gate would mean logging in twice, and worse, the
+        # OAuth callback at /login/oauth2/code/authentik would be bounced
+        # to a login page mid-flow. Same pattern as Audiobookshelf, Immich,
+        # PinePods, Open WebUI and Cleanuparr -- see the README section on
+        # apps that are deliberately not forward-auth gated.
+        #
+        # Access control moved to the Authentik application's group binding
+        # (Family), which is what now decides who may complete the login.
+        # komga-claim below stays gated regardless.
         - "traefik.http.routers.komga-api.rule=Host(`komga.${COMMON_DOMAIN}`) && (PathPrefix(`/api`) || PathPrefix(`/opds`) || PathPrefix(`/sse`) || PathPrefix(`/kobo`))"
         - "traefik.http.routers.komga-api.entrypoints=web,websecure"
         # /api/v1/claim is the one path under /api that must NOT be
