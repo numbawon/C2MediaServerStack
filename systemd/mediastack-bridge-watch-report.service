@@ -1,0 +1,27 @@
+[Unit]
+# One-shot summary of the filtering bridge's IDS watch, pushed to the
+# phone through alert-relay. See scripts/bridge-watch-report.py.
+#
+# Deliberately not an alert rule: the rules in prometheus/rules/bridge.yml
+# fire when something is wrong, which is a different question from "has
+# this been stable long enough to enable IPS". That one wants the shape of
+# five days and is asked on purpose, not at 3am.
+#
+# Install: substitute the real path for /home/youruser, then
+#   sudo cp systemd/mediastack-bridge-watch-report.* /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mediastack-bridge-watch-report.timer
+Description=mediastack filtering bridge watch report
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Needs docker group membership: the script reaches Prometheus and
+# alert-relay by running wget inside the Prometheus container, because
+# the mediastack_internal overlay they share is not attachable.
+User=youruser
+WorkingDirectory=/home/youruser/C2MediaServerStack
+ExecStart=/usr/bin/python3 /home/youruser/C2MediaServerStack/scripts/bridge-watch-report.py --notify
+TimeoutStartSec=2m
