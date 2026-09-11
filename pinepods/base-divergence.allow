@@ -1,0 +1,37 @@
+# Files under /pinepods that are KNOWINGLY taken from the base image
+# rather than from PINEPODS_COMMIT.
+#
+# The build fails if the real divergence set stops matching this file, in
+# either direction: something new drifting, or something listed here no
+# longer drifting. That is deliberate. The failure that produced this
+# guard was silent -- a Rust API from September querying a June schema --
+# and it surfaced only because a human noticed podcasts had stopped
+# updating a day later.
+#
+# To accept a new divergence, add the path here with a comment saying why
+# the base image's copy is the right one. To fix it instead, add a
+# COPY --from=api-builder line for it in the Dockerfile.
+#
+# startup/ is NOT copied from the commit on purpose: startup.sh grew from
+# 8951 to 12403 bytes between the base image (0.9.0, 2026-06-26) and the
+# pinned commit (2026-09-09), and it orchestrates nginx, horust and the
+# python entrypoint against tooling that the base image installed. Running
+# September's orchestration against June's runtime is a bigger risk than
+# the drift it would close. Revisit when the base image is bumped.
+startup/nginx.conf
+startup/startup.sh
+
+# Arch packaging metadata for the desktop client. Never read, never
+# executed inside this container; it is in the repo for AUR publishing.
+clients/aur/.SRCINFO
+clients/aur/PKGBUILD
+
+# Differs from the commit by one entry: YTDLP_PATH = "${YTDLP_PATH}".
+# Copying it would be worse than leaving it. June's startup.sh never sets
+# YTDLP_PATH, so the variable would expand empty and hand the API an empty
+# path instead of no path at all. yt-dlp is already on PATH at
+# /usr/local/bin/yt-dlp, and there are zero IsYouTubeChannel podcasts
+# configured, so nothing currently depends on it. Copy this file, and
+# whatever sets the variable, when the base image is bumped to a release
+# that carries the September startup.sh.
+startup/services/pinepods-api.toml
