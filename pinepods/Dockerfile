@@ -32,7 +32,18 @@ RUN for d in database_functions startup clients; do \
         [ -d "$d" ] && find "$d" -type f -exec sha256sum {} + ; \
     done | sort -k2 > /tmp/src-manifest.txt
 
-FROM madeofpendletonwool/pinepods@sha256:ebc258bb0c62cdb69e5fb726b247c885dac19b50d06fed68fa8d37197b88ace4
+# Pinned by digest to the `nightly` tag of 2026-09-11, NOT to a release.
+# That is deliberate. 0.9.0 and `latest` are the same image, cut
+# 2026-06-26, and this Dockerfile builds its API and frontend from main.
+# A June release under a September API is precisely the mismatch that
+# stopped podcast refresh: twelve unregistered migrations and a SELECT
+# against a column that did not exist. Both halves now come from main and
+# are two days apart rather than two and a half months.
+#
+# The trade is explicit: nightly carries unreleased changes. Pinning the
+# digest means it still only moves when someone edits this line, and the
+# drift guard below checks the halves agree on every build.
+FROM madeofpendletonwool/pinepods@sha256:dfc765650cd9ff254edb094f75ceab4747829e4b47400f62409f4be6cc734cfc
 
 COPY --from=api-builder /src/rust-api/target/release/pinepods-api /usr/local/bin/pinepods-api
 COPY --from=api-builder /src/web/dist/ /var/www/html/
