@@ -52,6 +52,8 @@ volumes:
   # ACME account key + issued certificates. Backed up by
   # scripts/backup-local.sh with the rest; losing it is not fatal (Traefik
   # re-issues) but it does burn a duplicate-certificate rate limit slot.
+  # The manager's own state: manager.yml, users, OIDC settings, backups.
+  traefik_manager_data:
   traefik_acme:
     name: traefik_acme
   # PinePods. Only the database is worth backing up: downloads/ is media
@@ -291,6 +293,11 @@ services:
       - --experimental.plugins.crowdsec.modulename=github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin
       - --experimental.plugins.crowdsec.version=v1.7.1
       - --api.dashboard=true
+      # Internal API on :8080 for traefik-manager. Read-only: the API
+      # exposes routers, middleware names and backend URLs, and cannot
+      # change anything. Reachable only from the `edge` overlay, never
+      # published to the host or routed through the tunnel.
+      - --api.insecure=true
       - --metrics.prometheus=true
       - --log.level=INFO
       # Access logs exist for CrowdSec, which reads them to decide who is
@@ -337,6 +344,15 @@ services:
       - CF_DNS_API_TOKEN_FILE=/run/secrets/cloudflare_dns_token
     volumes:
       - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      # traefik-manager writes managed.yml into THIS directory, not a
+      # subdirectory of it. Three layouts were tested. A nested volume: read
+      # fine, watcher never fires. A plain subdirectory: read fine, watcher
+      # still never fires, because Traefik watches only the configured
+      # directory and re-reads recursively when something in it changes. So
+      # a file written inside an existing subdirectory reloads only when
+      # something else happens to change, which is the worst kind of broken:
+      # the UI reports a successful save and nothing takes effect. Sitting
+      # directly in the watched directory, a save reloads within seconds.
       - traefik_logs:/logs
       - traefik_plugins:/plugins-storage
       - traefik_acme:/acme
@@ -888,6 +904,88 @@ services:
         - "traefik.http.routers.komga-claim.middlewares=authentik@file"
         - "traefik.http.routers.komga-claim.priority=1000"
         - "traefik.http.services.komga.loadbalancer.server.port=25600"
+
+  # ---------------------------------------------------------------------
+  # traefik-manager -- web UI for Traefik's dynamic configuration.
+  # https://github.com/chr0nzz/traefik-manager
+  #
+  # SECURITY: this is the highest-privilege app in the stack. The file it
+  # writes defines routers and middlewares, so anyone who reaches it can
+  # take authentik@file off any service and expose it unauthenticated.
+  # Treated like Portainer: the outer forward-auth gate AND its own login,
+  # bound to an Admins-only Authentik application. Do not relax either.
+  #
+  # It never sees ./traefik/dynamic/dynamic.yml. That file is tracked in
+  # git and carries {{ env "COMMON_DOMAIN" }} templating, which Traefik
+  # expands and a YAML round-trip through this UI would silently destroy,
+  # taking out every hostname rule in one save. CONFIG_PATH points at its
+  # own file in traefik_managed instead; Traefik's file provider recurses,
+  # so both load and neither can overwrite the other.
+  # ---------------------------------------------------------------------
+  traefik-manager:
+    logging: *logging
+    # Pinned, not :latest. This service can rewrite routers and
+    # middlewares, so an unattended image change here is an unattended
+    # change to how the whole stack authenticates. Note the tag carries
+    # no 'v' prefix even though the GitHub releases do: v1.13.5 is a
+    # 404 on ghcr and Swarm reports it only as "manifest unknown".
+    image: ghcr.io/chr0nzz/traefik-manager:1.13.5
+    # Plain python daemon: binds no privileged port and drops no privileges
+    # of its own, so it needs no capabilities.
+    cap_drop: [ALL]
+    # Runs as PUID/PGID rather than root. With cap_drop: [ALL] the container's
+    # root has no CAP_DAC_OVERRIDE, so it cannot write a bind directory owned
+    # by another uid and fails with a bare "Permission denied" that looks
+    # nothing like a capability problem. Owning the files outright avoids
+    # needing the capability at all. Same approach as navidrome and komga.
+    user: "${COMMON_PUID}:${COMMON_PGID}"
+    environment:
+      - TZ=${COMMON_TZ}
+      # The API this reads, enabled on traefik with --api.insecure.
+      - TRAEFIK_API_URL=http://traefik:8080
+      # Its own dynamic config file, NOT the repo's.
+      - CONFIG_PATH=/app/managed/managed.yml
+      # Its own state lives apart from the config it manages, so a mistake
+      # in one cannot corrupt the other.
+      - CONFIG_DIR=/app/config
+      - SETTINGS_PATH=/app/config/manager.yml
+      - BACKUP_DIR=/app/backups
+      # Local login stays on even behind forward-auth: defence in depth for
+      # the one service that can rewrite everyone else's auth. Swap to OIDC
+      # against Authentik in the UI once the provider exists, see README.
+      - AUTH_ENABLED=true
+      # Behind Traefik's TLS, so the session cookie must be Secure.
+      - COOKIE_SECURE=true
+      - PROXY_FIX_HOPS=1
+    volumes:
+      # The directory Traefik watches, mounted read-write so a save reloads
+      # Traefik in seconds without restarting it.
+      #
+      # dynamic.yml sits in here too and the manager must never write it: it
+      # is tracked in git and carries {{ env "COMMON_DOMAIN" }} templating
+      # that a YAML round-trip would destroy, taking out every hostname rule.
+      # CONFIG_PATH below points only at managed.yml. The safety net is that
+      # dynamic.yml IS tracked, so any stray edit shows up immediately in
+      # git status rather than silently.
+      - ./traefik/dynamic:/app/managed
+      - traefik_manager_data:/app/config
+      - traefik_manager_data:/app/backups
+      # Read-only: lets the Certs tab show expiry without handing a web UI
+      # write access to every private key the stack holds.
+      - traefik_acme:/app/acme:ro
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.traefik-manager.rule=Host(`traefik-manager.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.traefik-manager.entrypoints=web,websecure"
+        # Same pattern as portainer and organizarr: the middleware is the
+        # ordinary one, but the Authentik application behind this hostname
+        # is bound to Admins only. That restriction lives in Authentik, not
+        # here, which is why it is called out in the README.
+        - "traefik.http.routers.traefik-manager.middlewares=authentik@file"
+        - "traefik.http.services.traefik-manager.loadbalancer.server.port=5000"
 
   # ---------------------------------------------------------------------
   # Organizarr -- a small hub for the settings that are actually painful

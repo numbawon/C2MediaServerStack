@@ -41,3 +41,5 @@ __pycache__/
 .github/instructions/
 .github/agents/
 .copilot/
+# traefik-manager owns this file; dynamic.yml beside it stays tracked.
+traefik/dynamic/managed.yml
