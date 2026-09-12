@@ -711,6 +711,9 @@ rebuilt from memory.
 | Komga OIDC client id/secret (`.appdata/komga/application.yml`, git-ignored) | hand-written file | `komga_config` | yes |
 | Komga libraries, per-user library access and age ratings | Komga UI | `komga_config` | yes |
 | Mylar3 comic location, qBittorrent client, synced indexers | Mylar3 UI / Prowlarr app sync | `mylar3_config` | yes |
+| Mylar3 ComicVine API key (search does nothing without it) | Mylar3 UI | `mylar3_config` | yes |
+| Bazarr language profiles, provider list, provider credentials | Bazarr UI | `bazarr_config` | yes |
+| Prowlarr custom indexer definitions (`Definitions/Custom/`) | hand-written file | `prowlarr_config` | yes |
 | Pi-hole blocklists and groups | Pi-hole UI | `pihole_config` | yes |
 | Tdarr libraries and flows | Tdarr UI | `tdarr_configs`, `tdarr_server` | yes |
 | CrowdSec machine and bouncer registrations | `cscli` | `crowdsec_config`, `crowdsec_data` | yes |
@@ -1002,6 +1005,69 @@ Where a reconcile script is worth writing, the `init-ntfy.sh` pattern is
 the one to copy: values from the repo, credentials from `secrets/`,
 applied against the app's API after deploy, and a header that says
 plainly it is a step you run rather than something compose enforces.
+
+### Bazarr: the part that looks configured but does nothing
+
+Bazarr can be fully connected to Sonarr and Radarr, have providers
+enabled, and still never fetch a single subtitle. Three things have to be
+true, and only the first is obvious:
+
+1. **A language profile must exist.** Without one there is nothing to
+   want. `serie_default_enabled: True` alongside `serie_default_profile: ''`
+   is the trap: it reads as configured and means "apply a default profile
+   that does not exist".
+2. **The default profile only applies to items added AFTER it is set.** An
+   existing library keeps `profileId = null` forever. Everything already
+   there needs an explicit bulk assign (mass-edit in the UI, or
+   `POST /api/series` and `/api/movies` with paired `seriesid`/`radarrid`
+   and `profileid`).
+3. **Providers need to be enabled**, which is separate from being
+   configured.
+
+Two details that cost time here:
+
+- A profile item needs `audio_only_include` as well as `audio_exclude`,
+  `hi`, `forced` and `language`. Omit it and assignment fails with
+  `KeyError: 'audio_only_include'` from the subtitle indexer, not from
+  anything that mentions profiles.
+- **Your OpenSubtitles.com API key has nowhere to go, and is not needed.**
+  Bazarr hardcodes its own application key in `app/get_providers.py` and
+  asks only for the account username and password. The two credentials do
+  different jobs: the key identifies the application, the login identifies
+  you and your quota. Note it is opensubtitles**.com**, a different account
+  system from the old opensubtitles.org.
+
+The captcha solver settings (Anti-Captcha, CaptchaAI, DeathByCaptcha) are
+paid third-party services used by exactly four providers: `addic7ed`,
+`avistaz_network`, `subs4series` and `zimuku`. Leave them blank unless one
+of those is enabled.
+
+`adaptive_searching` backs off on items it repeatedly fails to find, first
+retry after three weeks. So the missing count drops fast and then
+plateaus; that is the design, not a stall.
+
+### Prowlarr definitions that need a local override
+
+`Definitions/` is rewritten by Prowlarr on every update, so edits there do
+not survive. `Definitions/Custom/` does, but it is for ADDING indexers,
+not overriding: a custom file whose `id` or `name` matches a built-in is
+rejected with "does not have unique file name or Indexer name".
+
+EBookBay is the worked example. Its built-in definition points at
+`https://ebb.la/`, which serves a valid Sectigo certificate issued for
+`audiobookbay.lu`, so every connection fails certificate verification.
+Prowlarr reports that as "DNS/SSL issues... try a VPN/proxy", which sends
+you chasing the wrong thing entirely: DNS resolves fine and the TLS
+handshake completes.
+
+The site itself is up and its selectors still match. The fix is a custom
+definition with a unique id using the `http://` link the definition
+already ships as `legacylinks`, sidestepping TLS rather than disabling
+certificate validation globally in Prowlarr and weakening every other
+indexer to fix one. Note the domains that LOOK right are not: `ebookbay.to`
+has a valid matching certificate and is a parked domain serving a JS
+redirect, and `theebooksbay.com` is a JS challenge. Fetch the page body
+before trusting a 200 plus a good certificate.
 
 ### The comics chain
 
