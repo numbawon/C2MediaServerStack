@@ -44,6 +44,7 @@ and actually understand what they're running, not just copy-paste it.
 | **Sonarr, Radarr, Lidarr, LazyLibrarian, Mylar3** | Library management for TV, movies, music, ebooks and comics -- find, grab, rename, organize. |
 | **Komga** | Comics and manga server, reading `Comics/`. Mylar3 fills that tree; Komga mounts it read-only so two managers never fight over the same filenames. Its client paths are not forward-auth gated (see below), and `/api/v1/claim` is gated separately because it can hand over admin on an empty database. |
 | **Bazarr** | Subtitle management for Sonarr/Radarr's libraries. |
+| **traefik-manager** | Web UI for Traefik's dynamic configuration. The highest-privilege app here: the file it writes defines routers and middlewares, so it can take `authentik@file` off any service. Admins-only, and it never touches the templated `dynamic.yml`. |
 | **Prowlarr** | Centralized indexer management -- add an indexer once, it syncs to every `*arr` app instead of configuring each separately. |
 | **Seerr** | The request front-end (actively-maintained Overseerr fork) -- where you or your family actually ask for something to be added. |
 | **qBittorrent** | Download client, and the only service whose traffic is forced through the VPN. The *arrs used to share its network namespace; they reach indexers through gluetun's HTTP proxy now. |
@@ -568,6 +569,7 @@ cloudflared tunnel create mediastack
 # cleanuparr, files, flood, grafana, i2p, immich, komga, lazylibrarian,
 # lidarr, mylar3, navidrome, ntfy, organizarr, overseerr, pihole, plex,
 # podcasts, portainer, prometheus, prowlarr, qbittorrent, radarr, seerr,
+# traefik-manager,
 # sonarr, tautulli, tdarr, terminal, traefik, and the bare domain for homer:
 cloudflared tunnel route dns mediastack <sub>.yourdomain.com
 # Grab the tunnel token for init-secrets.sh next: Cloudflare Zero Trust
@@ -714,6 +716,7 @@ rebuilt from memory.
 | Mylar3 ComicVine API key (search does nothing without it) | Mylar3 UI | `mylar3_config` | yes |
 | Bazarr language profiles, provider list, provider credentials | Bazarr UI | `bazarr_config` | yes |
 | Prowlarr custom indexer definitions (`Definitions/Custom/`) | hand-written file | `prowlarr_config` | yes |
+| traefik-manager's own users, settings and OIDC | traefik-manager UI | `traefik_manager_data` | yes |
 | Pi-hole blocklists and groups | Pi-hole UI | `pihole_config` | yes |
 | Tdarr libraries and flows | Tdarr UI | `tdarr_configs`, `tdarr_server` | yes |
 | CrowdSec machine and bouncer registrations | `cscli` | `crowdsec_config`, `crowdsec_data` | yes |
@@ -1045,6 +1048,51 @@ of those is enabled.
 `adaptive_searching` backs off on items it repeatedly fails to find, first
 retry after three weeks. So the missing count drops fast and then
 plateaus; that is the design, not a stall.
+
+### traefik-manager, and where its file has to live
+
+It edits Traefik's dynamic configuration through a web UI, which makes it
+the highest-privilege service in the stack: the file it writes defines
+routers and middlewares, so anyone who reaches it can remove
+`authentik@file` from anything. It is treated like Portainer, the outer
+forward-auth gate plus its own login, on an Admins-only Authentik
+application, and it runs as PUID/PGID rather than root.
+
+It writes `traefik/dynamic/managed.yml` and never `dynamic.yml`, which is
+tracked in git and carries `{{ env "COMMON_DOMAIN" }}` templating that a
+YAML round-trip through the UI would destroy, taking out every hostname
+rule at once. `CONFIG_PATH` scopes it to its own file; the safety net is
+that `dynamic.yml` is tracked, so a stray edit appears in `git status`.
+
+**That file must sit directly in the watched directory, not a
+subdirectory.** Three layouts were tested against a live Traefik:
+
+| layout | Traefik reads it | watcher fires on save |
+|---|---|---|
+| volume mounted at `dynamic/managed/` | yes | **no** |
+| plain subdirectory `dynamic/managed/` | yes | **no** |
+| file in `dynamic/` itself | yes | yes, ~6s |
+
+Traefik watches only the configured directory and re-reads recursively
+when something in it changes, so a file written inside an existing
+subdirectory is loaded on the next unrelated change and never on its own.
+The UI reports a successful save and nothing happens, which is the worst
+of the three outcomes.
+
+Two further traps found while wiring it:
+
+- A nested volume mount inside the read-only `./traefik/dynamic` bind
+  **prevents Traefik from starting at all**: Docker cannot create the
+  mountpoint under a read-only mount, and the container dies with
+  `mkdirat(...): Read-only file system`. Traefik serves every hostname, so
+  that is a full outage.
+- A file Traefik cannot parse leaves the **previous configuration in
+  place**. An empty `http: {}` is rejected with "http cannot be a
+  standalone element", so deletions appear not to work while the error sits
+  in the log. Remove the file rather than emptying it.
+
+The image tag carries no `v` prefix even though the GitHub releases do;
+`v1.13.5` is a 404 on ghcr and Swarm reports only "manifest unknown".
 
 ### Prowlarr definitions that need a local override
 
