@@ -2233,6 +2233,14 @@ Tdarr's stored ffprobe has no stream side data and its MediaInfo scan
 came back empty, so the decision step runs its own ffprobe for Dolby
 Vision rather than trusting either.
 
+Tdarr ships with a global "run mkvpropedit" setting on. Before any flow
+runs, it rewrites the statistics tags of every MKV it picks up, in
+place, including files the flow then leaves alone. In-place means the
+inode a seeding torrent shares by hardlink, and it took up to 3.5
+minutes per large file. `scripts/tdarr-shrink-flow.py` turns it off
+every run. Two files were touched before it was caught, both
+single-link, so no torrent was affected.
+
 ### scripts/transcode.sh (one file)
 
 ```bash
