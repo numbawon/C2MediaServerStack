@@ -1,0 +1,13 @@
+[Unit]
+Description=Collect media conversion metrics every minute
+
+[Timer]
+# Worker progress, fps and ETA change by the second, so this runs as often
+# as the scrape interval is worth. Each run is a handful of small Tdarr API
+# calls and one nvidia-smi query.
+OnBootSec=3min
+OnUnitActiveSec=1min
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

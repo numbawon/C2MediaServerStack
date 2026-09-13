@@ -2325,6 +2325,21 @@ minutes per large file. `scripts/tdarr-shrink-flow.py` turns it off
 every run. Two files were touched before it was caught, both
 single-link, so no torrent was affected.
 
+**Dashboard.** Grafana's *Media Conversions* board
+(`grafana/provisioning/dashboards/conversions.json`) shows space saved,
+the queue by state, the job running now with its fps and time left, the
+latest re-encodes with before/after sizes, failed jobs, and the GPU's
+utilization, VRAM, NVENC sessions, temperature and power. The GPU panels
+count Plex's transcodes too, since it is the same card. Data comes from
+`scripts/conversions-exporter.py` every minute
+(`mediastack-conversions-exporter.timer`), which only makes small Tdarr
+API calls: the statistics record, library settings, node list, and
+status-table counts. Pulling the file database would mean tens of
+megabytes of ffprobe data a minute. Alerts are in
+`prometheus/rules/conversions.yml`, including `TdarrNoWorkers` for the
+state this stack was found in: libraries enabled, zero workers, nothing
+processed and nothing said.
+
 ### scripts/transcode.sh (one file)
 
 ```bash
@@ -2536,19 +2551,20 @@ trimming. All twelve:
 | `mediastack-router-exporter` | every 2 min | Collects CPU, memory, temperature, throughput and client counts from all three AiMesh routers over SSH |
 | `mediastack-prowlarr-metrics` | every 15 min | The real measurement: summarises Prowlarr's own query outcomes per indexer and solver |
 | `mediastack-lidarr-filer` | every 15 min | Files new Lidarr albums into Albums / Singles & EPs / Live / Compilations / Remixes / Other |
+| `mediastack-conversions-exporter` | every 1 min | Tdarr queue, progress and savings plus GPU load, for the Media Conversions dashboard |
 | `mediastack-trim-logs` | hourly | Caps runaway container logs |
 
 ```bash
 cd /path/to/C2MediaServerStack
 for u in backup-local backup-offsite verify-backups media-watchdog \
          ai-digest vpn-watchdog trim-logs authentik-watchdog crowdsec-geo \
-         router-exporter prowlarr-metrics lidarr-filer; do
+         router-exporter prowlarr-metrics lidarr-filer conversions-exporter; do
   sed -e "s|/home/youruser/C2MediaServerStack|$PWD|g" -e "s|^User=youruser$|User=$USER|" \
     "systemd/mediastack-$u.service" | sudo tee "/etc/systemd/system/mediastack-$u.service" >/dev/null
   sudo cp "systemd/mediastack-$u.timer" /etc/systemd/system/
 done
 sudo systemctl daemon-reload
-sudo systemctl enable --now mediastack-{backup-local,backup-offsite,verify-backups,media-watchdog,ai-digest,vpn-watchdog,trim-logs,authentik-watchdog,crowdsec-geo,router-exporter,prowlarr-metrics,lidarr-filer}.timer
+sudo systemctl enable --now mediastack-{backup-local,backup-offsite,verify-backups,media-watchdog,ai-digest,vpn-watchdog,trim-logs,authentik-watchdog,crowdsec-geo,router-exporter,prowlarr-metrics,lidarr-filer,conversions-exporter}.timer
 ```
 
 That loop substitutes the repo path rather than copying verbatim, which
@@ -3572,6 +3588,11 @@ grep -hE "^      - alert:|severity:|summary:" prometheus/rules/*.yml
 | `DiunStale` | warning | Diun has not completed a run in over 26 hours |
 | `DiunTrackingNothing` | warning | Diun completed a run but is tracking no images |
 | `ImageUpdateAvailable` | info | Update available: <label> |
+| `TdarrTranscodeErrors` | warning | Tdarr has failed jobs (originals left untouched) |
+| `TdarrNoWorkers` | info | Tdarr libraries are enabled but the node has no transcode workers |
+| `TdarrApiUnreachable` | warning | The conversions exporter cannot read Tdarr's API |
+| `ConversionsMetricsStale` | warning | Conversion metrics are over 10 minutes old |
+| `GpuHot` | warning | GPU above 83°C for 15 minutes |
 - **Editing a rule is not enough to apply it.** The rules directory is a
   bind mount, so the new file is inside the container immediately, but
   Prometheus only re-reads it on SIGHUP. `docker stack deploy` will not

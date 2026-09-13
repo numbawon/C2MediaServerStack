@@ -1,0 +1,61 @@
+# Media conversions: Tdarr's shrink flow and the GPU it shares with Plex.
+# Metrics come from scripts/conversions-exporter.py via the textfile
+# collector (mediastack-conversions-exporter.timer).
+#
+# severity drives ntfy priority, see the header of alerts.yml.
+
+groups:
+  - name: conversions
+    rules:
+      # The shrink flow fails a job rather than replace a file it doesn't
+      # trust (duration off, suspiciously small, Dolby Vision restore
+      # failed). Each one is a file left as it was, worth a look.
+      - alert: TdarrTranscodeErrors
+        expr: mediastack_tdarr_errors > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tdarr has {{ $value }} failed job(s)"
+          description: "Originals were left untouched. See the Media Conversions dashboard or Tdarr's error tab."
+
+      # The state this stack was actually found in: libraries set to
+      # process, and a node with zero transcode workers, so nothing ever
+      # ran and nothing said so.
+      - alert: TdarrNoWorkers
+        expr: |
+          sum(mediastack_tdarr_worker_limit{type=~"transcode.*"}) == 0
+          and on() max(mediastack_tdarr_library_enabled) == 1
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "Tdarr libraries are enabled but the node has no transcode workers"
+          description: "Nothing will be processed. Set a GPU transcode worker in Tdarr (Nodes)."
+
+      - alert: TdarrApiUnreachable
+        expr: mediastack_tdarr_up == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The conversions exporter cannot read Tdarr's API"
+
+      - alert: ConversionsMetricsStale
+        expr: time() - mediastack_conversions_exporter_last_run_timestamp_seconds > 600
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Media conversion metrics are {{ $value | humanizeDuration }} old"
+          description: "mediastack-conversions-exporter.timer has stopped running or is failing."
+
+      # Turing throttles well before damage, but sustained heat under a
+      # long 4K run while Plex also transcodes is worth knowing about.
+      - alert: GpuHot
+        expr: mediastack_gpu_temperature_celsius > 83
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU at {{ $value }}°C for 15 minutes"
