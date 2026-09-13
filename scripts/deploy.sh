@@ -9,6 +9,7 @@
 #   ./scripts/deploy.sh dns         # docker compose -f docker-compose.dns.yml up -d (Pi-hole)
 #   ./scripts/deploy.sh ai          # docker compose -f docker-compose.ai.yml up -d (Ollama + Open WebUI)
 #   ./scripts/deploy.sh tdarr       # docker compose -f docker-compose.tdarr.yml up -d
+#   ./scripts/deploy.sh audiomuse   # docker compose -f docker-compose.audiomuse.yml up -d (AudioMuse-AI)
 #   ./scripts/deploy.sh ids         # docker compose -f docker-compose.ids.yml up -d (Suricata + CrowdSec)
 #   ./scripts/deploy.sh i2p         # docker compose -f docker-compose.i2p.yml up -d (I2P router)
 set -euo pipefail
@@ -40,6 +41,9 @@ case "${1:-}" in
   tdarr)
     docker compose -f docker-compose.tdarr.yml up -d
     ;;
+  audiomuse)
+    docker compose -f docker-compose.audiomuse.yml up -d
+    ;;
   ids)
     docker compose -f docker-compose.ids.yml up -d
     ;;
@@ -47,7 +51,7 @@ case "${1:-}" in
     docker compose -f docker-compose.i2p.yml up -d
     ;;
   *)
-    echo "Usage: $0 {stack|download|plex|dns|ai|tdarr|ids|i2p}" >&2
+    echo "Usage: $0 {stack|download|plex|dns|ai|tdarr|audiomuse|ids|i2p}" >&2
     exit 1
     ;;
 esac

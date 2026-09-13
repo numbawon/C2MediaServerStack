@@ -192,8 +192,13 @@ three different patterns, chosen per app based on what it supports:
    request; the app reads that header and auto-provisions a real,
    separate account per person -- actual per-user playlists/dashboards/
    history, just with one shared login. This only works because these
-   apps also live on `internal`, not `edge` -- nothing except Traefik can
-   reach them to forge that header.
+   apps also live on `internal`, not `edge`, so nothing except Traefik
+   can reach them directly -- and because every router in front of them
+   either runs forward-auth (which overwrites the header) or strips it.
+   Traefik forwards whatever headers the client sent, so a router that
+   skips forward-auth passes a forged `X-authentik-username` straight
+   through from the trusted subnet. Navidrome's `/rest` router was
+   exactly that until 2026-09-13; see `strip-authentik-identity`.
 
 3. **Real OIDC (Portainer).** A few apps get a dedicated Authentik
    OAuth2/OpenID provider + application (separate from the outer
@@ -219,7 +224,11 @@ so both instead authenticate with their own app-level credentials
 (Plex's own account system; a per-person password set once inside
 Navidrome). Traefik splits Navidrome's single hostname on
 `PathPrefix(/rest)` specifically to carry this off: the web UI goes
-through the normal SSO gate, the API path doesn't.
+through the normal SSO gate, the API path doesn't. The API router
+carries `strip-authentik-identity` instead, because Navidrome honours
+`X-authentik-username` on `/rest` too: without it, anyone on the
+internet could send that header and be signed in as any user, no
+password.
 
 ## VPN-routed download & indexer traffic
 
@@ -565,7 +574,7 @@ cloudflared tunnel create mediastack
 # regenerating from the router rules rather than trusting this comment:
 #   grep -ohE 'Host\(`[^`]+`\)' docker-stack.yml traefik/dynamic/dynamic.yml \
 #     | sort -u
-# As of writing: ai, alertmanager, audiobookshelf, auth, bazarr, browse,
+# As of writing: ai, alertmanager, audiobookshelf, audiomuse, auth, bazarr, browse,
 # cleanuparr, files, flood, grafana, i2p, immich, komga, lazylibrarian,
 # lidarr, mylar3, navidrome, ntfy, organizarr, overseerr, pihole, plex,
 # podcasts, portainer, prometheus, prowlarr, qbittorrent, radarr, seerr,
@@ -580,10 +589,11 @@ cloudflared tunnel route dns mediastack <sub>.yourdomain.com
 
 docker stack deploy -c docker-stack.yml mediastack
 
-# All six standalone compose files. This used to list only download and
-# plex, which left Tdarr, Ollama, Pi-hole and Suricata undeployed. See
+# Every standalone compose file. This used to list only download and
+# plex, which left Tdarr, Ollama, Pi-hole and Suricata undeployed, and
+# later missed i2p. Check it against `ls docker-compose.*.yml`. See
 # "Why the stack is split across compose files" for what each one is.
-for f in download plex tdarr ai dns ids; do
+for f in download plex tdarr ai dns ids i2p audiomuse; do
   docker compose -f "docker-compose.$f.yml" up -d
 done
 ```
@@ -711,6 +721,8 @@ rebuilt from memory.
 | Seerr's Plex link and service connections | Seerr UI | `seerr_config` | yes |
 | qBittorrent WebUI credentials and settings | qBittorrent UI | `qbittorrent_config` | yes |
 | Navidrome users | Navidrome UI | `navidrome_config` | yes |
+| AudioMuse-AI media-server link, admin login, API token, analysis | AudioMuse UI (setup wizard) | `.appdata/audiomuse/postgres` | yes |
+| Navidrome plugin enablement and its AudioMuse URL/token | Navidrome UI | `navidrome_config` | yes |
 | Komga OIDC client id/secret (`.appdata/komga/application.yml`, git-ignored) | hand-written file | `komga_config` | yes |
 | Komga libraries, per-user library access and age ratings | Komga UI | `komga_config` | yes |
 | Mylar3 comic location, qBittorrent client, synced indexers | Mylar3 UI / Prowlarr app sync | `mylar3_config` | yes |
@@ -1224,7 +1236,8 @@ For the two other patterns from "Authentik integration patterns" above:
   check you just configured. On the app side, point it at
   `X-authentik-username` (Grafana's `GF_AUTH_PROXY_*` env vars,
   Navidrome's `ND_EXTAUTH_*`) and make sure it's on `internal`, not
-  `edge`, so nothing else can forge that header.
+  `edge`, so nothing else can forge that header. Any router for it
+  that skips `authentik@file` must carry `strip-authentik-identity@file`.
 - **Real OIDC (Portainer-style):** create a *second*, separate OAuth2/
   OpenID Provider + Application in Authentik (don't reuse the proxy
   provider above -- different provider types, one app per provider).
@@ -1949,6 +1962,53 @@ library as if they were albums.
 **Cover art is kept in the music library**, unlike Movies and TV. Plex's
 music section still has `useLocalAssets` on and Navidrome reads folder
 images, so `folder.jpg` is wanted here. Only text junk is removed.
+
+### AudioMuse-AI (Navidrome Instant Mix)
+
+[AudioMuse-AI](https://github.com/NeptuneHub/AudioMuse-AI) analyses every
+track's audio (MusiCNN, CLAP) and answers "what sounds like this". The
+[audiomuseai Navidrome plugin](https://github.com/NeptuneHub/AudioMuse-AI-NV-plugin)
+feeds that into Navidrome's Instant Mix, artist Radio and similar-artist
+info, in the web UI and in clients that use `getSimilarSongs`
+(Symfonium, Substreamer, Tempus, Feishin).
+
+| Piece | Where |
+|---|---|
+| Flask API/UI, worker, Postgres | `docker-compose.audiomuse.yml` (GPU, standalone like Tdarr) |
+| Plugin `.ndp` | `scripts/navidrome-audiomuse-plugin.sh` into `.appdata/navidrome/plugins` |
+| DB password, JWT secret | `secrets/audiomuse.env`, from `scripts/init-secrets.sh` |
+| Web UI | `audiomuse.<domain>`, Authentik application `audiomuse`, Admin only |
+
+Core image and plugin are pinned as a pair (3.6.0 / v10). Upstream's own
+docs say a version mismatch between the two is the most common failure,
+so bump them together.
+
+**Networking.** AudioMuse pulls every track over Navidrome's Subsonic
+API, and the plugin inside Navidrome calls AudioMuse back. They share a
+dedicated `music` overlay, not `internal`: Navidrome trusts
+`X-authentik-username` from `internal`'s subnet, and AudioMuse has no
+business being able to assert a username. On `music` it signs in with a
+real Navidrome account like any client. It has no local-folder mode, so
+the whole library streams through Navidrome once for the first analysis.
+
+**Setup, in order** (the credentials are yours to enter, none of it is
+in a file):
+
+1. In Navidrome, create a regular (non-admin) user for AudioMuse.
+2. `cloudflared tunnel route dns mediastack audiomuse.<domain>`
+3. Open `audiomuse.<domain>`. The setup wizard asks for the media
+   server: Navidrome, URL `http://navidrome:4533`, and the account from
+   step 1. Then set AudioMuse's own admin login and an **API token**.
+4. Start an analysis from the main page and let it finish. Nothing is
+   similar to anything until it has.
+5. In Navidrome, Settings, Plugins: enable **AudioMuse-AI**, set the API
+   URL to `http://audiomuse-ai-flask:8000` and paste the same API token.
+
+`ND_AGENTS` puts `audiomuseai` first; Navidrome takes sonic similarity
+from the first agent that offers it. To check it end to end: Similar
+Song on a track in AudioMuse's UI, then Instant Mix on the same track in
+Navidrome. Both should show up in AudioMuse's Flask log, and Navidrome's
+log should show `plugin=audiomuseai` with no errors.
 
 ### Repairing music tags and artwork (beets)
 

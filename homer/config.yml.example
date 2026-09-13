@@ -136,6 +136,12 @@ services:
         target: "_blank"
         subtitle: "Admins only -- it rewrites library files"
 
+      - name: "AudioMuse-AI"
+        logo: "https://github.com/NeptuneHub/audiomuse-ai-plugin/blob/master/audiomuseai.png?raw=true"
+        url: "https://audiomuse.example.com"
+        target: "_blank"
+        subtitle: "Admins only -- sonic analysis behind Navidrome's Instant Mix"
+
   - name: "Downloads"
     icon: "fas fa-download"
     items:
