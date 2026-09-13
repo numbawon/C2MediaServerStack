@@ -296,9 +296,14 @@ if [ "$NO_DV" != "1" ] && command -v mkvmerge >/dev/null 2>&1 \
     pids+=($!); sinks+=("$FIFO_DIR/hp")
   fi
 
+  # `tee -p` because hdr10plus_tool quits on the first frames of a source
+  # with no HDR10+ ("File doesn't contain dynamic metadata"). Plain tee
+  # dies on that broken pipe and stops feeding dovi_tool too, so a Dolby
+  # Vision source without HDR10+ came out with no DV and a report of
+  # "none found in the source". -p ignores the dead pipe and keeps going.
   ffmpeg -hide_banner -loglevel error -i "$IN" -map 0:v:0 -c copy \
       -bsf:v hevc_mp4toannexb -f hevc - 2>/dev/null \
-    | tee "${sinks[@]}" > /dev/null
+    | tee -p "${sinks[@]}" > /dev/null 2>&1
   # Both extractors must finish before their output is looked at.
   for pid in "${pids[@]}"; do wait "$pid" 2>/dev/null; done
   rm -rf -- "$FIFO_DIR"
