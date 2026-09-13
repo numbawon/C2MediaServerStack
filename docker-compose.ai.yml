@@ -242,7 +242,9 @@ services:
 networks:
   edge:
     external: true   # the attachable overlay created by the swarm stack
-  # Local bridge, not the overlay. Ollama's unauthenticated API should be
-  # reachable from exactly one container and nothing else.
+  # Local bridge, not the overlay. Ollama's unauthenticated API is
+  # reachable only from the containers joined here by name: open-webui,
+  # kokoro, and AudioMuse-AI's flask and worker (docker-compose.audiomuse.yml,
+  # for Instant Playlist). Never attach it to `edge`.
   ai:
     driver: bridge
