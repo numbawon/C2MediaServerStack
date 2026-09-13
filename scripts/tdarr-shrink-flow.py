@@ -174,6 +174,13 @@ def main():
 
     print(f"flow {FLOW_ID}: {upsert('FlowsJSONDB', build_flow())}")
 
+    # Tdarr's global "run mkvpropedit" (on by default) rewrites every MKV's
+    # statistics tags IN PLACE before its flow even starts, including files
+    # the flow then leaves alone. That edits the inode a seeding torrent
+    # shares by hardlink, and cost up to 3.5 minutes per large file.
+    crud("SettingsGlobalJSONDB", "update", docID="globalsettings", obj={"runMkvpropedit": False})
+    print("global runMkvpropedit: off")
+
     libs = crud("LibrarySettingsJSONDB", "getAll") or []
     template = next((l for l in libs if l["_id"] not in {s["_id"] for s in LIBRARIES.values()}), libs[0] if libs else {})
     for key in pick(a.libraries):
