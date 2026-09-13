@@ -2127,11 +2127,70 @@ The CNAME is not optional: the wildcard tunnel ingress routes the
 hostname but does not create DNS for it.
 
 The GPU is shared with Plex transcoding and Ollama, and Turing caps
-concurrent NVENC sessions, so the node is left at one worker. Scheduling
+concurrent NVENC sessions, so the node runs one GPU transcode worker and
+nothing else. Worker limits live in Tdarr's database, not in any file
+here; a fresh install starts at zero and processes nothing. Scheduling
 long library sweeps outside streaming hours is worth doing.
 
 The scratch directory is on the media array rather than the OS SSD, which
 does not have room for a 4K remux in progress.
+
+#### The shrink flow
+
+One flow, "Shrink oversized video", re-encodes files whose video bitrate is
+high for their resolution and leaves everything else alone. It lives in the
+repo, not just in Tdarr's database:
+
+| File | What it is |
+|---|---|
+| `tdarr/flows/shrink-decide.js` | Decision step: thresholds, encoder settings, audio handling |
+| `tdarr/flows/shrink-restore.js` | Calls the restore script after the encode |
+| `tdarr/flows/restore-dynamic-hdr.sh` | Re-injects Dolby Vision and HDR10+ (mounted at `/opt/shrink`) |
+| `scripts/tdarr-shrink-flow.py` | Writes the flow and libraries into Tdarr through its API |
+| `scripts/tdarr-hdr-tools.sh` | Installs pinned static `dovi_tool` / `hdr10plus_tool` into `.appdata/tdarr/bin` |
+
+```bash
+scripts/tdarr-hdr-tools.sh                     # once, and after bumping a version
+scripts/tdarr-shrink-flow.py                   # after editing anything in tdarr/flows
+scripts/tdarr-shrink-flow.py --libraries movies,tv
+scripts/tdarr-shrink-flow.py --pause movies,tv
+```
+
+Edits made in the Tdarr UI are overwritten the next time the script runs.
+
+| Resolution | Re-encode when video is above | cq | Bitrate cap |
+|---|---|---|---|
+| 2160p (width 3200+) | 12 Mbps | 28 | 8 Mbps |
+| 1080p (width 1600+) | 8 Mbps | 26 | 4 Mbps |
+| 720p (width 1100+) | 4 Mbps | 26 | 2 Mbps |
+
+SD, interlaced, AV1/VP9 and non-4:2:0 sources are skipped. The numbers come
+from a VMAF sweep against library sources: cq 28 held 96.4 to 96.8 on 4K
+HDR (native-resolution 4K model) and cq 26 held 95.5 on 1080p, while
+Reacher dropped from 18 to 5.3 Mbps. The cap only bites on grain and dark
+scenes, which is where NVENC spends the most bits.
+
+Every audio and subtitle track is kept. Lossy audio is copied; lossless
+tracks (TrueHD, DTS-HD MA, FLAC, PCM) become E-AC-3 640k, which drops
+Atmos height objects. Resolution and HDR are never changed.
+
+HDR, unlike `transcode.sh` below: Tdarr's jellyfin-ffmpeg build does pass
+mastering-display and content-light metadata through `hevc_nvenc`, so
+HDR10 survives the encode on its own. Dolby Vision and HDR10+ do not, so
+`restore-dynamic-hdr.sh` extracts them from the original, checks frame
+counts, injects them, remuxes with mkvmerge and verifies the DV
+configuration record is present. If that fails the flow fails, and a DV
+original is never swapped for an HDR10-only copy. DV profile 5 has no
+HDR10 base layer and is skipped outright.
+
+The result replaces the original only if its duration is within 0.5% and
+its size is 5 to 85% of the original. Replacement renames over the path,
+so a hardlink elsewhere keeps the old copy. New files are held an hour
+after they appear so the *arrs and Bazarr are done with them.
+
+Tdarr's stored ffprobe has no stream side data and its MediaInfo scan
+came back empty, so the decision step runs its own ffprobe for Dolby
+Vision rather than trusting either.
 
 ### scripts/transcode.sh (one file)
 
@@ -2869,7 +2928,7 @@ security", it breaks the app: every API call gets bounced to a login
 page the client cannot render. **Do not add `authentik@file` to these
 routers for consistency.**
 
-Komga is pattern 3 (real OIDC), configured in `.appdata/komga/application.yml`, which is git-ignored because it holds the client secret. Two things about it are worth knowing. Komga matches an incoming identity to an existing account **by email**, so an Authentik user whose address matches an existing Komga user lands on that account and keeps its roles; anyone else gets a fresh, non-admin account because `oauth2-account-creation` is on. And Komga has **no group-to-role mapping at all** — adding a `groups` scope achieves nothing. Who may log in is decided solely by the Authentik application's group binding; what they can see is decided inside Komga.
+Komga is pattern 3 (real OIDC), configured in `.appdata/komga/application.yml`, which is git-ignored because it holds the client secret. Two things about it are worth knowing. Komga matches an incoming identity to an existing account **by email**, so an Authentik user whose address matches an existing Komga user lands on that account and keeps its roles; anyone else gets a fresh, non-admin account because `oauth2-account-creation` is on. And Komga has **no group-to-role mapping at all**: adding a `groups` scope achieves nothing. Who may log in is decided solely by the Authentik application's group binding; what they can see is decided inside Komga.
 
 **Komga's `/api/v1/claim` is the exception inside the exception.** On a
 Komga with no users yet, that path takes an unauthenticated POST and makes
