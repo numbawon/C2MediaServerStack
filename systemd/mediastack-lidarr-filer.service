@@ -1,0 +1,27 @@
+# Files newly imported Lidarr albums into the music library's category
+# folders (Albums / Singles & EPs / Live / ...). See
+# scripts/lidarr-file-categories.py and README "Music".
+#
+# Runs in a container: Lidarr is only addressable on the `edge` overlay,
+# which is not attachable from the host. The library is mounted at /music,
+# the path Lidarr itself uses, so its API paths work unchanged, and the
+# container runs as the media user so moved files keep their ownership.
+#
+# Replace youruser with your actual repo path before installing.
+[Unit]
+Description=mediastack Lidarr category filer
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/youruser/C2MediaServerStack
+# The API key is read from Lidarr's own config at run time rather than
+# duplicated into a unit file or an env file that would then drift.
+ExecStart=/bin/sh -c 'exec /usr/bin/docker run --rm --network edge -u 1000:1000 \
+  -v /home/youruser/C2MediaServerStack/scripts:/s:ro \
+  -v /mnt/Media/Music:/music \
+  -e LIDARR_API_KEY="$(grep -o "<ApiKey>[^<]*" /home/youruser/C2MediaServerStack/.appdata/lidarr/config.xml | cut -c9-)" \
+  python:3.12-alpine python /s/lidarr-file-categories.py --apply --quiet'
+TimeoutStartSec=2h

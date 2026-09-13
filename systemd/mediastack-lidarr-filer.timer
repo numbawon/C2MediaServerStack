@@ -1,0 +1,13 @@
+[Unit]
+Description=File new Lidarr imports into category folders every 15 minutes
+
+[Timer]
+# Cheap when there is nothing to do: one artist/trackfile listing against
+# a local API. Lidarr only renames and rescans artists that actually have
+# unfiled albums. 15 minutes means a new album is in its category folder
+# before most people go looking for it.
+OnBootSec=10min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target

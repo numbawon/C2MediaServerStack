@@ -1914,11 +1914,35 @@ Artist Name/
       tracks
 ```
 
-The category level is a human's work, not Lidarr's. Lidarr's format is a
-flat `{Artist Name}/{Album Title} ({Release Year})/`, so enabling its
-renaming and sweeping the library would delete the Albums / Live / Singles
-split on the artists that have one. `renameTracks` is therefore off, and
-this level is maintained by hand.
+Lidarr cannot produce the category level. Its only type token,
+`{Album Type}`, is the MusicBrainz *primary* type (Album / EP / Single);
+Live, Compilation and Remix are *secondary* types with no token at all
+(checked in its `FileNameBuilder`). So the work is split:
+
+- **Lidarr names up to the album folder** (Settings, Media Management,
+  renaming on):
+  - Standard: `{Artist Name} - {Release Year} - {Album Title}/{Artist Name} - {Album Title} - {track:00} - {Track Title}`
+  - Multi-disc: `{Artist Name} - {Release Year} - {Album Title}/{Artist Name} - {Album Title} - {medium:00}-{track:00} - {Track Title}`
+- **`scripts/lidarr-file-categories.py` adds the category**, every 15
+  minutes via `mediastack-lidarr-filer.timer`. For each track Lidarr has
+  mapped that is not already under a category, it has Lidarr rename it
+  into its album folder, moves that folder under Live if the album has
+  that secondary type, else Remixes, Compilations, Other (soundtrack,
+  spoken word, demo, ...), else Albums for primary Album and Singles &
+  EPs for EP/Single. Then Lidarr rescans the artist and re-matches the
+  moved files by the MusicBrainz ids it wrote into their tags. It never
+  overwrites a file and never touches anything already filed or
+  unmapped. Dry run by default; `--apply` to move.
+
+**Never press Lidarr's "Rename Files" / "Organize" on an artist.** Its
+format has no category level, so it would pull every filed album back
+out to the artist folder. Lidarr's rename preview for Metallica lists all
+443 files, filed ones included. The script only ever passes it unfiled
+track ids.
+
+With renaming previously off, Lidarr dropped imports into the artist
+folder under their original names: 4,673 loose tracks across 61
+artists, found and filed on 2026-09-13.
 
 Category names were normalised to that one vocabulary. They had been
 inconsistent per artist: `-- Studio Albums --`, `01. Studio albums`,
@@ -2511,19 +2535,20 @@ trimming. All twelve:
 | `mediastack-crowdsec-geo` | every 15 min | Exports CrowdSec alert sources with coordinates for the IDS world map |
 | `mediastack-router-exporter` | every 2 min | Collects CPU, memory, temperature, throughput and client counts from all three AiMesh routers over SSH |
 | `mediastack-prowlarr-metrics` | every 15 min | The real measurement: summarises Prowlarr's own query outcomes per indexer and solver |
+| `mediastack-lidarr-filer` | every 15 min | Files new Lidarr albums into Albums / Singles & EPs / Live / Compilations / Remixes / Other |
 | `mediastack-trim-logs` | hourly | Caps runaway container logs |
 
 ```bash
 cd /path/to/C2MediaServerStack
 for u in backup-local backup-offsite verify-backups media-watchdog \
-         ai-digest vpn-watchdog trim-logs authentik-watchdog crowdsec-geo \\
-         router-exporter; do
+         ai-digest vpn-watchdog trim-logs authentik-watchdog crowdsec-geo \
+         router-exporter prowlarr-metrics lidarr-filer; do
   sed -e "s|/home/youruser/C2MediaServerStack|$PWD|g" -e "s|^User=youruser$|User=$USER|" \
     "systemd/mediastack-$u.service" | sudo tee "/etc/systemd/system/mediastack-$u.service" >/dev/null
   sudo cp "systemd/mediastack-$u.timer" /etc/systemd/system/
 done
 sudo systemctl daemon-reload
-sudo systemctl enable --now mediastack-{backup-local,backup-offsite,verify-backups,media-watchdog,ai-digest,vpn-watchdog,trim-logs,authentik-watchdog,crowdsec-geo,router-exporter,prowlarr-metrics}.timer
+sudo systemctl enable --now mediastack-{backup-local,backup-offsite,verify-backups,media-watchdog,ai-digest,vpn-watchdog,trim-logs,authentik-watchdog,crowdsec-geo,router-exporter,prowlarr-metrics,lidarr-filer}.timer
 ```
 
 That loop substitutes the repo path rather than copying verbatim, which
