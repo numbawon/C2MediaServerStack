@@ -38,7 +38,7 @@ and actually understand what they're running, not just copy-paste it.
 | **Diun** | Watches registries and *notifies* when a newer image ships. It has no write access and updates nothing -- every bump is a deliberate decision. Replaced Watchtower; see "Updates". |
 | **Prometheus, Alertmanager, alert-relay, ntfy** | The alert path. Prometheus evaluates rules, Alertmanager routes them, `alert-relay` formats them, ntfy pushes them to a phone. |
 | **Recyclarr** | Syncs TRaSH Guides quality profiles and custom formats into Sonarr/Radarr. No web UI and no API: a cron'd one-shot, so there is no hostname and no Authentik application. |
-| **Cleanuparr** | Removes stalled, slow and known-malware downloads from the *arr queues and re-searches, and deletes imported downloads left idle for 14 days. Admin tier, because it deletes things. |
+| **Cleanuparr** | Removes stalled, slow and known-malware downloads from the *arr queues and re-searches, and deletes imported downloads at ratio 4 or after 60 days of seeding. Admin tier, because it deletes things. |
 | **Audiobookshelf** | Audiobooks. Household tier, native OIDC, deliberately not forward-auth gated. Podcasts moved to PinePods, which is built for them. |
 | **Immich** | Photos and video. Household tier, native OIDC, deliberately not forward-auth gated. Runs its own Postgres and Redis. |
 | **Sonarr, Radarr, Lidarr, LazyLibrarian, Mylar3** | Library management for TV, movies, music, ebooks and comics -- find, grab, rename, organize. |
@@ -1130,7 +1130,7 @@ the per-user key) and stored in `.appdata/cleanuparr/cleanuparr.db`:
 | Queue cleaner (every 5 min) | Magnet still fetching metadata after 12 checks (1 h) | Removed from the *arr, blocklisted, re-searched |
 | | Stalled for 36 checks (3 h), strikes reset after 10 MB of progress | same |
 | | Under 100 KB/s for 72 checks (6 h) | same |
-| Download cleaner (every 30 min) | `Movies`, `TV`, `Music`, `Books`, `comics`: seeded 24 h and no transfer for 14 days | Torrent and its files deleted |
+| Download cleaner (every 30 min) | `Movies`, `TV`, `Music`, `Books`, `comics`: ratio 4, or 60 days (1440 h) seeding, whichever comes first | Torrent and its files deleted |
 
 Private-tracker torrents hit by a queue rule are dropped from the *arr
 but left in qBittorrent. Uncategorized torrents are never touched by the
@@ -1143,12 +1143,20 @@ leaves the library copy. Mylar3 (`file_opts = move`) and LazyLibrarian
 (`DESTINATION_COPY` off, its default) move files out on import, so their
 torrents have nothing left on disk by then anyway.
 
-Two Cleanuparr traps. "Max Inactive Days" is not a rule on its own: it
-only gates a ratio or seed-time condition, and the UI refuses a rule
-with both of those at -1. That is why the seeding rule carries a 24 h
-seed time. And `/api/configuration/queue_cleaner` always returns empty
-`stallRules` and `slowRules`; the rules live at `/api/queue-rules/stall`
-and `/api/queue-rules/slow`.
+Three Cleanuparr traps, all confirmed in its source
+(`SeedingRuleEvaluator.cs`, `DownloadService.cs`):
+
+- Seeding rules are picked by filter, not by outcome. The first rule, in
+  priority order, whose categories, trackers, tags and privacy match a
+  torrent is the only rule evaluated for it. Two rules on the same
+  categories do not combine; the second never runs.
+- "Max Inactive Days" cannot trigger a removal. It is ANDed in front of
+  the ratio / seed-time check, so "idle 14 days OR ratio 4 OR 60 days"
+  cannot be expressed. Adding it to this rule would also mean a torrent
+  that keeps uploading is never removed, which is why it is off (-1).
+- `/api/configuration/queue_cleaner` always returns empty `stallRules`
+  and `slowRules`; the rules live at `/api/queue-rules/stall` and
+  `/api/queue-rules/slow`.
 
 ### The comics chain
 
