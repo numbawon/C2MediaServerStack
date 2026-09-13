@@ -37,6 +37,7 @@ with the library mounted at /music, the same path Lidarr uses, and as
 the media user so ownership is unchanged.
 """
 import argparse
+import fcntl
 import json
 import os
 import shutil
@@ -46,6 +47,7 @@ import urllib.request
 
 BASE = os.environ.get("LIDARR_URL", "http://lidarr:8686").rstrip("/")
 API_KEY = os.environ.get("LIDARR_API_KEY", "")
+LOCK_DIR = os.environ.get("LIDARR_FILER_LOCK_DIR", "/music")
 CATEGORIES = ("Albums", "Singles & EPs", "Live", "Compilations", "Remixes", "Other")
 OTHER_SECONDARY = {"soundtrack", "spokenword", "interview", "audiobook", "audio drama",
                    "demo", "mixtape/street", "field recording"}
@@ -193,6 +195,20 @@ def main():
     if not API_KEY:
         print("LIDARR_API_KEY not set", file=sys.stderr)
         return 1
+
+    # One run at a time. systemd never overlaps its own runs, but a manual
+    # sweep plus a timer run would both queue RenameFiles and race to move
+    # the same folders. The lock lives in the library root because that is
+    # the one path every run (container or host) shares; flock works
+    # across the bind mount since it is the same inode.
+    if a.apply:
+        lock = open(os.path.join(LOCK_DIR, ".lidarr-filer.lock"), "a")
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            if not a.quiet:
+                print("another filer run holds the lock; nothing done")
+            return 0
 
     lines = []
     log = lines.append
