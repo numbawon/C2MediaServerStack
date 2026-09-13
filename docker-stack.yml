@@ -841,6 +841,10 @@ services:
         - "traefik.http.routers.navidrome.middlewares=authentik@file"
         - "traefik.http.routers.navidrome-api.rule=Host(`navidrome.${COMMON_DOMAIN}`) && PathPrefix(`/rest`)"
         - "traefik.http.routers.navidrome-api.entrypoints=web,websecure"
+        # No forward-auth on /rest, so strip any identity header the client
+        # sent; otherwise Navidrome takes it as a password-free login. See
+        # strip-authentik-identity in traefik/dynamic/dynamic.yml.
+        - "traefik.http.routers.navidrome-api.middlewares=strip-authentik-identity@file"
         - "traefik.http.services.navidrome.loadbalancer.server.port=4533"
 
   # ---------------------------------------------------------------------

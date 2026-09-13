@@ -21,7 +21,7 @@ set +a
 case "${1:-}" in
   stack)
     docker build --quiet \
-      --tag c2mediaserverstack/pinepods:0.9.0-upstream-09c3dcd \
+      --tag c2mediaserverstack/pinepods:nightly20260911-upstream-09c3dcd \
       --file pinepods/Dockerfile pinepods >/dev/null
     docker stack deploy -c docker-stack.yml mediastack
     ;;
