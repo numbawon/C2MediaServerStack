@@ -1610,17 +1610,32 @@ services:
   diun:
     logging: *logging
     image: crazymax/diun:latest
+    # Waits for docker-socket-proxy before starting. Diun runs a full scan
+    # at startup, and after a reboot it can start before the proxy is up.
+    # When that happens it logs "Cannot create Docker client", "No image
+    # found", then "Jobs completed" with every count at zero, and schedules
+    # the next scan six hours out. Nothing marks that as a failure, and the
+    # dashboard shows "Updates available: 0" in green, a false all-clear
+    # that holds until the 06:00 cron. Swarm has no depends_on, so the wait
+    # lives here. exec keeps diun as PID 1 so it still receives SIGTERM.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until wget -q -O /dev/null http://docker-socket-proxy:2375/version; do
+          echo "waiting for docker-socket-proxy"; sleep 2
+        done
+        exec diun serve --config /etc/diun/diun.yml
     # Drops all Linux capabilities. This is a plain daemon: it binds no
     # privileged port and drops no privileges of its own, so it needs
     # none. Verified honoured by `docker stack deploy`, unlike
     # security_opt/no-new-privileges, which Swarm accepts and ignores.
     cap_drop: [ALL]
-    # --config passed explicitly rather than relying on an env var:
-    # Diun has two separate config systems (kong CLI flags, which are
-    # unprefixed, and config-file keys, which transpose to DIUN_*), and
-    # the flag has NO default. Get this wrong and Diun starts happily
-    # with zero providers and silently never checks anything.
-    command: serve --config /etc/diun/diun.yml
+    # --config is passed explicitly, in the exec line of the command above,
+    # rather than relying on an env var: Diun has two separate config
+    # systems (kong CLI flags, which are unprefixed, and config-file keys,
+    # which transpose to DIUN_*), and the flag has NO default. Get this
+    # wrong and Diun starts happily with zero providers and silently never
+    # checks anything.
     environment:
       - TZ=${COMMON_TZ}
       - LOG_LEVEL=info
