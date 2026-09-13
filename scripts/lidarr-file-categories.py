@@ -103,8 +103,23 @@ def rel_parts(path, artist_path):
 
 
 def unfiled(trackfiles, artist_path):
-    return [f for f in trackfiles if f.get("albumId")
-            and rel_parts(f["path"], artist_path)[0] not in CATEGORIES]
+    """Mapped track files inside this artist's own folder but not under a category.
+
+    Files Lidarr maps to an artist can live in ANOTHER artist's folder:
+    collaborations filed by hand under the other name (David Guetta &
+    Avicii tracks under Avicii/Other). Their relative path starts with
+    `..`, and treating them as unfiled made RenameFiles pull them out of
+    Avicii's folder. Anything outside the artist folder is left alone.
+    """
+    out = []
+    for f in trackfiles:
+        if not f.get("albumId"):
+            continue
+        parts = rel_parts(f["path"], artist_path)
+        if parts[0] == ".." or parts[0] in CATEGORIES:
+            continue
+        out.append(f)
+    return out
 
 
 def merge_move(src, dst, log):
