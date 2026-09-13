@@ -48,6 +48,12 @@ networks:
   music:
     driver: overlay
     attachable: true
+  # Ombi and Lidarr only. Ombi trusts X-authentik-username from anything
+  # that can reach it (no source check at all), so it sits on `internal`
+  # behind forward-auth; this network is how it reaches Lidarr without
+  # joining `edge`, where every container could forge that header.
+  requests:
+    driver: overlay
 
 volumes:
   # created by docker-compose.ids.yml, where suricata writes it
@@ -673,6 +679,47 @@ services:
         - "traefik.http.routers.seerr.entrypoints=web,websecure"
         - "traefik.http.routers.seerr.middlewares=authentik@file"
         - "traefik.http.services.seerr.loadbalancer.server.port=5055"
+
+  # ---------------------------------------------------------------------
+  # Ombi -- MUSIC requests only, with approval, until Seerr ships Lidarr
+  # support (in progress upstream, aimed at 2027). Movie and TV requests
+  # are switched off in Ombi so Seerr stays the one place for those.
+  # Approved requests go to Lidarr; the kids' role lacks Auto Approve
+  # Music, so theirs wait for an admin.
+  #
+  # Sign-in is header auth: Authentik's forward-auth sets
+  # X-authentik-username and Ombi logs that user in, creating the account
+  # on first visit with the default roles. Ombi does NOT check where the
+  # header came from, so:
+  #   - it is on `internal`, never `edge`, like navidrome and grafana;
+  #   - its only router runs authentik@file, which overwrites the header;
+  #   - it reaches Lidarr over the dedicated `requests` network instead.
+  # Any future router for it that skips forward-auth must carry
+  # strip-authentik-identity@file.
+  # ---------------------------------------------------------------------
+  ombi:
+    logging: *logging
+    image: linuxserver/ombi:latest
+    # linuxserver image: s6 starts as root and drops to PUID/PGID.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+    volumes:
+      - ${COMMON_CONFIG}/ombi:/config
+    networks:
+      - internal
+      - requests
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=mediastack_internal"
+        - "traefik.http.routers.ombi.rule=Host(`ombi.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.ombi.entrypoints=web,websecure"
+        - "traefik.http.routers.ombi.middlewares=authentik@file"
+        - "traefik.http.services.ombi.loadbalancer.server.port=3579"
 
   prowlarr:
     logging: *logging

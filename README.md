@@ -47,6 +47,7 @@ and actually understand what they're running, not just copy-paste it.
 | **traefik-manager** | Web UI for Traefik's dynamic configuration. The highest-privilege app here: the file it writes defines routers and middlewares, so it can take `authentik@file` off any service. Admins-only, and it never touches the templated `dynamic.yml`. |
 | **Prowlarr** | Centralized indexer management -- add an indexer once, it syncs to every `*arr` app instead of configuring each separately. |
 | **Seerr** | The request front-end (actively-maintained Overseerr fork) -- where you or your family actually ask for something to be added. |
+| **Ombi** | Music requests only, with approval, until Seerr ships Lidarr support. |
 | **qBittorrent** | Download client, and the only service whose traffic is forced through the VPN. The *arrs used to share its network namespace; they reach indexers through gluetun's HTTP proxy now. |
 | **Plex** | Media server / playback, GPU-transcoded. Deliberately *not* behind the SSO gate -- see "Authentik integration patterns." |
 | **Navidrome** | Music streaming (Subsonic API) -- a dedicated music server, since Plex is only "fine" at it. |
@@ -118,6 +119,7 @@ never needs membership in the narrower groups.
 | Media management | `Admin`, `Contributor` | Prowlarr, Sonarr, Radarr, Lidarr, LazyLibrarian, Bazarr, qBittorrent |
 | Monitoring | `Admin`, `Metrics` | Grafana, Prometheus, Tautulli |
 | Household | none (domain-level) | Seerr, Navidrome, Homer, files, browse |
+| Family requests | `Admin`, `Contributor`, `Family` | Ombi (music requests) |
 | Not forward-auth gated | see below | Plex, Audiobookshelf, Immich, PinePods, Open WebUI, Cleanuparr, ntfy |
 
 *Cleanuparr is bound to `Admin` like the rest of that row, but reaches it
@@ -576,7 +578,7 @@ cloudflared tunnel create mediastack
 #     | sort -u
 # As of writing: ai, alertmanager, audiobookshelf, audiomuse, auth, bazarr, browse,
 # cleanuparr, files, flood, grafana, i2p, immich, komga, lazylibrarian,
-# lidarr, mylar3, navidrome, ntfy, organizarr, overseerr, pihole, plex,
+# lidarr, mylar3, navidrome, ntfy, ombi, organizarr, overseerr, pihole, plex,
 # podcasts, portainer, prometheus, prowlarr, qbittorrent, radarr, seerr,
 # traefik-manager,
 # sonarr, tautulli, tdarr, terminal, traefik, and the bare domain for homer:
@@ -723,6 +725,7 @@ rebuilt from memory.
 | Navidrome users | Navidrome UI | `navidrome_config` | yes |
 | AudioMuse-AI media-server link, admin login, API token, analysis | AudioMuse UI (setup wizard) | `.appdata/audiomuse/postgres` | yes |
 | Navidrome plugin enablement and its AudioMuse URL/token | Navidrome UI | `navidrome_config` | yes |
+| Ombi admin, Lidarr link, header auth, default roles and limits | Ombi UI | `.appdata/ombi` | yes |
 | Komga OIDC client id/secret (`.appdata/komga/application.yml`, git-ignored) | hand-written file | `komga_config` | yes |
 | Komga libraries, per-user library access and age ratings | Komga UI | `komga_config` | yes |
 | Mylar3 comic location, qBittorrent client, synced indexers | Mylar3 UI / Prowlarr app sync | `mylar3_config` | yes |
@@ -2033,6 +2036,40 @@ from the first agent that offers it. To check it end to end: Similar
 Song on a track in AudioMuse's UI, then Instant Mix on the same track in
 Navidrome. Both should show up in AudioMuse's Flask log, and Navidrome's
 log should show `plugin=audiomuseai` with no errors.
+
+### Music requests (Ombi)
+
+Seerr has no music support yet (being rebuilt upstream in small pieces,
+aimed at 2027), so Ombi handles music requests only. Movies and TV stay
+in Seerr. Approved requests go to Lidarr, download like any other album,
+and the category filer puts them in the right folder.
+
+**Approval is by role.** A request skips approval only for users with
+the *Auto Approve Music* role. New accounts get the default roles set in
+Ombi (User Management, default settings): *Request Music* and nothing
+else, so the kids can ask for music, cannot request movies or TV there,
+and every request waits for an admin. Per-user music request limits live
+on the same page.
+
+**Sign-in is Authentik, via header auth.** Ombi reads
+`X-authentik-username` and logs that user in, creating the account on
+first visit (`HeaderAuthCreateUser`). Ombi does not check where the
+header came from, which is why it is on `internal` with its one router
+behind `authentik@file`, and reaches Lidarr over its own `requests`
+overlay instead of `edge`. The Authentik application `ombi` is bound to
+Admin, Contributor and Family.
+
+Setup, once:
+
+1. `cloudflared tunnel route dns mediastack ombi.<domain>`
+2. Open `ombi.<domain>` and run the wizard. Name the admin account
+   exactly like your Authentik username, so header sign-in lands on it.
+3. Settings, Lidarr: `http://lidarr:8686`, Lidarr's API key, root folder
+   `/music`, the quality and metadata profiles you use. Enable it.
+4. Settings, Authentication: enable header authentication with header
+   `X-authentik-username` and "create user if not found".
+5. User Management, default settings: roles *Request Music* only, and a
+   music limit if you want one. Give your own account *Auto Approve Music*.
 
 ### Repairing music tags and artwork (beets)
 
