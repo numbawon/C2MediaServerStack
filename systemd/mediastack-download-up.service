@@ -1,0 +1,36 @@
+[Unit]
+# Brings the VPN download stack up in dependency order after every boot.
+#
+# qbittorrent runs with network_mode: service:vpn-client, so it can only
+# start once gluetun's container is running and it can join that network
+# namespace. dockerd's own boot-time restore starts containers in
+# parallel and ignores depends_on entirely, so qbittorrent races gluetun.
+# When it loses it exits 128 with "cannot join network namespace of a non
+# running container", and because that is a failure to START rather than
+# a crash, the unless-stopped restart policy never retries it. It stays
+# down until someone notices. Whether it wins is luck of ordering: it came
+# back after a real reboot and failed after a simulated one an hour later.
+#
+# docker compose up does honour depends_on, so running it after dockerd is
+# up starts vpn-client first and qbittorrent after. On a boot where dockerd
+# already won the race it is a no-op.
+#
+# Install: substitute the real path for /home/youruser, then
+#   sudo cp systemd/mediastack-download-up.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable mediastack-download-up.service
+Description=mediastack VPN download stack, started in dependency order
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=youruser
+WorkingDirectory=/home/youruser/C2MediaServerStack
+ExecStart=/usr/bin/docker compose -f docker-compose.download.yml up -d
+TimeoutStartSec=5m
+
+[Install]
+WantedBy=multi-user.target
