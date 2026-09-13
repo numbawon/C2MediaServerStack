@@ -58,6 +58,11 @@ services:
       # rather than the OS SSD, which has under 80 GB free -- a single 4K
       # remux transcode would fill it.
       - ${COMMON_APPDATA}/tdarr/transcode:/temp
+      # The shrink flow's restore step (tdarr/flows, set up by
+      # scripts/tdarr-shrink-flow.py) and the static dovi_tool and
+      # hdr10plus_tool it calls (scripts/tdarr-hdr-tools.sh). Read-only.
+      - ./tdarr/flows:/opt/shrink:ro
+      - ${COMMON_CONFIG}/tdarr/bin:/opt/hdr-tools:ro
     deploy:
       resources:
         reservations:
