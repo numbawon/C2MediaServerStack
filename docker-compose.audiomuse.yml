@@ -1,0 +1,152 @@
+# Standalone (non-swarm) compose -- deployed with:
+#   ./scripts/deploy.sh audiomuse
+#
+# AudioMuse-AI: sonic analysis of the music library, feeding Navidrome's
+# Instant Mix, artist Radio and similar-artist info through the
+# audiomuseai Navidrome plugin (scripts/navidrome-audiomuse-plugin.sh).
+#
+# Outside the Swarm stack for the same reason as Tdarr, Plex and Ollama:
+# `docker stack deploy` silently ignores GPU reservations. The worker runs
+# MusiCNN, CLAP and the fingerprint encoder over every track; on the GPU
+# that is hours for this library, on the 6-core Xeon it is days.
+#
+# The core image and the Navidrome plugin are pinned TOGETHER. Upstream's
+# own docs name a core/plugin/Navidrome version mismatch as the most common
+# cause of errors, so bump 3.6.0 here and the plugin version in
+# scripts/navidrome-audiomuse-plugin.sh as a pair.
+#
+# Only Postgres and TZ come from the environment. The Navidrome URL and
+# account, the AudioMuse login and the API token the plugin uses are all
+# entered in AudioMuse's own setup wizard and live in its database.
+#
+# NETWORKS. AudioMuse and Navidrome have to reach each other both ways:
+# AudioMuse pulls every track over the Subsonic API to analyse it, and the
+# plugin inside Navidrome calls AudioMuse's API. Navidrome is on `internal`
+# deliberately (it trusts X-authentik-username from that subnet), and
+# putting AudioMuse there would let it assert any username. `music` is a
+# separate overlay holding just the two of them; its subnet is not
+# trusted, so AudioMuse authenticates to Navidrome with a real account.
+# Flask is also on `edge` so Traefik can route the web UI (static entry in
+# traefik/dynamic/dynamic.yml, behind authentik).
+#
+# Secrets: secrets/audiomuse.env (git-ignored) holds POSTGRES_PASSWORD and
+# JWT_SECRET, created by scripts/init-secrets.sh. JWT_SECRET is set so web
+# sessions survive a restart; without it AudioMuse makes a new one per
+# boot and logs everyone out.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-audiomuse-env: &audiomuse-env
+  TZ: ${COMMON_TZ}
+  POSTGRES_USER: audiomuse
+  POSTGRES_DB: audiomusedb
+  POSTGRES_HOST: audiomuse-postgres
+  POSTGRES_PORT: "5432"
+  TEMP_DIR: /app/temp_audio
+
+name: mediastack-audiomuse
+
+services:
+  audiomuse-postgres:
+    logging: *logging
+    # The major upstream's compose tests against. The task queue lives in
+    # Postgres too (no Redis since 3.x).
+    image: postgres:15-alpine
+    container_name: audiomuse-postgres
+    # Same shape as the stack's other databases: the entrypoint starts as
+    # root to fix data-directory ownership, then drops to postgres.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
+    environment:
+      TZ: ${COMMON_TZ}
+      POSTGRES_USER: audiomuse
+      POSTGRES_DB: audiomusedb
+    env_file: ./secrets/audiomuse.env
+    volumes:
+      - ${COMMON_CONFIG}/audiomuse/postgres:/var/lib/postgresql/data
+    networks:
+      - music
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U audiomuse -d audiomusedb"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+
+  audiomuse-ai-flask:
+    logging: *logging
+    image: ghcr.io/neptunehub/audiomuse-ai:3.6.0-nvidia
+    container_name: audiomuse-ai-flask
+    environment:
+      <<: *audiomuse-env
+      SERVICE_TYPE: flask
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    env_file: ./secrets/audiomuse.env
+    volumes:
+      - audiomuse_temp_flask:/app/temp_audio
+      - ${COMMON_CONFIG}/audiomuse/plugins-flask:/app/plugin/installed
+    depends_on:
+      audiomuse-postgres:
+        condition: service_healthy
+    # Flask answers text searches with the CLAP text encoder, so it gets
+    # the GPU as well as the worker.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - music
+      - edge
+    restart: unless-stopped
+
+  audiomuse-ai-worker:
+    logging: *logging
+    image: ghcr.io/neptunehub/audiomuse-ai:3.6.0-nvidia
+    container_name: audiomuse-ai-worker
+    environment:
+      <<: *audiomuse-env
+      SERVICE_TYPE: worker
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      # RAPIDS cuML for clustering. Falls back to CPU on any GPU error.
+      USE_GPU_CLUSTERING: "true"
+    env_file: ./secrets/audiomuse.env
+    volumes:
+      - audiomuse_temp_worker:/app/temp_audio
+      - ${COMMON_CONFIG}/audiomuse/plugins-worker:/app/plugin/installed
+    depends_on:
+      audiomuse-postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - music
+    restart: unless-stopped
+
+networks:
+  edge:
+    external: true   # the attachable overlay created by the swarm stack
+  music:
+    external: true
+    name: mediastack_music   # created by the swarm stack, shared with navidrome
+
+volumes:
+  # Scratch for tracks being analysed: a few files at a time, so the OS SSD
+  # is fine. Explicit names so backup-local.sh can find/skip them by name.
+  audiomuse_temp_flask:
+    name: audiomuse_temp_flask
+  audiomuse_temp_worker:
+    name: audiomuse_temp_worker

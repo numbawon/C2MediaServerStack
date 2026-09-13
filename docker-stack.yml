@@ -41,6 +41,13 @@ networks:
     external: true
   internal:
     driver: overlay
+  # Navidrome and AudioMuse-AI only (docker-compose.audiomuse.yml joins it
+  # as mediastack_music, hence attachable). Deliberately NOT `internal`:
+  # Navidrome trusts X-authentik-username from that subnet, and AudioMuse
+  # must authenticate with a real account instead.
+  music:
+    driver: overlay
+    attachable: true
 
 volumes:
   # created by docker-compose.ids.yml, where suricata writes it
@@ -817,6 +824,10 @@ services:
       - TZ=${COMMON_TZ}
       - ND_EXTAUTH_USERHEADER=X-authentik-username
       - ND_EXTAUTH_TRUSTEDSOURCES=10.0.2.0/24
+      # audiomuseai first: Navidrome takes Instant Mix / similar songs from
+      # the first agent that supports sonic similarity. The rest are 0.64's
+      # defaults, kept for artist bios and images.
+      - ND_AGENTS=audiomuseai,deezer,lastfm,listenbrainz
     volumes:
       # Bind mount, not a named volume: /data holds navidrome.db and the
       # plugins/ folder, and plugins are installed by dropping a .ndp file
@@ -830,6 +841,8 @@ services:
       # X-authentik-username, so anything able to reach navidrome:4533
       # directly could forge it and sign in as any user.
       - internal
+      # Shared with AudioMuse-AI only; not a trusted subnet. See `music`.
+      - music
     deploy:
       labels:
         - "traefik.enable=true"

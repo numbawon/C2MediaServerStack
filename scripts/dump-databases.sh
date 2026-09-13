@@ -44,6 +44,7 @@ DATABASES=(
   "authentik:mediastack_postgres."
   "pinepods:mediastack_pinepods-postgres."
   "immich:mediastack_immich-postgres."
+  "audiomuse:audiomuse-postgres"
 )
 
 rc=0

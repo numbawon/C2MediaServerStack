@@ -305,6 +305,20 @@ http:
         - authentik
       service: tdarr
 
+    # AudioMuse-AI's web UI (docker-compose.audiomuse.yml). Admin tier via
+    # the `audiomuse` Authentik application; AudioMuse then asks for its
+    # own login too, since it has no SSO. The Navidrome plugin never comes
+    # through here: it calls audiomuse-ai-flask:8000 over the `music`
+    # overlay with the API token.
+    audiomuse:
+      rule: 'Host(`audiomuse.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+        - websecure
+      middlewares:
+        - authentik
+      service: audiomuse
+
     # Read-write over the whole library and Storage. Admin tier.
     files:
       rule: 'Host(`files.{{ env "COMMON_DOMAIN" }}`)'
@@ -394,6 +408,11 @@ http:
       loadBalancer:
         servers:
           - url: "http://tdarr:8265"
+
+    audiomuse:
+      loadBalancer:
+        servers:
+          - url: "http://audiomuse-ai-flask:8000"
 
     files:
       loadBalancer:

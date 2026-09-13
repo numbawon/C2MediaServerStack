@@ -90,6 +90,17 @@ create_swarm_secret httpproxy_password "$httpproxy_password"
 unset httpproxy_user httpproxy_password
 echo "Generated LAN proxy credentials: secrets/httpproxy_user.txt / httpproxy_password.txt"
 
+# AudioMuse-AI (docker-compose.audiomuse.yml) reads its database password
+# and session-signing key from the environment, so these go in an env file
+# rather than a Docker secret. Kept on reruns: Postgres only reads
+# POSTGRES_PASSWORD when it first creates the data directory.
+if [ ! -f secrets/audiomuse.env ]; then
+  write_local_secret audiomuse.env "$(printf 'POSTGRES_PASSWORD=%s\nJWT_SECRET=%s\n' \
+    "$(random_password | tr -d '/+=')" "$(random_password 48 | tr -d '/+=')")"
+else
+  echo "secrets/audiomuse.env already exists, keeping it"
+fi
+
 echo "Plex claim tokens expire ~4 minutes after being issued at https://plex.tv/claim"
 read -rp "Open that URL, log in, and paste the claim token here: " plex_claim
 write_local_secret plex_claim.txt "$plex_claim"
@@ -100,4 +111,5 @@ echo "Done. Swarm secrets: postgres_password, redis_password, grafana_admin_pass
 echo "authentik_secret_key, cloudflare_tunnel_token, httpproxy_user,"
 echo "httpproxy_password."
 echo "Local files: secrets/nordlynx_private_key.txt, secrets/httpproxy_user.txt,"
-echo "             secrets/httpproxy_password.txt, secrets/plex_claim.txt"
+echo "             secrets/httpproxy_password.txt, secrets/plex_claim.txt,"
+echo "             secrets/audiomuse.env"
