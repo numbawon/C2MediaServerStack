@@ -2031,6 +2031,19 @@ in a file):
 5. In Navidrome, Settings, Plugins: enable **AudioMuse-AI**, set the API
    URL to `http://audiomuse-ai-flask:8000` and paste the same API token.
 
+**Settings changed from AudioMuse's defaults** (in its database, so a
+rebuild must set them again in its Settings page):
+
+| Setting | Value | Why |
+|---|---|---|
+| `AI_MODEL_PROVIDER` / `OLLAMA_SERVER_URL` / `OLLAMA_MODEL_NAME` | `OLLAMA`, `http://ollama:11434/api/generate`, `qwen3:4b` | Instant Playlist and playlist naming. Flask and worker sit on Ollama's private `ai` bridge. A 4B model leaves room on the shared 8 GB GPU |
+| `PER_SONG_MODEL_RELOAD` | `False` | Reloading every model per track is for cards under 8 GB |
+| `LYRICS_API_1_URL_TEMPLATE` | `https://lrclib.net/api/get` | Lyrics from LRCLIB (artist + title lookups); Whisper only transcribes what it does not know |
+| `API_TOKEN` | in `secrets/audiomuse-api-token.txt` | The token the Navidrome plugin sends |
+
+The last two took analysis from about 32 s to about 7 s per track: the
+first pass over 34,180 tracks went from roughly 12 days to 3.
+
 `ND_AGENTS` puts `audiomuseai` first; Navidrome takes sonic similarity
 from the first agent that offers it. To check it end to end: Similar
 Song on a track in AudioMuse's UI, then Instant Mix on the same track in

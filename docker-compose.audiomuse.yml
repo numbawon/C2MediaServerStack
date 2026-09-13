@@ -27,7 +27,15 @@
 # separate overlay holding just the two of them; its subnet is not
 # trusted, so AudioMuse authenticates to Navidrome with a real account.
 # Flask is also on `edge` so Traefik can route the web UI (static entry in
-# traefik/dynamic/dynamic.yml, behind authentik).
+# traefik/dynamic/dynamic.yml, behind authentik). Flask and the worker are
+# on Ollama's private `ai` bridge too, for Instant Playlist.
+#
+# Analysis settings changed from the defaults (stored in AudioMuse's DB,
+# set 2026-09-13): PER_SONG_MODEL_RELOAD=False, since the models fit next
+# to Tdarr on the 8 GB card and reloading them per track dominated the
+# ~32 s/track; LYRICS_API_1_URL_TEMPLATE=https://lrclib.net/api/get, so
+# lyrics come from LRCLIB (artist + title lookups) and Whisper only
+# transcribes tracks LRCLIB does not know.
 #
 # Secrets: secrets/audiomuse.env (git-ignored) holds POSTGRES_PASSWORD and
 # JWT_SECRET, created by scripts/init-secrets.sh. JWT_SECRET is set so web
@@ -105,6 +113,7 @@ services:
     networks:
       - music
       - edge
+      - ai
     restart: unless-stopped
 
   audiomuse-ai-worker:
@@ -134,6 +143,7 @@ services:
               capabilities: [gpu]
     networks:
       - music
+      - ai
     restart: unless-stopped
 
 networks:
@@ -142,6 +152,12 @@ networks:
   music:
     external: true
     name: mediastack_music   # created by the swarm stack, shared with navidrome
+  # Ollama's private bridge from docker-compose.ai.yml, for Instant Playlist
+  # and AI playlist naming (AI_MODEL_PROVIDER=OLLAMA, qwen3:4b). Flask runs
+  # the chat, the worker names clustered playlists.
+  ai:
+    external: true
+    name: mediastack-ai_ai
 
 volumes:
   # Scratch for tracks being analysed: a few files at a time, so the OS SSD
