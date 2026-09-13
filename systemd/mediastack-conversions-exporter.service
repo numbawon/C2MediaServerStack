@@ -1,0 +1,24 @@
+# Tdarr queue/progress/savings and GPU load for the "Media Conversions"
+# Grafana dashboard. See scripts/conversions-exporter.py.
+#
+# Runs in a container: Tdarr is only addressable on the `edge` overlay,
+# which is not attachable from the host. `--gpus all` with the utility
+# capability is what puts a working nvidia-smi inside it (a glibc image,
+# hence python:3.12-slim rather than alpine); it claims no VRAM.
+#
+# Replace youruser with your actual repo path before installing.
+[Unit]
+Description=mediastack media conversion metrics (Tdarr + GPU)
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/youruser/C2MediaServerStack
+ExecStart=/usr/bin/docker run --rm --network edge --gpus all \
+  -e NVIDIA_DRIVER_CAPABILITIES=utility \
+  -v /home/youruser/C2MediaServerStack/scripts:/s:ro \
+  -v node_exporter_textfile:/textfile \
+  python:3.12-slim python /s/conversions-exporter.py
+TimeoutStartSec=2min
