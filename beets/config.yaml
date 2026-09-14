@@ -41,7 +41,11 @@ match:
     missing_tracks: low       # an incomplete album is not a confident match
     unmatched_tracks: low
 
-plugins: fetchart embedart scrub chroma mbsync info missing
+# musicbrainz MUST be listed. In beets 2.x MusicBrainz lookup is itself a
+# plugin, and an explicit `plugins:` list without it leaves beets with no
+# metadata source at all: every album gets 0 candidates and is skipped,
+# silently. That was the state here until 2026-09-13.
+plugins: musicbrainz fetchart embedart scrub chroma mbsync info missing duplicates
 
 # --- artwork -------------------------------------------------------------
 # The measured gap: 411 album folders have no cover image at all, and 4733
@@ -94,3 +98,8 @@ scrub:
 
 ui:
   color: yes
+
+# Used by `beet duplicates`: keep the better copy of a duplicate.
+duplicates:
+  tiebreak:
+    items: [format, bitrate]
