@@ -115,6 +115,11 @@ exclusions_for() {
     tautulli_config|tautulli)
       printf '%s\n' --exclude=./logs --exclude=./cache
       ;;
+    tdarr)
+      # JobReports is one log file per job, growing with every file a flow
+      # touches. Like every log here, it loses its context in a restore.
+      printf '%s\n' --exclude=./server/Tdarr/DB2/JobReports --exclude=./server/Tdarr/Logs
+      ;;
     *) : ;;
   esac
 }
