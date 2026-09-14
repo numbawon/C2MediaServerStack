@@ -2365,6 +2365,12 @@ configuration record is present. If that fails the flow fails, and a DV
 original is never swapped for an HDR10-only copy. DV profile 5 has no
 HDR10 base layer and is skipped outright.
 
+The output keeps the source's extension, since a new one would orphan the
+file from Sonarr and Radarr. So AVI and WebM, which cannot carry HEVC, are
+skipped, and so is Dolby Vision outside MKV, because the restore remuxes to
+MKV. `.m4v` is written with `-f mp4`: from that extension ffmpeg picks its
+`ipod` muxer, which rejects HEVC and fails the job.
+
 The result replaces the original only if its duration is within 0.5% and
 its size is 5 to 85% of the original. Replacement renames over the path,
 so a hardlink elsewhere keeps the old copy. New files are held an hour

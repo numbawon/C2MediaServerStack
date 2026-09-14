@@ -59,6 +59,14 @@ module.exports = async (args) => {
     return skip(`Dolby Vision profile ${dv.dv_profile} with no fallback layer`);
   }
 
+  // The output keeps the source's extension: a new one would orphan the
+  // file from Sonarr/Radarr. AVI and WebM cannot carry HEVC, so those stay
+  // as they are. The Dolby Vision restore remuxes with mkvmerge, so DV
+  // outside MKV stays too.
+  const container = cmd.container;
+  if (['avi', 'webm'].includes(container)) return skip(`${container} cannot carry HEVC`);
+  if (dv && container !== 'mkv') return skip(`Dolby Vision in ${container}, the restore needs MKV`);
+
   // Video bitrate. MKV rarely has stream bit_rate; the BPS tag and
   // MediaInfo usually do. Last resort: overall minus audio.
   const tagBps = (s) => Number((s.tags || {}).BPS || (s.tags || {})['BPS-eng'] || s.bit_rate || 0);
@@ -75,7 +83,6 @@ module.exports = async (args) => {
 
   const tenBit = /10/.test(v.pix_fmt);
   const hdr = ['smpte2084', 'arib-std-b67'].includes(v.color_transfer);
-  const container = cmd.container;
 
   v.outputArgs.push(
     '-c:{outputIndex}', 'hevc_nvenc',
@@ -91,7 +98,9 @@ module.exports = async (args) => {
   for (const [opt, key] of [['-color_primaries', 'color_primaries'], ['-color_trc', 'color_transfer'], ['-colorspace', 'color_space']]) {
     if (v[key] && v[key] !== 'unknown' && v[key] !== 'reserved') v.outputArgs.push(opt, v[key]);
   }
-  if (container === 'mp4') v.outputArgs.push('-tag:{outputIndex}', 'hvc1');
+  if (['mp4', 'm4v', 'mov'].includes(container)) v.outputArgs.push('-tag:{outputIndex}', 'hvc1');
+  // ffmpeg picks its ipod muxer for .m4v, and that one rejects HEVC.
+  if (container === 'm4v') cmd.overallOuputArguments.push('-f', 'mp4');
 
   // Audio: lossy tracks are copied untouched. Lossless tracks are the big
   // ones; they become E-AC-3 (5.1 at 640k, stereo at 224k). TrueHD Atmos

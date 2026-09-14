@@ -28,6 +28,13 @@ module.exports = async (args) => {
     p.on('close', resolve);
   });
 
+  // The restore writes MKV. shrink-decide.js keeps Dolby Vision out of other
+  // containers, but HDR10+ in an MP4 still lands here: fail rather than
+  // leave MKV bytes under an .mp4 name.
+  if (code === 0 && path.extname(out).toLowerCase() !== '.mkv') {
+    args.jobLog('restore: dynamic HDR was restored as MKV but the file is not .mkv, failing');
+    return { outputFileObj: args.inputFileObj, outputNumber: 2, variables: args.variables };
+  }
   if (code === 0) return { outputFileObj: { _id: out }, outputNumber: 1, variables: args.variables };
   if (code === 3) return { outputFileObj: args.inputFileObj, outputNumber: 1, variables: args.variables };
   return { outputFileObj: args.inputFileObj, outputNumber: 2, variables: args.variables };
