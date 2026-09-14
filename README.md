@@ -1970,8 +1970,13 @@ Containers (Various Artists, Soundtracks, ...) were left alone.
 - *Write Audio Tags* is **For new downloads only**, not Sync. Sync
   rewrote the tags inside 11,517 hand-tagged files during one import,
   wrong wherever Lidarr's match was wrong (bootlegs and live recordings
-  matched to official releases): 91 titles in 39 albums. The list of
-  what was rewritten is in `~/lidarr-retagged-files.txt`.
+  matched to official releases). The list of what was rewritten is in
+  `~/lidarr-retagged-files.txt`. Of 91 flagged titles, 22 named a
+  different song (whole albums shifted by one: Heart "Soundstage Live",
+  Alice In Chains "Dirty Toy Land", Rolling Stones "Ultra Rare Trax")
+  and were set back from the hand-named filenames; the other 69 were the
+  same song styled differently, and Lidarr's version was kept.
+  `undo-titles.tsv` next to the normalizer's logs has the old values.
 - *Watch Root Folders for file changes* is **off**. Any change Lidarr
   did not make itself (a filer move, a tag write) queued a rescan of the
   whole library with "add new artists" on, hours each; twelve queued in
