@@ -1982,6 +1982,21 @@ Containers (Various Artists, Soundtracks, ...) were left alone.
   whole library with "add new artists" on, hours each; twelve queued in
   one burst. The filer rescans the artists it touches instead.
 
+**Bootlegs and demos are not kept.** Whole bootleg/demo releases and
+standalone bootleg/demo one-offs were deleted on 2026-09-13 (29 releases,
+8 tracks; list in `~/music-normalize-2026-09-13/deleted-bootleg-demo.txt`)
+and their Lidarr albums unmonitored so nothing re-downloads them. Demo
+bonus tracks inside official albums and EPs were kept. They are also the
+releases no tagger gets right: a MusicBrainz "match" for a bootleg is
+usually a different show with a different running order.
+
+**Tags: beets is the authority.** A tag-writing pass
+(`.appdata/beets/tagpass.yaml` overlay: musicbrainz, write on, 85% match
+bar, bootleg/demo names ignored) runs over the whole library, with every
+file's tags snapshotted first and a post-check that restores any album
+where a track title turned into a different song. Anything below the
+bar is left exactly as it was.
+
 Seven Lidarr artists pointed at folders that did not exist (`Pink Floyd`
 vs `PINK FLOYD`, `AC+DC` vs `AC-DC`, ...), so Lidarr never saw those
 files; their paths now point at the real folders. And one track with a
