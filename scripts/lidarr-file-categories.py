@@ -245,6 +245,19 @@ def main():
                 print("another filer run holds the lock; nothing done")
             return 0
 
+    # Stand aside while Lidarr itself is reading the disk. Moving a folder
+    # under a running scan makes one file vanish mid-read, and a single
+    # missing file aborts Lidarr's whole RescanFolders. The next timer run
+    # picks the albums up.
+    if a.apply:
+        busy = [c["name"] for c in api("GET", "command")
+                if c.get("status") in ("queued", "started")
+                and c.get("name") in ("RescanFolders", "RefreshArtist", "RenameFiles", "RenameArtist")]
+        if busy:
+            if not a.quiet:
+                print(f"Lidarr is busy ({', '.join(sorted(set(busy)))}); nothing done")
+            return 0
+
     lines = []
     log = lines.append
     artists = [x for x in api("GET", "artist") if not a.artist or x["artistName"] == a.artist]
