@@ -1,0 +1,35 @@
+# Regenerates the NVIDIA CDI spec on every boot, before dockerd starts.
+#
+# `docker run --gpus` resolves through /etc/cdi/nvidia.yaml, which lists
+# every driver library by exact filename. The pacman hook regenerates it
+# after a driver upgrade, but at that point the old kernel module is still
+# loaded, so NVML refuses to talk (version mismatch), and the library cache
+# can still name files the same transaction just replaced. The spec ends up
+# pointing at a library that no longer exists, and every GPU container fails
+# to start with "failed to fulfil mount request: open /usr/lib/<lib>.so.<old
+# version>: no such file or directory". dockerd does not retry a container
+# that failed to start, so they stay down after the reboot.
+#
+# At boot the new module is loaded (it is in the initramfs) and the cache is
+# current, so a fresh spec is right. It is written to /run first and only
+# installed on success: a failed run keeps the previous spec. Nothing may
+# write a second .yaml into /etc/cdi, since every file there is loaded.
+#
+# Install:
+#   sudo cp systemd/mediastack-nvidia-cdi.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable mediastack-nvidia-cdi.service
+
+[Unit]
+Description=Regenerate the NVIDIA CDI spec before Docker starts
+After=systemd-modules-load.service
+Before=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/nvidia-ctk cdi generate --output=/run/nvidia-cdi.yaml
+ExecStart=/usr/bin/install -m 644 /run/nvidia-cdi.yaml /etc/cdi/nvidia.yaml
+TimeoutStartSec=2min
+
+[Install]
+WantedBy=multi-user.target

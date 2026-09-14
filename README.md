@@ -2640,6 +2640,23 @@ Check them with `systemctl list-timers 'mediastack-*'`. A `LAST` column of
 `-` on something that should have run by now means it was installed but
 never succeeded.
 
+### After an NVIDIA driver update
+
+Until the reboot, the old kernel module stays loaded under the new
+userspace, so `nvidia-smi` on the host reports a version mismatch and no
+new GPU container can start. Containers that were already running keep
+working on the old libraries. Worse, the pacman hook's regenerated CDI
+spec (`/etc/cdi/nvidia.yaml`) can name library files the same update
+replaced, and then GPU containers fail to start even after the reboot.
+`mediastack-nvidia-cdi.service` regenerates the spec at every boot before
+dockerd starts; install it once (instructions in the unit). To check a
+spec before rebooting, confirm that every path it mounts exists:
+
+```bash
+grep -oE 'hostPath: \S+' /etc/cdi/nvidia.yaml | awk '{print $2}' | sort -u |
+  while read -r p; do [ -e "$p" ] || echo "missing $p"; done
+```
+
 ### Why the units are tracked, and not `.example`
 
 `cloudflared/config.yml` and `homer/config.yml` are gitignored with
