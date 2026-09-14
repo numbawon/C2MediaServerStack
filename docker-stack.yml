@@ -608,6 +608,8 @@ services:
       - ${COMMON_DOWNLOADS}:/downloads
     networks:
       - edge
+      # Ombi reaches Lidarr here instead of joining `edge`; see `requests`.
+      - requests
     deploy:
       labels:
         - "traefik.enable=true"
