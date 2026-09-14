@@ -106,10 +106,10 @@ def unfiled(trackfiles, artist_path):
     """Mapped track files inside this artist's own folder but not under a category.
 
     Files Lidarr maps to an artist can live in ANOTHER artist's folder:
-    collaborations filed by hand under the other name (David Guetta &
-    Avicii tracks under Avicii/Other). Their relative path starts with
-    `..`, and treating them as unfiled made RenameFiles pull them out of
-    Avicii's folder. Anything outside the artist folder is left alone.
+    a collaboration filed by hand under the other artist's name. Their
+    relative path starts with `..`, and treating them as unfiled made
+    RenameFiles pull them out of that folder. Anything outside the
+    artist folder is left alone.
     """
     out = []
     for f in trackfiles:
