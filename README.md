@@ -1966,6 +1966,10 @@ folder. The script only ever passes it unfiled track ids.
 - One non-UTF-8 filename aborts a whole Lidarr library scan: .NET cannot
   open it, and the exception kills the command. Check with a walk that
   tries to decode every name as UTF-8.
+- A file that vanishes mid-scan kills it the same way, so the filer
+  skips its run while Lidarr has a rescan, artist refresh or rename queued
+  or running. Moving a fresh import under a full rescan is exactly how
+  that happens.
 
 **Tags: beets is the authority** (`beets/config.yaml`). In beets 2.x
 MusicBrainz lookup is itself a plugin, and an explicit `plugins:` list
