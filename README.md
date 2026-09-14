@@ -1910,12 +1910,17 @@ it is empty; anything else talking to these APIs needs to do the same.
 
 ### Music
 
+The layout the tools maintain:
+
 ```
-Artist Name/
+Artist/
   Albums/ Singles & EPs/ Live/ Compilations/ Remixes/ Other/
-    Album folder/
-      tracks
+    Year - Album/
+      NN - Title.ext            (multi-disc: DD-NN - Title.ext)
 ```
+
+A one-off track with no album sits directly in its category folder, named
+by title alone. Collaborations live under the first-named artist.
 
 Lidarr cannot produce the category level. Its only type token,
 `{Album Type}`, is the MusicBrainz *primary* type (Album / EP / Single);
@@ -1933,105 +1938,50 @@ Live, Compilation and Remix are *secondary* types with no token at all
   that secondary type, else Remixes, Compilations, Other (soundtrack,
   spoken word, demo, ...), else Albums for primary Album and Singles &
   EPs for EP/Single. Then Lidarr rescans the artist and re-matches the
-  moved files by the MusicBrainz ids it wrote into their tags. It never
-  overwrites a file and never touches anything already filed or
-  unmapped. Dry run by default; `--apply` to move.
+  moved files by their MusicBrainz ids. It never overwrites a file, never
+  touches anything already filed, unmapped, or outside the artist's own
+  folder, and holds a lock so two runs cannot overlap. Dry run by
+  default; `--apply` to move.
 
 **Never press Lidarr's "Rename Files" / "Organize" on an artist.** Its
-format has no category level, so it would pull every filed album back
-out to the artist folder. Lidarr's rename preview for Metallica lists all
-443 files, filed ones included. The script only ever passes it unfiled
-track ids.
+format has no category level, and its rename preview lists every filed
+track too, so it would pull every filed album back out to the artist
+folder. The script only ever passes it unfiled track ids.
 
-With renaming previously off, Lidarr dropped imports into the artist
-folder under their original names: 4,673 loose tracks across 61
-artists, found and filed on 2026-09-13.
+**Lidarr settings that matter here, and why:**
 
-**The whole library was normalized the same day** with
-`scripts/music-normalize.py` (plan, review, apply; every move logged for
-`undo`), to `Artist/Category/Year - Album/NN - Title`: the form 2,079
-of its album folders and most track names already used. The naming
-above was first set to "Artist - Year - Album", copied from one
-artist's folders, which put the filer's output in the minority style
-and split 16 albums in two; count the library before picking a format.
-It moved 25,585 files: collaboration folders ("Hans Zimmer & John
-Powell") merged into the first-named artist, alias spellings merged
-(`IRON MAIDEN`, `Bowie`, ...), album folders filed into categories,
-tracks renamed from `01. X`, `Artist - Album - 01 - X`, `01 X`, scene
-`01-artist-x-grp`. One-off tracks sitting straight in a category folder
-are named by title alone. It never overwrote: 139 duplicates were left
-beside their twins and listed. Plans, the undo log and the skipped list
-are in `~/music-normalize-2026-09-13/`; 65 loose Rolling Stones tracks,
-all copies of filed albums, went to `/mnt/Media/.music-holding/`.
-Containers (Various Artists, Soundtracks, ...) were left alone.
+- *Write Audio Tags*: **For new downloads only**, not Sync. Sync
+  rewrites the tags inside existing files whenever it matches them, and a
+  wrong match (bootlegs and live recordings are the usual victims)
+  becomes a wrong title in every player.
+- *Watch Root Folders for file changes*: **off**. Any change Lidarr did
+  not make itself (a filer move, a tag write) queues a rescan of the
+  whole root folder with "add new artists" on, and those pile up. The
+  filer rescans the artists it touches instead. Lidarr's cancel on a
+  queued command returns 200 and does nothing; queued commands also
+  survive a restart.
+- *Artist paths* must be the real folder. An artist whose path differs
+  from the folder on disk by case or punctuation (`Pink Floyd` vs `PINK
+  FLOYD`) is silently never scanned.
+- One non-UTF-8 filename aborts a whole Lidarr library scan: .NET cannot
+  open it, and the exception kills the command. Check with a walk that
+  tries to decode every name as UTF-8.
 
-**Two Lidarr settings changed that day, both deliberately:**
-
-- *Write Audio Tags* is **For new downloads only**, not Sync. Sync
-  rewrote the tags inside 11,517 hand-tagged files during one import,
-  wrong wherever Lidarr's match was wrong (bootlegs and live recordings
-  matched to official releases). The list of what was rewritten is in
-  `~/lidarr-retagged-files.txt`. Of 91 flagged titles, 22 named a
-  different song (whole albums shifted by one: Heart "Soundstage Live",
-  Alice In Chains "Dirty Toy Land", Rolling Stones "Ultra Rare Trax")
-  and were set back from the hand-named filenames; the other 69 were the
-  same song styled differently, and Lidarr's version was kept.
-  `undo-titles.tsv` next to the normalizer's logs has the old values.
-- *Watch Root Folders for file changes* is **off**. Any change Lidarr
-  did not make itself (a filer move, a tag write) queued a rescan of the
-  whole library with "add new artists" on, hours each; twelve queued in
-  one burst. The filer rescans the artists it touches instead.
-
-**Bootlegs and demos are not kept.** Whole bootleg/demo releases and
-standalone bootleg/demo one-offs were deleted on 2026-09-13 (29 releases,
-8 tracks; list in `~/music-normalize-2026-09-13/deleted-bootleg-demo.txt`)
-and their Lidarr albums unmonitored so nothing re-downloads them. Demo
-bonus tracks inside official albums and EPs were kept. They are also the
-releases no tagger gets right: a MusicBrainz "match" for a bootleg is
-usually a different show with a different running order.
-
-**Tags: beets is the authority.** A tag-writing pass
-(`.appdata/beets/tagpass.yaml` overlay: musicbrainz, write on, 85% match
-bar, bootleg/demo names ignored) runs over the whole library, with every
-file's tags snapshotted first and a post-check that restores any album
-where a track title turned into a different song. Anything below the
-bar is left exactly as it was.
-
-Seven Lidarr artists pointed at folders that did not exist (`Pink Floyd`
-vs `PINK FLOYD`, `AC+DC` vs `AC-DC`, ...), so Lidarr never saw those
-files; their paths now point at the real folders. And one track with a
-Latin-1 filename (`Se\xf1orita`) had been failing every library scan
-since at least 2026-09-12: .NET cannot open a non-UTF-8 name, and one
-such file aborts the whole scan. `find /mnt/Media/Music -print0 | ...`
-with a UTF-8 check is the way to look for more.
-
-Category names were normalised to that one vocabulary. They had been
-inconsistent per artist: `-- Studio Albums --`, `01. Studio albums`,
-`1 - Studio Albums` and `Albums` all meant the same thing.
-
-Every artist with more than a handful of albums now has this structure.
-The five that lacked it -- Bob Marley, Iron Maiden, Metallica, Pink Floyd,
-The Beatles -- were categorised from their folder names by a local model
-via the `foundry-delegate` skill, then reviewed line by line before
-anything moved: 110 items in 7.1s, all clean, 109 filed and one skipped
-because it turned out to be a folder of `.m3u` playlists rather than an
-album.
-
-Worth recording about that run, because the instinct is to read it
-backwards. The skill scored it 78% against hand-written expected labels
-and returned `reassign`, meaning "fix the prompt or routing". Reviewing
-all 24 disagreements showed the model was right in roughly 20 of them and
-the *labels* were wrong. A labelled pilot measures agreement with the
-labeller, not accuracy, so a sub-threshold score is a reason to check the
-labels first.
+**Tags: beets is the authority** (`beets/config.yaml`). In beets 2.x
+MusicBrainz lookup is itself a plugin, and an explicit `plugins:` list
+without `musicbrainz` leaves beets with no metadata source: every album
+evaluates 0 candidates and is skipped, silently. A tag-writing pass runs
+as an overlay (write on, 85% match bar, bootleg and demo names in
+`ignore:`), with every file's tags snapshotted first and a post-check
+that restores any album where a track title turned into a different
+song: the signature of a wrong release. Anything below the bar is left as
+it was. Bootleg and demo releases are not kept at all; no tagger matches
+them correctly.
 
 **Tags are what actually matter here.** Navidrome and Plex build their
 libraries from `artist`, `album`, `title`, `track` and `date`, not from
-paths. Folder layout is for browsing the filesystem. That is also why
-imports were filed by reading tags rather than trusting folder names,
-which is how `Rolling Stones, The` became `The Rolling Stones` and
-`PEARL JAM - STUDIO DISCOGRAPHY (1991-13) [CHANNEL NEO]` became
-`Pearl Jam`.
+paths. Folder layout is for browsing the filesystem, which is also why
+imports are filed by reading tags rather than trusting folder names.
 
 Three folder shapes look identical from outside and need telling apart:
 
@@ -2046,7 +1996,8 @@ library as if they were albums.
 
 **Cover art is kept in the music library**, unlike Movies and TV. Plex's
 music section still has `useLocalAssets` on and Navidrome reads folder
-images, so `folder.jpg` is wanted here. Only text junk is removed.
+images, so beets' `fetchart` writes a `cover.jpg` beside the tracks. Only
+text junk is removed.
 
 ### AudioMuse-AI (Navidrome Instant Mix)
 
@@ -2099,8 +2050,7 @@ rebuild must set them again in its Settings page):
 | `LYRICS_API_1_URL_TEMPLATE` | `https://lrclib.net/api/get` | Lyrics from LRCLIB (artist + title lookups); Whisper only transcribes what it does not know |
 | `API_TOKEN` | in `secrets/audiomuse-api-token.txt` | The token the Navidrome plugin sends |
 
-The last two took analysis from about 32 s to about 7 s per track: the
-first pass over 34,180 tracks went from roughly 12 days to 3.
+The last two took analysis from about 32 s to about 7 s per track.
 
 `ND_AGENTS` puts `audiomuseai` first; Navidrome takes sonic similarity
 from the first agent that offers it. To check it end to end: Similar
@@ -2399,8 +2349,7 @@ Edits made in the Tdarr UI are overwritten the next time the script runs.
 
 SD, interlaced, AV1/VP9 and non-4:2:0 sources are skipped. The numbers come
 from a VMAF sweep against library sources: cq 28 held 96.4 to 96.8 on 4K
-HDR (native-resolution 4K model) and cq 26 held 95.5 on 1080p, while
-Reacher dropped from 18 to 5.3 Mbps. The cap only bites on grain and dark
+HDR (native-resolution 4K model) and cq 26 held 95.5 on 1080p. The cap only bites on grain and dark
 scenes, which is where NVENC spends the most bits.
 
 Every audio and subtitle track is kept. Lossy audio is copied; lossless
