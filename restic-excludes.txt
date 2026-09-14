@@ -53,6 +53,10 @@
 /data/appdata/navidrome/cache
 /data/appdata/tautulli/cache
 /data/appdata/open_webui/cache
+# tdarr keeps one log file per job inside its database directory, where
+# the */logs rule does not reach.
+/data/appdata/tdarr/server/Tdarr/DB2/JobReports
+/data/appdata/tdarr/server/Tdarr/Logs
 /data/appdata/plex/Library/Application Support/Plex Media Server/Metadata
 /data/appdata/plex/Library/Application Support/Plex Media Server/Media
 /data/appdata/plex/Library/Application Support/Plex Media Server/Cache
