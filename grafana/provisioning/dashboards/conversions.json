@@ -1256,7 +1256,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "mediastack_tdarr_recent_transcode_old_bytes",
+          "expr": "sum by (file, library, resolution) (mediastack_tdarr_recent_transcode_old_bytes)",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -1268,7 +1268,7 @@
         },
         {
           "refId": "B",
-          "expr": "mediastack_tdarr_recent_transcode_new_bytes",
+          "expr": "sum by (file, library, resolution) (mediastack_tdarr_recent_transcode_new_bytes)",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -1280,7 +1280,7 @@
         },
         {
           "refId": "C",
-          "expr": "mediastack_tdarr_recent_transcode_time_seconds * 1000",
+          "expr": "sum by (file, library, resolution) (mediastack_tdarr_recent_transcode_time_seconds) * 1000",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
