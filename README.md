@@ -1924,8 +1924,8 @@ Live, Compilation and Remix are *secondary* types with no token at all
 
 - **Lidarr names up to the album folder** (Settings, Media Management,
   renaming on):
-  - Standard: `{Artist Name} - {Release Year} - {Album Title}/{Artist Name} - {Album Title} - {track:00} - {Track Title}`
-  - Multi-disc: `{Artist Name} - {Release Year} - {Album Title}/{Artist Name} - {Album Title} - {medium:00}-{track:00} - {Track Title}`
+  - Standard: `{Release Year} - {Album Title}/{track:00} - {Track Title}`
+  - Multi-disc: `{Release Year} - {Album Title}/{medium:00}-{track:00} - {Track Title}`
 - **`scripts/lidarr-file-categories.py` adds the category**, every 15
   minutes via `mediastack-lidarr-filer.timer`. For each track Lidarr has
   mapped that is not already under a category, it has Lidarr rename it
@@ -1946,6 +1946,44 @@ track ids.
 With renaming previously off, Lidarr dropped imports into the artist
 folder under their original names: 4,673 loose tracks across 61
 artists, found and filed on 2026-09-13.
+
+**The whole library was normalized the same day** with
+`scripts/music-normalize.py` (plan, review, apply; every move logged for
+`undo`), to `Artist/Category/Year - Album/NN - Title`: the form 2,079
+of its album folders and most track names already used. The naming
+above was first set to "Artist - Year - Album", copied from one
+artist's folders, which put the filer's output in the minority style
+and split 16 albums in two; count the library before picking a format.
+It moved 25,585 files: collaboration folders ("Hans Zimmer & John
+Powell") merged into the first-named artist, alias spellings merged
+(`IRON MAIDEN`, `Bowie`, ...), album folders filed into categories,
+tracks renamed from `01. X`, `Artist - Album - 01 - X`, `01 X`, scene
+`01-artist-x-grp`. One-off tracks sitting straight in a category folder
+are named by title alone. It never overwrote: 139 duplicates were left
+beside their twins and listed. Plans, the undo log and the skipped list
+are in `~/music-normalize-2026-09-13/`; 65 loose Rolling Stones tracks,
+all copies of filed albums, went to `/mnt/Media/.music-holding/`.
+Containers (Various Artists, Soundtracks, ...) were left alone.
+
+**Two Lidarr settings changed that day, both deliberately:**
+
+- *Write Audio Tags* is **For new downloads only**, not Sync. Sync
+  rewrote the tags inside 11,517 hand-tagged files during one import,
+  wrong wherever Lidarr's match was wrong (bootlegs and live recordings
+  matched to official releases): 91 titles in 39 albums. The list of
+  what was rewritten is in `~/lidarr-retagged-files.txt`.
+- *Watch Root Folders for file changes* is **off**. Any change Lidarr
+  did not make itself (a filer move, a tag write) queued a rescan of the
+  whole library with "add new artists" on, hours each; twelve queued in
+  one burst. The filer rescans the artists it touches instead.
+
+Seven Lidarr artists pointed at folders that did not exist (`Pink Floyd`
+vs `PINK FLOYD`, `AC+DC` vs `AC-DC`, ...), so Lidarr never saw those
+files; their paths now point at the real folders. And one track with a
+Latin-1 filename (`Se\xf1orita`) had been failing every library scan
+since at least 2026-09-12: .NET cannot open a non-UTF-8 name, and one
+such file aborts the whole scan. `find /mnt/Media/Music -print0 | ...`
+with a UTF-8 check is the way to look for more.
 
 Category names were normalised to that one vocabulary. They had been
 inconsistent per artist: `-- Studio Albums --`, `01. Studio albums`,
