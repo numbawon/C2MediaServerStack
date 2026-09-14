@@ -38,6 +38,10 @@
 # subdirectory not worth storing.
 /data/media-appdata/ollama
 
+# tdarr's transcode cache: in-progress encodes, often several GB of 4K
+# intermediates that also vanish mid-read, which makes restic exit 3.
+/data/media-appdata/tdarr/transcode
+
 # ./.appdata, where config migrated out of named volumes now lives. The
 # directory names match the volumes they replaced, so these mirror the
 # per-volume rules above.
