@@ -124,6 +124,9 @@ def unfiled(trackfiles, artist_path):
 
 def merge_move(src, dst, log):
     """Move directory src to dst, merging into dst if it exists. Never overwrites."""
+    if not os.path.isdir(src):
+        log(f"      {src} is not on disk (Lidarr's record is stale), left for the next run")
+        return 1
     if not os.path.exists(dst):
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         os.rename(src, dst)
@@ -150,6 +153,23 @@ def file_artist(artist, apply, log):
     todo = unfiled(tfs, apath)
     if not todo:
         return 0, 0, 0
+
+    # Lidarr's paths can be stale: files moved by hand while its scans
+    # were failing (a single unreadable filename aborts a whole library
+    # scan). Refresh this artist before trusting them.
+    if any(not os.path.exists(f["path"]) for f in todo):
+        if apply:
+            status = run_command({"name": "RescanFolders", "folders": [apath],
+                                  "artistIds": [artist["id"]], "addNewArtists": False})
+            if status != "completed":
+                log(f"  {artist['artistName']}: stale paths and rescan {status}, skipping artist")
+                return 0, 0, 1
+            tfs = api("GET", f"trackfile?artistId={artist['id']}")
+            todo = unfiled(tfs, apath)
+            if not todo:
+                return 0, 0, 0
+        else:
+            log(f"  {artist['artistName']}: Lidarr has stale paths; --apply rescans the artist first")
 
     # 1. Lidarr names them: loose tracks and odd folders become album
     #    folders. Only unfiled ids are passed -- Lidarr's preview also lists
@@ -232,7 +252,11 @@ def main():
     for artist in sorted(artists, key=lambda x: x["artistName"].lower()):
         if not os.path.isdir(artist["path"]):
             continue
-        n, m, p = file_artist(artist, a.apply, log)
+        try:
+            n, m, p = file_artist(artist, a.apply, log)
+        except Exception as e:  # one artist must not stop the rest
+            log(f"  {artist['artistName']}: {type(e).__name__}: {e}")
+            n, m, p = 0, 0, 1
         files, folders, problems = files + n, folders + m, problems + p
     if lines or not a.quiet:
         print("\n".join(lines))
