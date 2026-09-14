@@ -1983,6 +1983,16 @@ libraries from `artist`, `album`, `title`, `track` and `date`, not from
 paths. Folder layout is for browsing the filesystem, which is also why
 imports are filed by reading tags rather than trusting folder names.
 
+**Navidrome splits an album whose tracks disagree on album-level tags.**
+Its album identity is the MusicBrainz release id when a track has one,
+otherwise album artist, album name and release date. Lidarr's tag sync
+writes release ids and dates only to the tracks it matched to a release,
+so a deluxe folder matched to the standard release shows up as two
+albums: the matched tracks, and the rest. The fix is to make every track
+in the folder carry the same album-level tags (album, album artist,
+dates, MusicBrainz album ids), copied from a matched track. Track-level
+tags stay as they are.
+
 Three folder shapes look identical from outside and need telling apart:
 
 | Shape | Looks like | Correct handling |
@@ -2136,8 +2146,14 @@ get silently overwritten by a bad match at 3am. Run it by hand:
 ```bash
 B=$(docker ps -qf name=mediastack_beets)
 docker exec -it $B beet version          # confirm all 7 plugins load
-docker exec -it $B beet import -A /music # -A = do not autotag, artwork only
+docker exec -it -u abc $B beet import -A /music   # -A: no autotag, index only
+docker exec -it -u abc $B beet fetchart           # this is what searches the web
 ```
+
+An as-is (`-A`) import only records art already on disk: fetchart
+deliberately skips its web sources for as-is imports. The separate
+`beet fetchart` run is the one that queries Cover Art Archive, iTunes and
+the rest.
 
 ### Two things that make the artwork pass safe
 
