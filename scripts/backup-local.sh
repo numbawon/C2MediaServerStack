@@ -180,12 +180,15 @@ if [ -n "${COMMON_APPDATA:-}" ] && [ -d "$COMMON_APPDATA" ]; then
     [ -d "$dir" ] || continue
     name="$(basename "$dir")"
     [ "$name" = "ollama" ] && { echo "skip: ollama models (re-downloadable)"; continue; }
+    # tdarr's transcode cache holds in-progress encodes, not state.
+    ex=""
+    [ "$name" = "tdarr" ] && ex="--exclude=./transcode"
     echo "backing up media-appdata: $name"
     docker run --rm \
       -v "${dir}:/volume:ro" \
       -v "${OUT}:/backup" \
       alpine \
-      sh -c "apk add --no-cache tar >/dev/null 2>&1 && tar --ignore-failed-read -czf /backup/media-appdata-${name}.tar.gz -C /volume ." \
+      sh -c "apk add --no-cache tar >/dev/null 2>&1 && tar --ignore-failed-read $ex -czf /backup/media-appdata-${name}.tar.gz -C /volume ." \
       || { rc=$?; [ "$rc" -eq 1 ] || exit "$rc"; }
   done
 fi
