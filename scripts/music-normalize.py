@@ -106,6 +106,7 @@ def album_folder(name, artist_names, files):
 
 
 TRACK_PATTERNS = [
+    re.compile(r"^(?P<n>\d{1,2} - \d{2,3}) - (?P<t>.+)$"),                  # 1 - 03 - Title (disc - track)
     re.compile(r"^(?P<n>\d{1,2}-\d{2}) - (?P<t>.+)$"),                       # 01-03 - Title (multi-disc)
     re.compile(r"^(?P<n>\d{1,2}-\d{2})\.?\s+(?P<t>[^-].*)$"),                # 1-06. Title / 1-06 Title
     re.compile(r"^(?P<n>\d{2,3}) - (?P<t>.+)$"),                            # 01 - Title
@@ -152,6 +153,7 @@ def track_name(fname, artist_names, path, album="", oneoff=False):
             title = tt if tt and norm(tt) == norm(title) else smart_title(title)
         else:
             title = m.group("t")
+        num = num.replace(" - ", "-")
         title = strip_prefixes(title, artist_names, album)
         if oneoff or re.fullmatch(r"0+", num):
             return clean(title) + ext.lower(), None
