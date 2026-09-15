@@ -726,7 +726,9 @@ groups:
           description: >-
             {{ $value }} episode(s) in {{ $labels.podcast }} have a duration
             of zero. PinePods does not read duration from MP4-container
-            files; fix from ffprobe.
+            files, and a feed can list an episode without a length (and
+            downloading it does not fill one in). Either way, fix from
+            ffprobe on the file or the enclosure URL.
 
       - alert: PodcastOrphanEpisodes
         # Rows pointing at files that are gone. Clicking one is an error
