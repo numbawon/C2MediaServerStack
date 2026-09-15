@@ -718,10 +718,13 @@ rebuilt from memory.
 | Cleanuparr queue and seeding rules (see "Cleanuparr rules") | Cleanuparr UI / API | `cleanuparr_config` | yes |
 | Portainer admin account and OAuth | Portainer UI | `portainer_data` | yes |
 | Plex claim, libraries, custom access URLs | Plex UI / API | `plex_config` | yes |
+| Plex remote streaming: "Limit remote stream bitrate" 8 Mbps 1080p, "Internet upload speed" 12 Mbps. The WAN uplink tops out near 16 Mbps, and one untouched 4K stream is most of it | Plex UI (Remote Access) / `:/prefs` | `plex_config` | yes |
+| Plex webhook to Bazarr, `http://bazarr:6767/api/webhooks/plex?apikey=...`. Use the service name: a container-id hostname dies with the container | Plex account settings | plex.tv | no |
 | Indexers, connections, root folders, quality profiles | each *arr UI | `<app>_config` | yes |
 | VPN proxy for indexer traffic (see below) | each *arr UI | `<app>_config` | yes |
 | Seerr's Plex link and service connections | Seerr UI | `seerr_config` | yes |
 | qBittorrent WebUI credentials and settings | qBittorrent UI | `qbittorrent_config` | yes |
+| qBittorrent global upload limit, 256 KiB/s, so seeding cannot starve remote Plex streams on the small uplink | qBittorrent UI / API | `qbittorrent_config` | yes |
 | Navidrome users | Navidrome UI | `navidrome_config` | yes |
 | AudioMuse-AI media-server link, admin login, API token, analysis | AudioMuse UI (setup wizard) | `.appdata/audiomuse/postgres` | yes |
 | Navidrome plugin enablement and its AudioMuse URL/token | Navidrome UI | `navidrome_config` | yes |
