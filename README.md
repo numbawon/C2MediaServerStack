@@ -1957,7 +1957,11 @@ folder. The script only ever passes it unfiled track ids.
 - *Settings > Metadata > Kodi (XBMC) / Emby*: **on, Album Images
   only**. The one metadata writer that saves a `cover.jpg` into each
   album folder; the filer moves it along with the album. Its NFO files
-  and artist images stay off: nothing here reads them.
+  and artist images stay off: nothing here reads them. It writes only
+  when Lidarr downloads a cover, so new imports get one but a refresh
+  does not backfill albums whose covers were already cached. Those sit in
+  `.appdata/lidarr/MediaCover/Albums/<album id>/cover.jpg` and can be
+  copied into place.
 - *Watch Root Folders for file changes*: **off**. Any change Lidarr did
   not make itself (a filer move, a tag write) queues a rescan of the
   whole root folder with "add new artists" on, and those pile up. The
