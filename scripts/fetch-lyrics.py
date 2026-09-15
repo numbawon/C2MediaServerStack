@@ -42,7 +42,7 @@ AUD = (".mp3", ".flac", ".m4a", ".ogg", ".opus", ".ape", ".wma", ".wav")
 lock = threading.Lock()
 
 
-def get(path, params, tries=5):
+def get(path, params, tries=3):
     url = f"{API}/{path}?" + urllib.parse.urlencode(params)
     for i in range(tries):
         try:
@@ -53,12 +53,12 @@ def get(path, params, tries=5):
             if e.code == 404:
                 return None
             if e.code in (429, 500, 502, 503, 504) and i < tries - 1:
-                time.sleep(10 * (i + 1))
+                time.sleep(3 * (i + 1))
                 continue
             raise
         except (urllib.error.URLError, TimeoutError):
             if i < tries - 1:
-                time.sleep(10 * (i + 1))
+                time.sleep(3 * (i + 1))
                 continue
             raise
 
@@ -99,9 +99,11 @@ def lookup(path):
     if not artist or not title or not dur:
         return None, "no tags"
 
-    hit = get("get", {"artist_name": artist, "track_name": title, "album_name": album, "duration": dur})
+    # get-cached, not get: on a miss /api/get asks outside sources and
+    # answers 503 whenever one fails, which was most misses.
+    hit = get("get-cached", {"artist_name": artist, "track_name": title, "album_name": album, "duration": dur})
     if not hit and clean(title) != title:
-        hit = get("get", {"artist_name": artist, "track_name": clean(title), "album_name": album, "duration": dur})
+        hit = get("get-cached", {"artist_name": artist, "track_name": clean(title), "album_name": album, "duration": dur})
     if not hit:
         # Search ignores the album, which is what a compilation or a
         # re-release needs; the duration check keeps it to the same take.
@@ -166,26 +168,39 @@ def main():
         time.sleep(a.pause)
         return p, kind, text
 
+    def record(p, kind, text):
+        nonlocal done
+        done += 1
+        if kind:
+            counts[kind] += 1
+            if not a.dry_run:
+                out = os.path.splitext(p)[0] + "." + kind
+                with open(out, "w", encoding="utf-8") as fh:
+                    fh.write(text.rstrip() + "\n")
+                os.chmod(out, 0o644)
+        else:
+            reasons[text] = reasons.get(text, 0) + 1
+            if text in ("not found", "instrumental", "empty"):
+                misses[p] = now
+        if done % 500 == 0:
+            print(f"  {done}/{len(todo)}  synced {counts['lrc']}  plain {counts['txt']}  {reasons}", flush=True)
+            if not a.dry_run:
+                os.makedirs(os.path.dirname(MISS_FILE), exist_ok=True)
+                json.dump(misses, open(MISS_FILE, "w"))
+
+    # Results are written as each lookup finishes, with a bounded number in
+    # flight. Collecting them in submission order let one slow lookup hold
+    # back every finished one behind it, unwritten, for minutes.
     with concurrent.futures.ThreadPoolExecutor(a.workers) as ex:
-        for p, kind, text in ex.map(work, todo):
-            done += 1
-            if kind:
-                counts[kind] += 1
-                if not a.dry_run:
-                    out = os.path.splitext(p)[0] + "." + kind
-                    with open(out, "w", encoding="utf-8") as fh:
-                        fh.write(text.rstrip() + "\n")
-                    os.chmod(out, 0o644)
-            else:
-                reasons[text] = reasons.get(text, 0) + 1
-                if text in ("not found", "instrumental", "empty"):
-                    with lock:
-                        misses[p] = now
-            if done % 500 == 0:
-                print(f"  {done}/{len(todo)}  synced {counts['lrc']}  plain {counts['txt']}  {reasons}", flush=True)
-                if not a.dry_run:
-                    os.makedirs(os.path.dirname(MISS_FILE), exist_ok=True)
-                    json.dump(misses, open(MISS_FILE, "w"))
+        pending = set()
+        for p in todo:
+            pending.add(ex.submit(work, p))
+            if len(pending) >= a.workers * 4:
+                finished, pending = concurrent.futures.wait(pending, return_when=concurrent.futures.FIRST_COMPLETED)
+                for fut in finished:
+                    record(*fut.result())
+        for fut in concurrent.futures.as_completed(pending):
+            record(*fut.result())
 
     if not a.dry_run:
         os.makedirs(os.path.dirname(MISS_FILE), exist_ok=True)
