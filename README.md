@@ -1954,6 +1954,10 @@ folder. The script only ever passes it unfiled track ids.
   rewrites the tags inside existing files whenever it matches them, and a
   wrong match (bootlegs and live recordings are the usual victims)
   becomes a wrong title in every player.
+- *Settings > Metadata > Kodi (XBMC) / Emby*: **on, Album Images
+  only**. The one metadata writer that saves a `cover.jpg` into each
+  album folder; the filer moves it along with the album. Its NFO files
+  and artist images stay off: nothing here reads them.
 - *Watch Root Folders for file changes*: **off**. Any change Lidarr did
   not make itself (a filer move, a tag write) queues a rescan of the
   whole root folder with "add new artists" on, and those pile up. The
