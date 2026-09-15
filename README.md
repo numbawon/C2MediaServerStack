@@ -2066,6 +2066,19 @@ rebuild must set them again in its Settings page):
 
 The last two took analysis from about 32 s to about 7 s per track.
 
+**Scheduled Tasks** (also in its database): *Analysis* at `0 3 * * *`.
+There is no schedule by default, so without it music added after the
+first run is never analysed and never shows up in Instant Mix. Analysis
+skips tracks it already has, and a schedule that fires while another
+main task runs is skipped and retried when that task ends. Its log
+timestamps are in the container's local time, not UTC.
+
+*Cleaning* cannot be scheduled. Run it from its page after removing
+music: it unbinds tracks Navidrome no longer has, and deletes them from
+the catalogue only when the delete option is ticked
+(`CLEANING_CATALOGUE` sets the default). Until then Instant Mix can offer
+songs that no longer play.
+
 `ND_AGENTS` puts `audiomuseai` first; Navidrome takes sonic similarity
 from the first agent that offers it. To check it end to end: Similar
 Song on a track in AudioMuse's UI, then Instant Mix on the same track in
