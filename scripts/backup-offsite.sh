@@ -189,11 +189,15 @@ docker run --rm \
 # Not under `set -e`: a failure here must still write its metrics, or the
 # alert this exists to raise never fires.
 backup_rc=0
+# --host: restic picks the parent snapshot by hostname + paths, and inside a
+# throwaway container the hostname is a new random container id every run.
+# With no parent found, every run re-read and re-hashed all files (~2 hours
+# for a config backup) even though dedup kept the upload small.
 docker run --rm \
   -e RESTIC_REPOSITORY -e RESTIC_PASSWORD -e B2_ACCOUNT_ID -e B2_ACCOUNT_KEY \
   "${MOUNT_ARGS[@]}" \
   -v "$(pwd)/restic-excludes.txt:/excludes.txt:ro" \
-  restic/restic backup --exclude-file=/excludes.txt "${PATHS[@]}" || backup_rc=$?
+  restic/restic backup --host "$(hostname)" --exclude-file=/excludes.txt "${PATHS[@]}" || backup_rc=$?
 
 now=$(date +%s)
 last_success=$(read_prev_success)
