@@ -124,7 +124,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--limit", type=int, default=0, help="stop after this many lookups")
     ap.add_argument("--dry-run", action="store_true", help="look up, but write nothing")
-    ap.add_argument("--workers", type=int, default=3)
+    ap.add_argument("--workers", type=int, default=2)
+    ap.add_argument("--pause", type=float, default=0.25, help="seconds each worker waits between tracks")
     a = ap.parse_args()
 
     misses = {}
@@ -154,7 +155,15 @@ def main():
     done = 0
 
     def work(p):
-        kind, text = lookup(p)
+        # One track's failure must not end the run: LRCLIB answers 503
+        # in bursts, and a lookup that exhausts its retries raised through
+        # the executor and killed a pass 30 000 tracks from done. An
+        # errored track is not recorded as a miss, so the next run retries.
+        try:
+            kind, text = lookup(p)
+        except Exception as e:
+            kind, text = None, "error"
+        time.sleep(a.pause)
         return p, kind, text
 
     with concurrent.futures.ThreadPoolExecutor(a.workers) as ex:
