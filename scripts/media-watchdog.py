@@ -58,14 +58,17 @@ def pg_container():
 def psql(container, query):
     """Run a query and return rows as lists of strings.
 
-    -tAF$'\\t' gives tuples-only, unaligned, tab-separated, which is the only
-    shape that survives titles containing commas, quotes and newlines.
+    Tuples-only, unaligned, with ASCII unit and record separators (0x1f,
+    0x1e) between fields and rows. Podcast names and episode titles can hold
+    commas, quotes, tabs and newlines; splitting on newlines cut a name with
+    a line break in two, filed its episodes under the fragment, and the show
+    was reported as empty.
     """
     r = sh(["docker", "exec", container, "psql", "-U", "pinepods", "-d", "pinepods",
-            "-tAF\t", "-c", query])
+            "-tA", "-F", "\x1f", "-R", "\x1e", "-c", query])
     if r.returncode != 0:
         raise RuntimeError("psql failed: " + r.stderr.strip()[:300])
-    return [line.split("\t") for line in r.stdout.splitlines() if line]
+    return [rec.split("\x1f") for rec in r.stdout.rstrip("\n").split("\x1e") if rec]
 
 
 def file_title(path):
