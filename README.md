@@ -2016,6 +2016,15 @@ Three folder shapes look identical from outside and need telling apart:
 Treating the second as the first scatters `CD1` and `Beethoven` into the
 library as if they were albums.
 
+**Lyrics** come from two places. Navidrome's `nd-lyrics` plugin
+(Settings, Plugins) looks songs up on LRCLIB when a client asks and
+caches them, but only Navidrome sees those. `scripts/fetch-lyrics.py`
+writes them to disk instead, as `<track>.lrc` (synced) or `<track>.txt`
+(plain) beside each file, which Navidrome reads first and Plex reads at
+all. It never writes to audio files, skips tracks that already have
+lyrics, and remembers LRCLIB misses for 30 days, so re-running it only
+asks about new music. The first full pass takes hours.
+
 **Cover art is kept in the music library**, unlike Movies and TV. Plex's
 music section still has `useLocalAssets` on and Navidrome reads folder
 images, so beets' `fetchart` writes a `cover.jpg` beside the tracks. Only
