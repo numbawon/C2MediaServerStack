@@ -1521,6 +1521,28 @@ docker exec -it hermes python -c \
 That file is git-ignored with the rest of `.appdata` and rides the normal
 config backup.
 
+**Third way in: ntfy, on its own topic.** The gateway (`command: ["gateway",
+"run"]`) subscribes to the topic `hermes` and answers there, so agent chatter
+never lands in `alerts`. Its ntfy user, token and topic grants are created the
+same way `scripts/init-ntfy.sh` makes the alert ones; the token lives in
+`secrets/hermes.env`. Subscribe the phone to that topic with the existing
+account, which has read and write on it.
+
+It reaches ntfy over the `chat` overlay, which carries ntfy and Hermes and
+nothing else. Two dead ends made that necessary: the public ntfy hostname is
+behind Cloudflare Access and a container cannot log in to it, and `edge` would
+have handed a sandboxed agent the whole stack. ntfy has no user identity, so
+the topic itself is the trust boundary: private, token-protected, and pinned
+with `NTFY_ALLOWED_USERS`.
+
+**Side tasks run locally too.** Session titles, context compression and the
+post-turn review default to Gemini Flash through OpenRouter or Nous Portal,
+neither of which has an account here; `auxiliary.*.provider: "main"` points
+them at the same Ollama, with concurrency 1 because a burst of side calls
+would evict the model mid-answer. Startup still logs provider warnings for
+the tools that genuinely need a hosted vision or search provider: those tools
+stay unavailable, which is correct, and the log is capped.
+
 ## Router metrics (AiMesh)
 
 The router syslog already shipped to Loki carries **events**, not numbers:
