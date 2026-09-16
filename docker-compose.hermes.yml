@@ -19,7 +19,7 @@
 #   docker exec -it hermes hermes          # the terminal UI
 #
 # The dashboard is published on loopback only. Reach it over an SSH
-# tunnel rather than a Traefik route: it is an agent console, and this
+# LAN rather than a Traefik route: it is an agent console, and this
 # host publishes nothing without Authentik in front of it.
 # ---------------------------------------------------------------------
 services:
@@ -48,7 +48,12 @@ services:
     volumes:
       - ${COMMON_CONFIG}/hermes:/opt/data
     ports:
-      - "127.0.0.1:9119:9119"
+      # The LAN address, not 0.0.0.0: this host also has docker bridges, the
+      # swarm overlays and the VPN namespace, and the console has no business
+      # on any of them. Its own login (dashboard.basic_auth in
+      # .appdata/hermes/config.yaml) is the only gate in front of it, which is
+      # the trade for reaching it from another machine in the house.
+      - "${COMMON_LAN_IP}:9119:9119"
     networks:
       - ai
       # ntfy only. Its public hostname is behind Cloudflare Access, which a
