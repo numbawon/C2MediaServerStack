@@ -1,0 +1,66 @@
+# ---------------------------------------------------------------------
+# Hermes Agent (Nous Research) -- an agent that writes files, runs
+# commands and builds its own skills, pointed at the local Ollama.
+#
+# Deliberately sandboxed while it is being learned. It joins ONLY the
+# private `ai` bridge, so it can reach Ollama by name and the internet
+# through NAT, and nothing else in the stack: not Plex, not the *arrs,
+# not Traefik. Its one mount is its own data directory, which is also
+# where the image confines its writes (HERMES_WRITE_SAFE_ROOT=/opt/data).
+# No Docker socket, no host paths, no media. Widen this only on purpose.
+#
+# The model is `hermes3-64k`, created in Ollama from the hermes3:8b that
+# was already pulled, with num_ctx raised to 65536: Hermes refuses to
+# start under 64k for tool use, and Ollama's default is 2048. See the
+# KV-cache note in docker-compose.ai.yml for why that context does not
+# fit this 8 GB card on its own.
+#
+#   scripts/deploy.sh hermes
+#   docker exec -it hermes hermes          # the terminal UI
+#
+# The dashboard is published on loopback only. Reach it over an SSH
+# tunnel rather than a Traefik route: it is an agent console, and this
+# host publishes nothing without Authentik in front of it.
+# ---------------------------------------------------------------------
+services:
+  hermes:
+    image: nousresearch/hermes-agent:latest
+    container_name: hermes
+    restart: unless-stopped
+    environment:
+      - TZ=${COMMON_TZ}
+      # The image remaps its internal user to these and chowns /opt/data,
+      # so files land owned by the host user rather than root. Starting it
+      # with `--user` instead is rejected by its own entrypoint.
+      - HERMES_UID=1000
+      - HERMES_GID=1000
+      - HERMES_DASHBOARD=1
+      # Local inference is slow compared with a hosted API: a 64k prompt
+      # can take minutes to process before the first token.
+      - HERMES_API_TIMEOUT=1800
+    volumes:
+      - ${COMMON_CONFIG}/hermes:/opt/data
+    ports:
+      - "127.0.0.1:9119:9119"
+    networks:
+      - ai
+    # Bounded so an agent loop cannot starve Tdarr's encoding or
+    # AudioMuse's analysis, which share this machine.
+    cpus: 6
+    mem_limit: 12g
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    # What the s6 init needs to remap its user and chown the data volume
+    # at boot, and nothing else.
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  ai:
+    external: true
+    name: mediastack-ai_ai
