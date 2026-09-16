@@ -1470,6 +1470,57 @@ cloudflared tunnel route dns mediastack ai.yourdomain.com
 Without it the name simply does not resolve, which looks like the service
 being down rather than like a missing record.
 
+## Hermes Agent (sandboxed)
+
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) writes files,
+runs commands and builds its own skills. It runs here on trial terms
+(`docker-compose.hermes.yml`, `scripts/deploy.sh hermes`): the only
+network it joins is the private `ai` bridge, so it reaches Ollama by name
+and the internet through NAT and nothing else in the stack; its only mount
+is its own data directory, which is also the only place the image lets it
+write (`HERMES_WRITE_SAFE_ROOT=/opt/data`). No Docker socket, no host
+paths, no media. Widening any of that is a deliberate act, not a default.
+
+**The model is the local Ollama.** `config.yaml` sets provider `custom`
+and `base_url: http://ollama:11434/v1`. Two things have to be true or it
+will not answer:
+
+- **A 64k context.** Hermes refuses anything smaller for tool use and
+  Ollama's default is 2048, so `hermes3-64k` exists: a one-line Modelfile
+  over the `hermes3:8b` that was already pulled, with `num_ctx 65536`.
+  Nous's own model, and it reports tool support.
+- **No thinking mode.** Hermes asks for it by default and Ollama answers
+  `400: does not support thinking`. `agent.reasoning_effort: "none"`.
+
+Expect it to be slow whenever Tdarr or AudioMuse hold the card: the
+64k cache does not fit beside them, so layers spill to the CPU. With
+`MAX_LOADED_MODELS=1`, Hermes and anyone chatting in Open WebUI also
+evict each other's model.
+
+**Two ways in.** `docker exec -it hermes hermes` for the terminal UI, or
+the web dashboard on `127.0.0.1:9119` (tunnel with `ssh -L 9119:127.0.0.1:9119`
+from anywhere else). The dashboard has its own gate: inside a container it
+must bind `0.0.0.0`, and it refuses to do that with no auth provider
+registered, which is the correct instinct. Give it one, in
+`.appdata/hermes/config.yaml`:
+
+```yaml
+dashboard:
+  basic_auth:
+    username: "you"
+    password_hash: "scrypt$..."   # never the plaintext
+```
+
+Compute the hash where the password never lands on disk:
+
+```bash
+docker exec -it hermes python -c \
+  "from plugins.dashboard_auth.basic import hash_password; print(hash_password('your-password'))"
+```
+
+That file is git-ignored with the rest of `.appdata` and rides the normal
+config backup.
+
 ## Router metrics (AiMesh)
 
 The router syslog already shipped to Loki carries **events**, not numbers:

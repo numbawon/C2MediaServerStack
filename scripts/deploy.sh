@@ -44,6 +44,9 @@ case "${1:-}" in
   audiomuse)
     docker compose -f docker-compose.audiomuse.yml up -d
     ;;
+  hermes)
+    docker compose -f docker-compose.hermes.yml up -d
+    ;;
   ids)
     docker compose -f docker-compose.ids.yml up -d
     ;;
@@ -51,7 +54,7 @@ case "${1:-}" in
     docker compose -f docker-compose.i2p.yml up -d
     ;;
   *)
-    echo "Usage: $0 {stack|download|plex|dns|ai|tdarr|audiomuse|ids|i2p}" >&2
+    echo "Usage: $0 {stack|download|plex|dns|ai|tdarr|audiomuse|hermes|ids|i2p}" >&2
     exit 1
     ;;
 esac
