@@ -27,6 +27,13 @@ services:
     image: nousresearch/hermes-agent:latest
     container_name: hermes
     restart: unless-stopped
+    # The ntfy channel: server, topic and token. Written by hand, chmod
+    # 600, git-ignored with the rest of secrets/.
+    env_file:
+      - secrets/hermes.env
+    # Run the messaging gateway rather than idling: this is what listens
+    # on the ntfy topic and answers there.
+    command: ["gateway", "run"]
     environment:
       - TZ=${COMMON_TZ}
       # The image remaps its internal user to these and chowns /opt/data,
@@ -44,6 +51,11 @@ services:
       - "127.0.0.1:9119:9119"
     networks:
       - ai
+      # ntfy only. Its public hostname is behind Cloudflare Access, which a
+      # container cannot log in to, and joining `edge` would hand this agent
+      # the whole stack. This overlay carries ntfy and Hermes and nothing
+      # else (declared in docker-stack.yml).
+      - chat
     # Bounded so an agent loop cannot starve Tdarr's encoding or
     # AudioMuse's analysis, which share this machine.
     cpus: 6
@@ -64,3 +76,6 @@ networks:
   ai:
     external: true
     name: mediastack-ai_ai
+  chat:
+    external: true
+    name: mediastack_chat

@@ -54,6 +54,14 @@ networks:
   # joining `edge`, where every container could forge that header.
   requests:
     driver: overlay
+  # ntfy and Hermes Agent only (docker-compose.hermes.yml joins it as
+  # mediastack_chat, hence attachable). Hermes is on trial and deliberately
+  # off `edge`; this lets its gateway reach ntfy by name without seeing
+  # anything else. The public ntfy hostname is behind Cloudflare Access,
+  # which a container cannot log in to.
+  chat:
+    driver: overlay
+    attachable: true
 
 volumes:
   # created by docker-compose.ids.yml, where suricata writes it
@@ -1656,6 +1664,10 @@ services:
     networks:
       - edge
       - internal
+      # Hermes Agent's messaging gateway, which answers on its own ntfy
+      # topic. It is sandboxed and must not join `edge`, so this is the
+      # one network it shares with anything in the stack.
+      - chat
     deploy:
       labels:
         - "traefik.enable=true"
