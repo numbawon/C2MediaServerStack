@@ -64,6 +64,8 @@ and actually understand what they're running, not just copy-paste it.
 | **CrowdSec** | Behavioural intrusion prevention. Reads Traefik's access log, decides who is misbehaving, and a Traefik plugin bouncer enforces it. See the bouncer notes in `traefik/dynamic/dynamic.yml`. |
 | **Suricata** (+ `suricata-exporter`) | Network IDS on the host interface, with its findings exported as Prometheus metrics. |
 | **ClamAV** (+ `antivirus-exporter`) | Alert-only malware scanning for completed downloads and the Copyparty upload drop. |
+| **Home Assistant** | Optional home automation on the host network for LAN discovery, including local OpenEVSE metrics and control. Native authentication; no Authentik forward-auth. |
+| **Scrutiny** | Optional SMART disk-health history and dashboard. Authentik-gated and limited to explicitly configured block devices. |
 | **blackbox-exporter** | Probes endpoints from outside the app, including the origin certificate's expiry, so a broken cert alerts before a browser finds it. |
 | **Prometheus, Grafana, cAdvisor, node-exporter** | Metrics: host, per-container, and dashboards. |
 | **Loki, Promtail** | Log aggregation -- searchable logs across every container, alongside the metrics. |
@@ -504,9 +506,9 @@ Two consequences worth knowing if you extend this:
 ## Why the stack is split across compose files
 
 Docker Swarm can't do everything this stack needs. Anything that hits one
-of its limitations lives in its own standalone compose file. There are six,
-for three reasons Swarm has no answer to: GPU access, `network_mode: host`,
-and sharing another container's network namespace.
+of its limitations lives in its own standalone compose file: GPU access,
+`network_mode: host`, sharing another container's network namespace, or
+explicit host-device access.
 
 | File | Runs as | Why it's separate |
 |---|---|---|
@@ -517,6 +519,7 @@ and sharing another container's network namespace.
 | `docker-compose.ai.yml` | Standalone compose | Same GPU reason again: Ollama runs inference on the card |
 | `docker-compose.dns.yml` | Standalone compose | Pi-hole needs `network_mode: host` to answer DNS on the real host ports, which Swarm has no equivalent for |
 | `docker-compose.ids.yml` | Standalone compose | Suricata needs `network_mode: host` plus `cap_add` to see the physical interface; an IDS that cannot see `eno1` is pointless |
+| `docker-compose.home.yml` | Generated standalone compose | Home Assistant needs host networking for LAN discovery; Scrutiny needs explicit SMART device mappings. The generated file grants only the devices listed in `SCRUTINY_DEVICES` |
 
 The standalone files join the same `edge` overlay network as the Swarm
 stack (created once, attachable) so Traefik can still route to them --
@@ -535,7 +538,7 @@ merely to restore the stack:
 | VPS or Swarm-only host | `stack` |
 | Media host without GPU | `stack download` |
 | GPU media host | `stack download plex tdarr ai` |
-| Home-network services | add `dns ids` |
+| Home-network services | add `dns ids home` |
 | Optional applications | add `audiomuse hermes i2p` as needed |
 
 `scripts/deploy.sh configured` deploys exactly that list. Individual
@@ -544,6 +547,48 @@ example). `COMMON_RECOVERY_COMPONENTS` separately lists standalone stacks
 that systemd should re-apply after reboot; Swarm reconciles `stack` itself.
 GPU, host-network IDS, router, and bridge tooling therefore remain optional
 instead of becoming VPS dependencies.
+
+### Home Assistant, OpenEVSE, and Scrutiny
+
+The optional `home` component runs both services:
+
+```bash
+# Whole disks/controllers only; never partitions.
+SCRUTINY_DEVICES="/dev/sda,/dev/sdb"
+COMMON_DEPLOYMENT_COMPONENTS="stack home"
+COMMON_RECOVERY_COMPONENTS="home"
+
+./scripts/bootstrap.sh
+./scripts/deploy.sh home
+```
+
+`docker-compose.home.yml` is generated and ignored. Scrutiny gets
+`SYS_RAWIO`, `DAC_OVERRIDE` for its bind-mounted stores, `/run/udev`
+read-only, and only configured devices. An NVMe controller path such as
+`/dev/nvme0` also adds `SYS_ADMIN`; SATA/SAS disks do not. It never receives
+`privileged: true` or all of `/dev`. Its UI is
+`scrutiny.<domain>` behind an Admin-bound Authentik proxy provider.
+
+Home Assistant Container uses host networking so Zeroconf/mDNS reaches LAN
+devices. It receives no host devices and no privileged mode for OpenEVSE.
+Complete first-user setup at `http://<server-lan-ip>:8123`, then in
+**Settings -> System -> Network -> HTTP server** enable reverse-proxy use
+and trust only `COMMON_DOCKER_GWBRIDGE_SUBNET`. Traefik reaches this
+host-network service through that bridge, so Home Assistant sees Traefik's
+bridge address rather than its `edge` overlay address. Its public route is
+`home.<domain>` and uses Home Assistant's native authentication;
+forward-auth would break mobile apps, webhooks, and API clients.
+
+For an OpenEVSE running official Wi-Fi firmware, use **Settings -> Devices
+& services -> Add Integration -> OpenEVSE**. Same-LAN discovery advertises
+`_openevse._tcp.local.`; otherwise enter charger IP or hostname. Integration
+provides charging state, voltage, current, power, session/lifetime energy,
+temperatures, faults, charge-rate control, and pause/resume. Add energy
+sensor to Home Assistant's Energy dashboard. No cloud account is required.
+
+Create explicit Cloudflare tunnel DNS routes for `home.<domain>` and
+`scrutiny.<domain>`. Create only Scrutiny's Authentik application/provider;
+Home Assistant deliberately has none.
 
 ## Before you start
 
@@ -600,9 +645,9 @@ cloudflared tunnel create mediastack
 #     | sort -u
 # As of writing: ai, alertmanager, audiobookshelf, audiomuse, auth, bazarr, browse,
 # cleanuparr, files, flood, grafana, i2p, immich, komga, lazylibrarian,
-# lidarr, mylar3, navidrome, ntfy, ombi, organizarr, overseerr, pihole, plex,
+# home, lidarr, mylar3, navidrome, ntfy, ombi, organizarr, overseerr, pihole, plex,
 # podcasts, portainer, prometheus, prowlarr, qbittorrent, radarr, seerr,
-# traefik-manager,
+# scrutiny, traefik-manager,
 # sonarr, tautulli, tdarr, terminal, traefik, and the bare domain for homer:
 cloudflared tunnel route dns mediastack <sub>.yourdomain.com
 # Grab the tunnel token for init-secrets.sh next: Cloudflare Zero Trust
@@ -616,7 +661,8 @@ cloudflared tunnel route dns mediastack <sub>.yourdomain.com
 
 `scripts/render-config.py` creates ignored deployment-local files from
 tracked templates for Prometheus host-storage alerts, CrowdSec's LAN
-allowlist, and router syslog forwarding. Edit `.env` or a `.template`,
+allowlist, router syslog forwarding, and Scrutiny device mappings. Edit
+`.env` or a `.template`,
 never the generated file. The Cloudflare Access SSH CA is also
 deployment-specific and deliberately untracked; install the CA obtained
 from your own Cloudflare Access organization directly into the host's
@@ -2693,12 +2739,15 @@ cleanuparr, flood.
 Needs `sudo` for at least some files: portainer, ntfy, diun, organizarr,
 open_webui, files, browse (all root), grafana (472), alertmanager
 (nobody), and parts of plex, pihole, crowdsec, tdarr, audiobookshelf,
-beets, recyclarr, suricata.
+beets, recyclarr, suricata, Home Assistant, and Scrutiny.
 
 ### Backups
 
 Both scripts cover `.appdata` and `COMMON_APPDATA` alongside the six
 remaining volumes. Two things worth knowing if you touch that code:
+
+This includes Home Assistant configuration/history and both Scrutiny
+stores because they live under `COMMON_CONFIG`.
 
 The `.appdata` tarballs are made **inside a container as root**, not with
 the host's `tar`. Host tar runs as the invoking user and, combined with
@@ -3323,7 +3372,7 @@ whatever timezone you are viewing from.
 
 ## The apps that are not forward-auth gated
 
-Nine services deliberately carry no `authentik@file` middleware, for one
+Ten services deliberately carry no `authentik@file` middleware, for one
 of two reasons: **a native client that cannot complete a browser login
 redirect**, or **real OIDC of their own**, where the gate would only mean
 logging in twice.
@@ -3339,6 +3388,7 @@ logging in twice.
 | Immich | mobile app | native OIDC against Authentik |
 | Open WebUI | has real OIDC, gate would be a second login | native OIDC, `Admin`/`Contributor`/`Family` via groups claim |
 | Cleanuparr | has real OIDC, gate would be a second login | native OIDC, `Admin` binding on the Authentik application |
+| Home Assistant | mobile apps, webhooks, and integrations need its API directly | Home Assistant accounts, MFA, and long-lived access tokens |
 
 Putting the forward-auth gate in front of any of them does not "add
 security", it breaks the app: every API call gets bounced to a login
@@ -3777,7 +3827,7 @@ Prometheus (rules/) --> Alertmanager --> alert-relay --> ntfy --> phone
 
 ### Every alert, and what it means
 
-Fifty-five rules across `alerts.yml` and `ids.yml`. Until now the README
+Alert rules across the files in `prometheus/rules/`. Until now the README
 named three of them, so an alert arriving on your phone at 3 a.m. sent you
 grepping the rules files to find out what it meant. Each rule still carries
 its full reasoning as a comment beside it; this is the index.
@@ -3830,6 +3880,7 @@ grep -hE "^      - alert:|severity:|summary:" prometheus/rules/*.yml
 | `PublicEndpointDown` | critical | <label> is unreachable from outside |
 | `TlsCertExpiringSoon` | warning | TLS certificate for <label> expires in under 14 days |
 | `TunnelDown` | critical | Multiple public endpoints down: tunnel or DNS, not the apps |
+| `HomeServiceDown` | warning | Optional Home Assistant or Scrutiny service is unavailable internally |
 | **DNS** | | |
 | `DnsFilteringBypassed` | warning | Pi-hole is answering but no longer blocking |
 | `DnsResolverAaaaFailing` | warning | AAAA lookups failing on the <label> resolver |
@@ -4047,9 +4098,7 @@ pushes.
   (see the 32443 section). This line used to read "nothing new bound to
   80/443", which stopped being true when entrypoint TLS landed.
 - Any app URL redirects to Authentik login before showing the app, except
-  the eight in "The apps that are not forward-auth gated" -- Plex,
-  Audiobookshelf, Immich, PinePods, Open WebUI, Cleanuparr, ntfy and
-  Navidrome's `/rest/*`.
+  routes explicitly listed in "The apps that are not forward-auth gated."
 - Plex: start a transcoded stream, confirm `nvidia-smi` shows an
   ffmpeg process.
 - `docker service update --force <service>` on something, confirm it

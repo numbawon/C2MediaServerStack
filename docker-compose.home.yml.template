@@ -1,0 +1,54 @@
+# Optional home-hardware services. Rendered to docker-compose.home.yml by
+# scripts/render-config.py, then deployed with scripts/deploy.sh home.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+name: mediastack-home
+
+services:
+  scrutiny:
+    image: ghcr.io/analogj/scrutiny:latest-omnibus
+    container_name: scrutiny
+    restart: unless-stopped
+    logging: *logging
+    cap_drop: [ALL]
+    cap_add:
+@SCRUTINY_CAPABILITIES@
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    devices:
+@SCRUTINY_DEVICE_MAPPINGS@
+    volumes:
+      - /run/udev:/run/udev:ro
+      - ${COMMON_CONFIG}/scrutiny/config:/opt/scrutiny/config
+      - ${COMMON_CONFIG}/scrutiny/influxdb:/opt/scrutiny/influxdb
+    networks:
+      - edge
+
+  home-assistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: home-assistant
+    restart: unless-stopped
+    stop_grace_period: 60s
+    logging: *logging
+    environment:
+      - TZ=${COMMON_TZ}
+    volumes:
+      - ${COMMON_CONFIG}/home-assistant:/config
+      - /etc/localtime:/etc/localtime:ro
+    # Host networking preserves Zeroconf/mDNS discovery for OpenEVSE and
+    # future LAN integrations. No privileged mode or local devices are needed.
+    network_mode: host
+
+networks:
+  edge:
+    external: true

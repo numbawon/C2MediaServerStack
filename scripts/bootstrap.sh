@@ -69,4 +69,9 @@ for path in "$COMMON_CONFIG/antivirus" "$COMMON_UPLOADS"; do
   fi
 done
 
+mkdir -p \
+  "$COMMON_CONFIG/home-assistant" \
+  "$COMMON_CONFIG/scrutiny/config" \
+  "$COMMON_CONFIG/scrutiny/influxdb"
+
 echo "Bootstrap done. Next: scripts/init-secrets.sh, then deploy (see README.md)."

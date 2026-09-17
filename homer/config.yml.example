@@ -217,6 +217,20 @@ services:
         subtitle: "Local models on the GPU. Conversations are saved."
         target: "_blank"
 
+  - name: "Home"
+    icon: "fas fa-house"
+    items:
+      - name: "Home Assistant"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/home-assistant.svg"
+        url: "https://home.example.com"
+        subtitle: "Home automation and OpenEVSE"
+        target: "_blank"
+      - name: "Scrutiny"
+        icon: "fas fa-hard-drive"
+        url: "https://scrutiny.example.com"
+        subtitle: "SMART disk health"
+        target: "_blank"
+
   - name: "Monitoring"
     icon: "fas fa-chart-line"
     items:

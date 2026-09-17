@@ -67,8 +67,15 @@ for f in /etc/systemd/system/mediastack-*.service; do
   while IFS= read -r line; do
     val="${line#*=}"
     for tok in $val; do
-      case "$tok" in
-        /*) [ -e "$tok" ] || { echo "    MISSING: $(basename "$f") -> $tok"; rc=1; } ;;
+      # ExecStart shell snippets can quote a path and terminate it with `;`.
+      # Strip that syntax before asking the filesystem whether it exists.
+      path="${tok#\'}"
+      path="${path#\"}"
+      path="${path%;}"
+      path="${path%\'}"
+      path="${path%\"}"
+      case "$path" in
+        /*) [ -e "$path" ] || { echo "    MISSING: $(basename "$f") -> $path"; rc=1; } ;;
       esac
     done
   done < <(grep -E '^(WorkingDirectory|ExecStart|EnvironmentFile)=' "$f")

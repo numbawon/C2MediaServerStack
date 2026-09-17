@@ -65,6 +65,41 @@ cat > "$OUT/blackbox-open.json" <<JSON
 ]
 JSON
 
+if [[ " ${COMMON_DEPLOYMENT_COMPONENTS} " == *" home "* ]]; then
+  cat > "$OUT/blackbox-home-gated.json" <<JSON
+[
+  {
+    "targets": ["https://scrutiny.${COMMON_DOMAIN}"],
+    "labels": {"access": "authentik"}
+  }
+]
+JSON
+
+  cat > "$OUT/blackbox-home-open.json" <<JSON
+[
+  {
+    "targets": ["https://home.${COMMON_DOMAIN}"],
+    "labels": {"access": "native"}
+  }
+]
+JSON
+
+  cat > "$OUT/home-services.json" <<JSON
+[
+  {
+    "targets": [
+      "http://scrutiny:8080/api/health",
+      "http://${COMMON_DOCKER_GWBRIDGE_GATEWAY}:8123"
+    ]
+  }
+]
+JSON
+else
+  printf '[]\n' > "$OUT/blackbox-home-gated.json"
+  printf '[]\n' > "$OUT/blackbox-home-open.json"
+  printf '[]\n' > "$OUT/home-services.json"
+fi
+
 # Probe both configured resolvers so a failure identifies which path broke.
 ROUTER="${COMMON_LAN_ROUTER}"
 # Origin certificate probe. One target is enough: Traefik serves the same

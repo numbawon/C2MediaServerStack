@@ -276,7 +276,7 @@ groups:
         # matches the DNS jobs, so a resolver fault would be reported as
         # an endpoint outage -- two alerts naming the wrong cause, which
         # is worse than one naming the right one.
-        expr: probe_success{job=~"blackbox-(gated|open)"} == 0
+        expr: probe_success{job=~"blackbox-(gated|open|home-gated|home-open)"} == 0
         for: 5m
         labels:
           severity: critical
@@ -292,7 +292,7 @@ groups:
         # fault, not an app fault. Distinct alert so the notification
         # says the right thing at 3am.
         expr: >-
-          count(probe_success{job=~"blackbox-(gated|open)"} == 0)
+          count(probe_success{job=~"blackbox-(gated|open|home-gated|home-open)"} == 0)
           >= 3
         for: 3m
         labels:
@@ -380,7 +380,7 @@ groups:
 
       - alert: TlsCertExpiringSoon
         expr: >-
-          probe_ssl_earliest_cert_expiry{job=~"blackbox-(gated|open)"} - time()
+          probe_ssl_earliest_cert_expiry{job=~"blackbox-(gated|open|home-gated|home-open)"} - time()
           < 14 * 24 * 3600
         for: 1h
         labels:
@@ -390,6 +390,17 @@ groups:
           description: >-
             Cloudflare normally renews these automatically, so this
             firing means something is wrong with the tunnel hostname.
+
+      - alert: HomeServiceDown
+        expr: probe_success{job="home-services"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} is unavailable internally"
+          description: >-
+            The optional home service failed its direct health check.
+            Check the mediastack-home Compose project and container logs.
 
   - name: updates
     rules:

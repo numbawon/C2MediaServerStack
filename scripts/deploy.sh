@@ -14,6 +14,7 @@
 #   ./scripts/deploy.sh i2p         # docker compose -f docker-compose.i2p.yml up -d (I2P router)
 #   ./scripts/deploy.sh configured  # deploy COMMON_DEPLOYMENT_COMPONENTS in order
 #   ./scripts/deploy.sh recovery    # deploy COMMON_RECOVERY_COMPONENTS in order
+#   ./scripts/deploy.sh home        # Home Assistant + Scrutiny
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -61,6 +62,10 @@ case "$1" in
   i2p)
     docker compose -f docker-compose.i2p.yml up -d
     ;;
+  home)
+    python3 scripts/render-config.py
+    docker compose -f docker-compose.home.yml up -d
+    ;;
   *)
     echo "Unknown deployment component: $1" >&2
     exit 1
@@ -79,11 +84,11 @@ case "${1:-}" in
       deploy_component "$component"
     done
     ;;
-  stack|download|plex|dns|ai|tdarr|audiomuse|hermes|ids|i2p)
+  stack|download|plex|dns|ai|tdarr|audiomuse|hermes|ids|i2p|home)
     deploy_component "$1"
     ;;
   *)
-    echo "Usage: $0 {configured|recovery|stack|download|plex|dns|ai|tdarr|audiomuse|hermes|ids|i2p}" >&2
+    echo "Usage: $0 {configured|recovery|stack|download|plex|dns|ai|tdarr|audiomuse|hermes|ids|i2p|home}" >&2
     exit 1
     ;;
 esac

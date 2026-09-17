@@ -244,6 +244,27 @@ http:
         - authentik
       service: pihole
 
+    # Scrutiny has no authentication of its own. Its disk-health UI and
+    # hardware inventory are therefore always protected by Authentik.
+    scrutiny:
+      rule: 'Host(`scrutiny.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+        - websecure
+      middlewares:
+        - authentik
+      service: scrutiny
+
+    # Home Assistant must use its native authentication so mobile apps,
+    # webhooks, and integrations do not receive a browser-only forward-auth
+    # redirect. Configure Traefik's edge subnet as a trusted proxy in HA.
+    homeassistant:
+      rule: 'Host(`home.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+        - websecure
+      service: homeassistant
+
     qbittorrent:
       rule: 'Host(`qbittorrent.{{ env "COMMON_DOMAIN" }}`)'
       entryPoints:
@@ -381,6 +402,18 @@ http:
           # now, so FTL's admin webserver was moved off them. See
           # FTLCONF_webserver_port in docker-compose.dns.yml.
           - url: 'http://{{ env "COMMON_DOCKER_GWBRIDGE_GATEWAY" }}:8053'
+
+    scrutiny:
+      loadBalancer:
+        servers:
+          - url: "http://scrutiny:8080"
+
+    # Home Assistant uses host networking for mDNS/Zeroconf discovery.
+    # Traefik reaches the host through docker_gwbridge, as it does Pi-hole.
+    homeassistant:
+      loadBalancer:
+        servers:
+          - url: 'http://{{ env "COMMON_DOCKER_GWBRIDGE_GATEWAY" }}:8123'
 
     qbittorrent:
       loadBalancer:

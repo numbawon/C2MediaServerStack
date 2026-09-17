@@ -36,6 +36,19 @@ modules:
       follow_redirects: true
       preferred_ip_protocol: ip4
 
+  # Direct internal availability check for optional home services.
+  http_ok:
+    prober: http
+    timeout: 15s
+    http:
+      valid_status_codes: [200]
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      method: GET
+      follow_redirects: true
+      preferred_ip_protocol: ip4
+      headers:
+        Host: localhost
+
   # Does the name resolve at all, independent of whether HTTP works.
   # Separates "DNS is broken" from "the app is down", which is precisely
   # the distinction that took hours to establish during the outage.

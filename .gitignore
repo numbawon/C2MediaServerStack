@@ -38,6 +38,7 @@ prometheus/targets/*.json
 crowdsec/whitelist.yaml
 prometheus/rules/alerts.yml
 router/syslog-ng-remote.conf
+docker-compose.home.yml
 
 # Python bytecode
 __pycache__/
