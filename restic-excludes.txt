@@ -5,7 +5,7 @@
 # 700 MB was irreplaceable (databases and config) and the rest was
 # downloaded artwork. That bloat is what pushed the repo past B2's
 # storage cap, and a capped bucket fails the backup outright: the
-# 2026-08-27 run died with "403: storage cap exceeded" having written
+# A prior run died with "403: storage cap exceeded" after writing
 # nothing.
 #
 # Rule: keep .db files and config, drop anything re-fetched from

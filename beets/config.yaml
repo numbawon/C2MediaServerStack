@@ -44,7 +44,7 @@ match:
 # musicbrainz MUST be listed. In beets 2.x MusicBrainz lookup is itself a
 # plugin, and an explicit `plugins:` list without it leaves beets with no
 # metadata source at all: every album gets 0 candidates and is skipped,
-# silently. That was the state here until 2026-09-13.
+# silently. Keep this explicit.
 plugins: musicbrainz fetchart embedart scrub chroma mbsync info missing duplicates
 
 # --- artwork -------------------------------------------------------------

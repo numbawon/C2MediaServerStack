@@ -3,7 +3,8 @@ Description=ttyd web terminal (docker_gwbridge only, reached via Traefik)
 After=network.target docker.service
 
 [Service]
-# --interface 172.20.0.1: the docker_gwbridge gateway IP, not loopback.
+EnvironmentFile=/home/youruser/C2MediaServerStack/.env
+# --interface uses COMMON_DOCKER_GWBRIDGE_GATEWAY from .env, not loopback.
 # Binding to 127.0.0.1 looks more locked-down but is actually unreachable
 # from Traefik's own container -- a socket bound to loopback only accepts
 # connections whose destination is literally 127.0.0.1, and Traefik dialing
@@ -31,7 +32,7 @@ After=network.target docker.service
 # flag and reproducing a working prompt. Leave this on the browser default
 # monospace font unless a font that's guaranteed present on every client
 # device gets pinned instead.
-ExecStart=/usr/bin/ttyd --writable --interface 172.20.0.1 --port 7681 login
+ExecStart=/usr/bin/ttyd --writable --interface ${COMMON_DOCKER_GWBRIDGE_GATEWAY} --port 7681 login
 Restart=on-failure
 RestartSec=5
 

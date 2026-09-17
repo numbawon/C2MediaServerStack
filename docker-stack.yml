@@ -41,6 +41,9 @@ networks:
     external: true
   internal:
     driver: overlay
+    ipam:
+      config:
+        - subnet: ${COMMON_INTERNAL_SUBNET}
   # Navidrome and AudioMuse-AI only (docker-compose.audiomuse.yml joins it
   # as mediastack_music, hence attachable). Deliberately NOT `internal`:
   # Navidrome trusts X-authentik-username from that subnet, and AudioMuse
@@ -106,6 +109,10 @@ volumes:
   # on the next verification run.
   node_exporter_textfile:
     name: node_exporter_textfile
+  # Virus definitions are derived and can be re-downloaded. Keeping them
+  # avoids a full refresh on every task replacement; backups omit this volume.
+  clamav_db:
+    name: clamav_db
   # Immich runs its own Postgres (vector extensions the Authentik one does
   # not have) and its own Redis. immich_model_cache holds downloaded ML
   # models -- regenerable, but several GB, so not worth re-downloading.
@@ -263,7 +270,7 @@ services:
       - --entrypoints.web.http.middlewares=redirect-https@file
       - --entrypoints.websecure.address=:443
       - --entrypoints.websecure.http.middlewares=force-forwarded-proto@file,ratelimit@file,security-headers@file,crowdsec@file
-      - --entrypoints.websecure.forwardedheaders.trustedips=10.0.0.0/8
+      - --entrypoints.websecure.forwardedheaders.trustedips=${COMMON_EDGE_SUBNET}
       # One wildcard cert for the whole entrypoint rather than a
       # per-router certresolver: every router that gains `websecure` is
       # then covered without touching it again, and Let's Encrypt sees a
@@ -305,7 +312,7 @@ services:
       # tunnel's own IP as the client, and CrowdSec would ban cloudflared
       # on the first attack -- taking the whole site offline instead of the
       # attacker. Scoped to the overlay: a LAN host cannot spoof through it.
-      - --entrypoints.web.forwardedheaders.trustedips=10.0.0.0/8
+      - --entrypoints.web.forwardedheaders.trustedips=${COMMON_EDGE_SUBNET}
       # Plugin is fetched at startup and cached in traefik_plugins, so a
       # restart does not depend on the internet. Verified to load on
       # v3.7.12 in a throwaway container before being put here: a plugin
@@ -357,6 +364,8 @@ services:
       # the template renders empty, the list empties, and LAN clients
       # quietly stop being exempt from the bouncer.
       - COMMON_LAN_SUBNET=${COMMON_LAN_SUBNET}
+      - COMMON_EDGE_SUBNET=${COMMON_EDGE_SUBNET}
+      - COMMON_DOCKER_GWBRIDGE_GATEWAY=${COMMON_DOCKER_GWBRIDGE_GATEWAY}
       # lego (the ACME library Traefik embeds) accepts a _FILE suffix on
       # any of its provider variables and reads the value out of the file,
       # so the Cloudflare token stays a Docker secret instead of sitting
@@ -762,7 +771,7 @@ services:
   # search through a headless browser for no reason.
   #
   # ByParr drives Camoufox rather than headless Chromium. It replaced
-  # FlareSolverr outright on 2026-09-06, which is worth recording because
+  # FlareSolverr outright, which is worth recording because
   # the reason was not success rate.
   #
   # Cloudflare binds cf_clearance to the IP that solved the challenge, so
@@ -880,7 +889,7 @@ services:
     environment:
       - TZ=${COMMON_TZ}
       - ND_EXTAUTH_USERHEADER=X-authentik-username
-      - ND_EXTAUTH_TRUSTEDSOURCES=10.0.2.0/24
+      - ND_EXTAUTH_TRUSTEDSOURCES=${COMMON_INTERNAL_SUBNET}
       # audiomuseai first: Navidrome takes Instant Mix / similar songs from
       # the first agent that supports sonic similarity. The rest are 0.64's
       # defaults, kept for artist bios and images.
@@ -1258,6 +1267,67 @@ services:
       placement:
         constraints: [node.role == manager]
 
+  # ---------------------------------------------------------------------
+  # Antivirus -- clamd stays isolated from host paths. The companion
+  # scanner streams stable files from completed downloads and the explicit
+  # upload drop over clamd's internal TCP protocol, then exposes results to
+  # Prometheus. Alert-only by design: it never deletes or moves user data.
+  # ---------------------------------------------------------------------
+  clamav:
+    logging: *logging
+    image: clamav/clamav:stable
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
+    volumes:
+      - clamav_db:/var/lib/clamav
+    networks:
+      - internal
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+        reservations:
+          memory: 1G
+
+  antivirus-exporter:
+    logging: *logging
+    image: python:3-alpine
+    user: "${COMMON_PUID}:${COMMON_PGID}"
+    cap_drop: [ALL]
+    read_only: true
+    command: python /app/scanner.py
+    environment:
+      - TZ=${COMMON_TZ}
+      - PYTHONUNBUFFERED=1
+      - CLAMD_HOST=clamav
+      - SCAN_ROOTS=uploads=/scan/uploads,completed=/scan/completed
+      - SCAN_INTERVAL=60
+      - MIN_FILE_AGE=120
+      - MAX_FILE_BYTES=104857600
+      - MAX_SCANS_PER_CYCLE=25
+      - MAX_CYCLE_SECONDS=50
+      - CLAMD_TIMEOUT=10
+      - RESCAN_AFTER=2592000
+    volumes:
+      - ./antivirus:/app:ro
+      - ${COMMON_CONFIG}/antivirus:/state
+      - ${COMMON_COMPLETED}:/scan/completed:ro
+      - ${COMMON_UPLOADS}:/scan/uploads:ro
+    tmpfs:
+      - /tmp
+    networks:
+      - internal
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+
   # Deliberate exception to "only docker-socket-proxy touches docker.sock" --
   # cAdvisor's per-container metrics need it directly, no way around that.
   # Kept read-only and internal-network-only to limit the blast radius.
@@ -1394,12 +1464,10 @@ services:
     image: c2mediaserverstack/pinepods:nightly20260911-upstream-09c3dcd
     environment:
       - TZ=${COMMON_TZ}
-      # PUID/PGID so downloaded episodes land as the configured user rather than
-      # root. Audiobookshelf runs as uid 0 and left 1204 root-owned
-      # entries under /mnt/Media/Audiobooks that had to be chowned by
-      # hand; this avoids repeating that.
-      - PUID=1000
-      - PGID=1000
+      # PUID/PGID keep downloaded episodes owned by the configured host
+      # account rather than root.
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
       - HOSTNAME=https://podcasts.${COMMON_DOMAIN}
       - DB_TYPE=postgresql
       - DB_HOST=pinepods-postgres
@@ -1581,8 +1649,8 @@ services:
       # requests, which honours NO_PROXY from the environment even when a
       # proxies dict is passed explicitly. Bare names match as suffixes,
       # so the service names cover the overlay.
-      - NO_PROXY=localhost,127.0.0.1,10.0.1.0/24,192.168.0.0/16,qbittorrent,prowlarr,sonarr,radarr,lidarr,lazylibrarian,bazarr,byparr,vpn-client
-      - no_proxy=localhost,127.0.0.1,10.0.1.0/24,192.168.0.0/16,qbittorrent,prowlarr,sonarr,radarr,lidarr,lazylibrarian,bazarr,byparr,vpn-client
+      - NO_PROXY=localhost,127.0.0.1,${COMMON_EDGE_SUBNET},${COMMON_LAN_SUBNET},qbittorrent,prowlarr,sonarr,radarr,lidarr,lazylibrarian,bazarr,byparr,vpn-client
+      - no_proxy=localhost,127.0.0.1,${COMMON_EDGE_SUBNET},${COMMON_LAN_SUBNET},qbittorrent,prowlarr,sonarr,radarr,lidarr,lazylibrarian,bazarr,byparr,vpn-client
     volumes:
       - ${COMMON_CONFIG}/lazylibrarian:/config
       - ${COMMON_MEDIA}/EBooks:/books
@@ -1752,7 +1820,7 @@ services:
       # below) -- redundant with that network move today, but keeps the
       # header trust from silently reopening if grafana ever gets
       # rejoined to `edge` later.
-      - GF_AUTH_PROXY_WHITELIST=10.0.2.0/24
+      - GF_AUTH_PROXY_WHITELIST=${COMMON_INTERNAL_SUBNET}
       - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
     secrets:
       - grafana_admin_password
@@ -1920,7 +1988,7 @@ services:
     environment:
       - TZ=${COMMON_TZ}
       - COLLECTIONS=crowdsecurity/traefik crowdsecurity/base-http-scenarios crowdsecurity/http-cve crowdsecurity/sshd crowdsecurity/linux crowdsecurity/suricata crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules
-      - GID=1000
+      - GID=${COMMON_PGID}
     volumes:
       - ${COMMON_CONFIG}/crowdsec/config:/etc/crowdsec
       - ${COMMON_CONFIG}/crowdsec/data:/var/lib/crowdsec/data
@@ -1945,7 +2013,7 @@ services:
   # copyparty (files) -- ADMIN file manager. Read-write over Media and
   # Storage, so it sits behind authentik with no exception.
   #
-  # NOT Filebrowser: that project was archived on 2026-09-01 with known
+  # NOT Filebrowser: that project was archived with known
   # unfixed security advisories, which is disqualifying for something
   # internet-reachable holding write access to the whole library.
   #
@@ -1971,6 +2039,8 @@ services:
       - /w/media:media:A
       - -v
       - /w/storage:storage:A
+      - -v
+      - /w/uploads:uploads:A
       - --idp-login
       - https://auth.${COMMON_DOMAIN}/
       - --idp-login-t
@@ -1979,7 +2049,7 @@ services:
       - https://files.${COMMON_DOMAIN}/outpost.goauthentik.io/sign_out
       # Trust the overlay. copyparty's --xff-src defaults to loopback only
       # (127.0.0.0/8, ::1/128), so every forwarded header from Traefik --
-      # which reaches it from 10.0.1.x -- was silently ignored. That made
+      # which reaches it from the edge overlay -- was silently ignored. That made
       # copyparty believe the request scheme was http while the browser sent
       # Origin: https, and its CORS check rejected every write with
       # "rejected by cors-check". Renames, uploads and deletes all failed.
@@ -1998,7 +2068,8 @@ services:
       - --no-robots
     volumes:
       - ${COMMON_MEDIA}:/w/media
-      - /mnt/Storage:/w/storage
+      - ${COMMON_STORAGE}:/w/storage
+      - ${COMMON_UPLOADS}:/w/uploads
       - ${COMMON_CONFIG}/files:/cfg
     environment:
       - TZ=${COMMON_TZ}
@@ -2044,7 +2115,7 @@ services:
       - https://browse.${COMMON_DOMAIN}/outpost.goauthentik.io/sign_out
       # Trust the overlay. copyparty's --xff-src defaults to loopback only
       # (127.0.0.0/8, ::1/128), so every forwarded header from Traefik --
-      # which reaches it from 10.0.1.x -- was silently ignored. That made
+      # which reaches it from the edge overlay -- was silently ignored. That made
       # copyparty believe the request scheme was http while the browser sent
       # Origin: https, and its CORS check rejected every write with
       # "rejected by cors-check". Renames, uploads and deletes all failed.
@@ -2096,7 +2167,7 @@ services:
   # four apps behind the VPN have no network identity of their own.
   #
   # No credentials are configured, and that is not an oversight:
-  # qBittorrent's WebUI\AuthSubnetWhitelist is 10.0.1.0/24, the edge
+  # qBittorrent's WebUI\AuthSubnetWhitelist is COMMON_EDGE_SUBNET, the edge
   # overlay, so anything on that network already reaches its API
   # unauthenticated. Storing a password here would add a secret without
   # adding a barrier. Worth knowing that this cuts both ways: every
@@ -2212,13 +2283,9 @@ services:
     # Runs as the owning user, not root. The image defaults to uid 0 and
     # ignores PUID/PGID (that is a LinuxServer convention and this is not a
     # LinuxServer image), so without this every file it wrote into
-    # /mnt/Media was root-owned. That produced 1204 such entries under
-    # Audiobooks once already, all of which had to be chowned by hand.
-    #
-    # Its config and metadata directories were chowned to 1000:1000 in the
-    # same change. Setting this without doing that leaves it unable to read
-    # its own database; doing that without setting this just re-creates
-    # root-owned files on the next write. Neither half works alone.
+    # the media tree was root-owned. Its config and metadata directories
+    # must also be owned by COMMON_PUID:COMMON_PGID. Setting only one side
+    # either blocks startup or recreates root-owned files.
     user: "${COMMON_PUID}:${COMMON_PGID}"
     environment:
       - TZ=${COMMON_TZ}
@@ -2365,7 +2432,7 @@ services:
   # way a real user reaches it.
   #
   # Everything else Prometheus scrapes lives on the internal network, on
-  # the server side of Cloudflare. During the 2026-08-27 outage that left
+  # the server side of Cloudflare. During an external outage that left
   # every target reporting up while nothing was actually reachable. This
   # is the only check that would have caught it.
   #

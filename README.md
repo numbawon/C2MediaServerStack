@@ -63,6 +63,7 @@ and actually understand what they're running, not just copy-paste it.
 | **Ollama, Open WebUI** | Local LLM inference on the GPU and its browser front end. Nothing leaves the network. See "Local AI". |
 | **CrowdSec** | Behavioural intrusion prevention. Reads Traefik's access log, decides who is misbehaving, and a Traefik plugin bouncer enforces it. See the bouncer notes in `traefik/dynamic/dynamic.yml`. |
 | **Suricata** (+ `suricata-exporter`) | Network IDS on the host interface, with its findings exported as Prometheus metrics. |
+| **ClamAV** (+ `antivirus-exporter`) | Alert-only malware scanning for completed downloads and the Copyparty upload drop. |
 | **blackbox-exporter** | Probes endpoints from outside the app, including the origin certificate's expiry, so a broken cert alerts before a browser finds it. |
 | **Prometheus, Grafana, cAdvisor, node-exporter** | Metrics: host, per-container, and dashboards. |
 | **Loki, Promtail** | Log aggregation -- searchable logs across every container, alongside the metrics. |
@@ -199,8 +200,8 @@ three different patterns, chosen per app based on what it supports:
    either runs forward-auth (which overwrites the header) or strips it.
    Traefik forwards whatever headers the client sent, so a router that
    skips forward-auth passes a forged `X-authentik-username` straight
-   through from the trusted subnet. Navidrome's `/rest` router was
-   exactly that until 2026-09-13; see `strip-authentik-identity`.
+   through from the trusted subnet. Navidrome's `/rest` route requires
+   `strip-authentik-identity` for this reason.
 
 3. **Real OIDC (Portainer).** A few apps get a dedicated Authentik
    OAuth2/OpenID provider + application (separate from the outer
@@ -297,8 +298,8 @@ request on the same VPN exit.
 
 ### What actually keeps the torrent traffic covered
 
-Audited 2026-09-06, by observation rather than by reading the config. All
-of this concerns qBittorrent, since that is the only thing joining swarms.
+Verify this by observation rather than only reading configuration. All of
+this concerns qBittorrent, since that is the only thing joining swarms.
 
 | Check | State |
 |---|---|
@@ -370,7 +371,7 @@ Both go through gluetun: ByParr via `PROXY_SERVER`, Prowlarr via its global
 proxy. This is why Prowlarr's global proxy must stay enabled and why public
 indexer hostnames must never appear in its bypass list.
 
-#### Why FlareSolverr was removed, 2026-09-06
+#### Why FlareSolverr was removed
 
 FlareSolverr ran alongside ByParr until it was found to be leaking. It is
 gone rather than kept as a fallback, and the reason is worth recording
@@ -523,6 +524,27 @@ via static entries in `traefik/dynamic/dynamic.yml`, since Traefik's
 Docker provider in `swarmMode` doesn't auto-discover plain containers
 by label.
 
+### Deployment tiers
+
+Standalone components are opt-in through
+`COMMON_DEPLOYMENT_COMPONENTS`; unsupported hardware is never required
+merely to restore the stack:
+
+| Deployment | Suggested value |
+|---|---|
+| VPS or Swarm-only host | `stack` |
+| Media host without GPU | `stack download` |
+| GPU media host | `stack download plex tdarr ai` |
+| Home-network services | add `dns ids` |
+| Optional applications | add `audiomuse hermes i2p` as needed |
+
+`scripts/deploy.sh configured` deploys exactly that list. Individual
+components remain independently deployable (`scripts/deploy.sh plex`, for
+example). `COMMON_RECOVERY_COMPONENTS` separately lists standalone stacks
+that systemd should re-apply after reboot; Swarm reconciles `stack` itself.
+GPU, host-network IDS, router, and bridge tooling therefore remain optional
+instead of becoming VPS dependencies.
+
 ## Before you start
 
 - **A domain**, added to a Cloudflare account with nameservers pointed
@@ -567,7 +589,7 @@ cp homer/config.yml.example homer/config.yml
 $EDITOR cloudflared/config.yml cloudflared/emergency-config.yml homer/config.yml
 
 chmod +x scripts/*.sh scripts/*.py
-./scripts/bootstrap.sh             # docker swarm init + create the `edge` network
+./scripts/bootstrap.sh             # swarm, edge network, generated local config
 
 # --- Cloudflare Tunnel (one-time) ---
 cloudflared tunnel login
@@ -589,16 +611,22 @@ cloudflared tunnel route dns mediastack <sub>.yourdomain.com
 
 ./scripts/init-secrets.sh          # prompts for Cloudflare/NordVPN/Plex values, generates the rest
 
-docker stack deploy -c docker-stack.yml mediastack
-
-# Every standalone compose file. This used to list only download and
-# plex, which left Tdarr, Ollama, Pi-hole and Suricata undeployed, and
-# later missed i2p. Check it against `ls docker-compose.*.yml`. See
-# "Why the stack is split across compose files" for what each one is.
-for f in download plex tdarr ai dns ids i2p audiomuse; do
-  docker compose -f "docker-compose.$f.yml" up -d
-done
+./scripts/deploy.sh configured
 ```
+
+`scripts/render-config.py` creates ignored deployment-local files from
+tracked templates for Prometheus host-storage alerts, CrowdSec's LAN
+allowlist, and router syslog forwarding. Edit `.env` or a `.template`,
+never the generated file. The Cloudflare Access SSH CA is also
+deployment-specific and deliberately untracked; install the CA obtained
+from your own Cloudflare Access organization directly into the host's
+SSH trust configuration.
+
+Existing deployments must merge new keys from `.env.example`; scripts reject
+an old `COMMON_CONFIG_VERSION` with a complete missing-variable list rather
+than rendering partial configuration. `bootstrap.sh` also creates the
+antivirus state/upload directories and verifies ownership before Swarm sees
+their bind mounts.
 
 Then install the timers, which is a separate step people miss: see
 "Every timer, in one place" under Backups. Without them nothing is backed
@@ -614,19 +642,17 @@ podcast. It reads ID3 tags for episode titles and picks up cover art
 from the folder, so the existing hand-organised tree carries over
 instead of being re-downloaded.
 
-That tree is four shows, 1433 episodes, flat, named `NNN. Title` from
-each show's RSS feed (`itunes:episode`). See "Reading the logs" for how
-the numbering was derived and what deliberately went un-numbered.
+Existing podcast trees can remain flat and use episode numbers from each
+show's RSS `itunes:episode` field. See "Reading the logs" for import
+diagnostics.
 
 Three services, following the Immich pattern of an app with its own
 database and cache: `pinepods`, `pinepods-postgres` (18 -- `PGDATA` is
 set explicitly because that image moved its data directory and the old
 path produces overlay2 errors), and `pinepods-valkey`.
 
-`PUID`/`PGID` are set to 1000 deliberately. Audiobookshelf runs as uid 0
-and left 1204 root-owned entries under `/mnt/Media/Audiobooks` that had
-to be chowned by hand; anything writing into a media tree should run as
-the owning user.
+`PUID`/`PGID` come from `.env`; anything writing into a media tree should
+run as its owning user rather than root.
 
 Pattern 3 in "Authentik integration patterns": real OIDC configured in
 its own UI, and **no** `authentik@file` middleware, because its mobile
@@ -807,8 +833,8 @@ shared egress is mandatory because Cloudflare binds `cf_clearance` to the IP
 that solved the challenge, and it is verified: ByParr exited via the VPN in
 8 of 8 samples.
 
-FlareSolverr was removed on 2026-09-06 for failing exactly this. See "Why
-FlareSolverr was removed" above for the measurements. The rule that outlived
+FlareSolverr was removed for failing exactly this. See "Why FlareSolverr
+was removed" above for the evidence. The rule that outlived
 it: **verify a solver's observed egress IP, never its success flag**, because
 a solver will report `Success` while exiting from the wrong address.
 
@@ -822,15 +848,15 @@ A challenge page (`cf-mitigated: challenge`) is solvable. Cloudflare error
 another server, then let the solver obtain fresh clearance for the new IP.
 
 <details>
-<summary>Superseded 2026-09-06 per-indexer proxy design</summary>
+<summary>Superseded per-indexer proxy design</summary>
 
 The following records the previous design and why it was replaced. Do not
 use it as current setup guidance.
 
 ### Why Prowlarr used per-indexer proxies instead of an app-level one
 
-Prowlarr ran with the same app-level proxy until 2026-09-06, when adding
-any new indexer became impossible. Every candidate failed with `Unable to
+Prowlarr previously used the same app-level proxy until adding new
+indexers became impossible. Every candidate failed with `Unable to
 access <site>, blocked by CloudFlare Protection`, which is a message that
 points at the wrong thing entirely.
 
@@ -885,8 +911,7 @@ the two rules above cannot be collapsed into one.
 The tradeoff is worth stating plainly, because the fix could have gone the
 other way. The requirement was only that the solver and Prowlarr share an
 exit IP; routing the solvers through the VPN too would satisfy it equally.
-Three things were measured on 2026-09-06 rather than assumed, because the
-assumptions were wrong:
+Three things were measured rather than assumed:
 
 - **VPN reputation is not the blocker here.** FlareSolverr solved
   `1337x.st` through the gluetun proxy in 12.6s, against 12.5s direct.
@@ -943,10 +968,9 @@ Diagnosing a failing indexer, in order:
 3. **Check for a 429.** Repeated testing rate-limits you, and Prowlarr
    reports that as a generic "Unable to connect to indexer". It resolves
    itself; retesting immediately does not help.
-4. **Consider that the site is simply dead.** Of 14 untested public
-   indexers surveyed on 2026-09-06, 10 passed; the 4 failures were sites
-   that no longer resolve or no longer serve. A failing indexer is not
-   automatically a stack problem.
+4. **Consider that the site is simply dead.** Some failing public indexers
+   no longer resolve or serve content. A failing indexer is not automatically
+   a stack problem.
 
 Mirror changes are no longer a special case. The old bypass list named
 hostnames, so switching 1337x from `1337x.to` to `1337x.st` failed to
@@ -1188,7 +1212,8 @@ Four hops, and each one is configured somewhere different:
    `qbittorrent_host = http://qbittorrent:8080`. There is no
    `qbittorrent_port` setting -- the host field is a full URL, because
    Mylar3 hands it straight to qbittorrent-api. Username and password are
-   empty on purpose: qBittorrent has `WebUI\AuthSubnetWhitelist=10.0.1.0/24`
+   empty on purpose: qBittorrent has `WebUI\AuthSubnetWhitelist` set to
+   `COMMON_EDGE_SUBNET`
    enabled and every app on `edge` falls inside it, which is the same
    reason Sonarr's client has no credentials either.
 3. **Mylar3 -> disk.** `destination_dir = /comics`, which is
@@ -1313,6 +1338,49 @@ Pictures/        -> Immich, as a read-only External Library
 `COMMON_DOWNLOADS` and `COMMON_COMPLETED` (also set in `.env`) are
 qBittorrent's active/completed folders, also mounted into Sonarr/
 Radarr/Lidarr/LazyLibrarian so they can import finished downloads.
+`COMMON_UPLOADS` is Copyparty's dedicated `uploads` share. ClamAV scans
+that share and `COMMON_COMPLETED`; admin writes elsewhere in the broader
+file manager are intentionally outside automatic scanning.
+
+### Malware scanning
+
+ClamAV complements Suricata: Suricata inspects network traffic, while
+ClamAV checks files after they land. `antivirus-exporter` waits two
+minutes for a file to settle, streams files up to 100 MiB to `clamd`, and
+rescans unchanged files every 30 days. Work is bounded to 25 files or
+50 seconds per cycle so a large initial backlog cannot make health metrics disappear.
+Known audio/video formats over
+that limit are ignored rather than consuming hours of I/O for little
+benefit; Prometheus warns about oversized archives, documents, and other
+unexpected file types so they do not disappear silently.
+
+Grafana provisions **Antivirus (ClamAV)** under the `mediastack` folder.
+It shows live engine/signature health, inventory progress, detections,
+errors, oversized files, throughput, and the operator commands below.
+
+Scanning is deliberately alert-only. A detection remains in place and
+keeps `AntivirusThreatDetected` firing until an operator reviews and
+removes it. The affected path and signature are in:
+
+```bash
+docker service logs mediastack_antivirus-exporter --since 1h
+```
+
+The scanner has read-only mounts and cannot delete or quarantine data.
+Use Copyparty's top-level `uploads` share for files that need automatic
+coverage. Scanner state lives under `${COMMON_CONFIG}/antivirus`; virus
+definitions live in the regenerable `clamav_db` volume.
+
+Force every eligible file back through ClamAV, or inspect progress:
+
+```bash
+scripts/antivirus-scan.sh full
+scripts/antivirus-scan.sh status
+```
+
+The force command clears scan freshness, restarts only the scanner, and
+then works through the queue in bounded batches. ClamAV and other media
+services remain online.
 
 **Keep all three on one filesystem.** The *arr apps import by hardlinking
 out of the download folder into the library, which only works within a
@@ -1379,21 +1447,20 @@ because it bind-mounts rather than running `ldconfig`. Compose does not
 drive that path the same way, which is why this uses the older reservation
 syntax.
 
-### Sizing, because 8 GB is the whole constraint
+### GPU sizing
 
-The card reports 7.6 GiB total and about 6.4 GiB actually free, since the
-desktop session holds roughly 1.1 GB. An 8B model at Q4_K_M occupies
-around 4.9 GB loaded, which leaves well under 2 GB for KV cache. Three
-settings keep that from falling over, and none of them are the default:
+Model weights, KV cache, desktop use, and concurrent transcodes all consume
+VRAM. Tune these `.env` values for the installed card:
 
 | Setting | Default | Why it is changed |
 | --- | --- | --- |
-| `OLLAMA_MAX_LOADED_MODELS=1` | several | A second model does not fit. |
-| `OLLAMA_NUM_PARALLEL=1` | 4 | Each slot gets its own KV cache. Four multiplies context memory by four and OOMs mid-generation. |
-| `OLLAMA_KEEP_ALIVE=5m` | 5m | Kept explicit: Plex transcodes on this same card, and a model idling in VRAM competes with NVENC. |
+| `OLLAMA_MAX_LOADED_MODELS` | `1` | Each resident model consumes VRAM. |
+| `OLLAMA_NUM_PARALLEL` | `1` | Each parallel slot gets its own KV cache. |
+| `OLLAMA_KEEP_ALIVE` | `5m` | Releases idle model memory for other GPU workloads. |
+| `OLLAMA_KV_CACHE_TYPE` | `q8_0` | Reduces long-context KV-cache memory with modest quality impact. |
 
 Models live on the array (`COMMON_APPDATA/ollama`), not in a named volume.
-They are multi-GB each and the OS SSD has under 80 GB free.
+They are large and can be restored by pulling them again.
 
 ### Ollama has no authentication
 
@@ -1413,9 +1480,9 @@ variables rather than its own settings UI, so they live in `.env`.
 Roles come from the `groups` claim, the same pattern Portainer uses.
 `OAUTH_ALLOWED_ROLES=Admin,Contributor,Family` decides who may sign in and
 `OAUTH_ADMIN_ROLES=Admin` decides who administers it. `Family` is included
-deliberately: this is open to the whole household. Everyone shares one
-8 GB card that Plex also transcodes on, and `MAX_LOADED_MODELS=1` means
-concurrent requests queue rather than run in parallel.
+deliberately so authenticated household users can use it. When Ollama
+shares a GPU with Plex, conservative model and parallelism limits keep
+concurrent work within available VRAM.
 
 ### Household visibility
 
@@ -1778,7 +1845,7 @@ From inside the LAN, hostnames resolve three different ways:
 
 | Hostname | Resolves to | Path taken |
 |---|---|---|
-| `<domain>` (apex) | `192.168.1.1` | the router itself, answering its own DDNS name |
+| `<domain>` (apex) | `${COMMON_LAN_ROUTER}` | the router itself, answering its own DDNS name |
 | `plex.<domain>` | the real WAN IP | out to the router, hairpinned straight back in |
 | everything else | Cloudflare addresses | out to Cloudflare, back through the tunnel |
 
@@ -1810,14 +1877,14 @@ network. Two tests that are genuinely external:
   non-standard port such as 32443 from outside.
 
 The tell is `ClientHost` in Traefik's access log. A private address such
-as `192.168.1.1` means the request came from inside, whatever hostname
+as `${COMMON_LAN_ROUTER}` means the request came from inside, whatever hostname
 it used; a genuine external client shows its own public address.
 
 ### Rate limiting keys on the client address, and why that is safe
 
 `ratelimit` uses the default source criterion, the client address, which
 is correct on both paths only because both entrypoints set
-`forwardedheaders.trustedips=10.0.0.0/8`. Traefik resolves the tunnel's
+`forwardedheaders.trustedips=COMMON_EDGE_SUBNET`. Traefik resolves the tunnel's
 `X-Forwarded-For` into the client address before any middleware runs;
 verified in the access log, where every tunnel request has `ClientHost`
 exactly equal to `Cf-Connecting-Ip`, including for distinct clients.
@@ -2152,8 +2219,8 @@ rebuild must set them again in its Settings page):
 
 | Setting | Value | Why |
 |---|---|---|
-| `AI_MODEL_PROVIDER` / `OLLAMA_SERVER_URL` / `OLLAMA_MODEL_NAME` | `OLLAMA`, `http://ollama:11434/api/generate`, `qwen3:4b` | Instant Playlist and playlist naming. Flask and worker sit on Ollama's private `ai` bridge. A 4B model leaves room on the shared 8 GB GPU |
-| `PER_SONG_MODEL_RELOAD` | `False` | Reloading every model per track is for cards under 8 GB |
+| `AI_MODEL_PROVIDER` / `OLLAMA_SERVER_URL` / `OLLAMA_MODEL_NAME` | `OLLAMA`, `http://ollama:11434/api/generate`, `qwen3:4b` | Instant Playlist and playlist naming. Flask and worker sit on Ollama's private `ai` bridge. Choose a model sized for available VRAM |
+| `PER_SONG_MODEL_RELOAD` | `False` | Avoids needless model reloads when models fit available VRAM |
 | `LYRICS_API_1_URL_TEMPLATE` | `https://lrclib.net/api/get` | Lyrics from LRCLIB (artist + title lookups); Whisper only transcribes what it does not know |
 | `API_TOKEN` | in `secrets/audiomuse-api-token.txt` | The token the Navidrome plugin sends |
 
@@ -2271,9 +2338,8 @@ the rest.
 import and rewrites every audio file, turning an artwork-only pass into a
 full library rewrite. Caught on a single test album whose mp3 mtimes
 changed during a run that was only supposed to index. Combined with
-`import.write: no`, the art pass cannot modify audio at all. Verified
-across 7,652 files with a size and mtime fingerprint taken before and
-after: zero changed.
+`import.write: no`, the art pass cannot modify audio at all. Verify with a
+size and mtime fingerprint before and after running it.
 
 **Run it as the app user, not root.** `docker exec` defaults to root, and
 a cover written that way lands as `-rw------- root:...`, which Navidrome
@@ -2375,7 +2441,7 @@ sharing another's network namespace has no identity of its own.
 Three things that cost time here:
 
 **No credentials are stored, deliberately.** qBittorrent's
-`WebUI\AuthSubnetWhitelist` is `10.0.1.0/24`, the edge overlay, so requests
+`WebUI\AuthSubnetWhitelist` is `COMMON_EDGE_SUBNET`, so requests
 from there are already authorised by source address. `FLOOD_OPTION_qbuser`
 and `qbpass` are still set because Flood's config schema requires the full
 triple; omitting them fails with an opaque `invalid_union` error naming
@@ -2407,10 +2473,9 @@ cloudflared tunnel route dns mediastack flood.yourdomain.com
 
 ## Transcoding
 
-UHD remuxes are enormous and almost all of it is video. A 109-minute
-2160p remux in this library measures 69 GB: 64 GB of 78 Mbps HEVC, 3.4 GB
-of TrueHD, and around 70 subtitle tracks. Re-encoding to HEVC at cq 28
-brings it to roughly 5 GB.
+UHD remuxes are large and mostly video. Re-encoding can save substantial
+space, but quality targets and retained audio/subtitle tracks should be
+chosen for each library.
 
 Two tools, for two different jobs.
 
@@ -2641,16 +2706,14 @@ the host's `tar`. Host tar runs as the invoking user and, combined with
 producing a tarball that looks complete and silently is not.
 
 Adding `COMMON_APPDATA` closed a gap that predated all of this: both
-scripts iterated named volumes only, so immich's ~270 MB of managed store
-and tdarr's config had never been backed up at all. ollama's subdirectory
-is the one thing skipped, being 12 GB of weights that come back with a
-single `ollama pull`.
+scripts iterated named volumes only, so Immich's managed store and Tdarr's
+config were omitted. Ollama's subdirectory is deliberately skipped because
+model weights come back with a single `ollama pull`.
 
 ### Removing the old volumes
 
-The migration deliberately left every original volume in place, roughly
-14 GB of duplicate config. They are the fallback, and deleting them is
-where the migration stops being reversible.
+The migration deliberately leaves every original volume in place. They are
+the fallback, and deleting them is where migration stops being reversible.
 
 `scripts/cleanup-migrated-volumes.sh` is that deletion, gated. The
 condition is **three successful off-site backup cycles since the
@@ -2813,9 +2876,8 @@ scripts/check-unit-paths.sh
 
 Media itself is intentionally not covered by either backup -- too
 large, and not ephemeral container state. Every unit file under
-`systemd/` has your real repo path baked in as `/home/youruser/...` --
-edit that to match your actual login user and install location before
-copying it in.
+`systemd/` uses `/home/youruser/...` as a placeholder. Replace it with
+the real install path before copying units.
 
 **A note on trusting a backup script:** a script that exits 0 isn't
 proof it backed up everything -- this project's own history includes a
@@ -2827,12 +2889,12 @@ the live one) rather than assuming success from a clean exit code.
 ### Recovering after a host reboot
 
 `docker-stack.yml` (Swarm) reconciles itself automatically once the
-daemon comes back. The two standalone compose files don't -- in
-particular, `qbittorrent`'s `network_mode: service:vpn-client` doesn't
-reliably survive a full daemon restart, so it can come back `Exited`
-even though `vpn-client` itself started fine.
-`systemd/mediastack-recovery.service` re-applies both standalone
-compose files (idempotent) once at boot to catch this:
+daemon comes back. Standalone Compose containers can remain `Exited`
+despite `restart: unless-stopped`. Dependencies such as qBittorrent's
+`network_mode: service:vpn-client` can otherwise remain exited after a
+host reboot. `systemd/mediastack-recovery.service` idempotently runs
+`scripts/deploy.sh recovery` once Docker starts. Set
+`COMMON_RECOVERY_COMPONENTS` to the standalone stacks this host runs:
 
 ```bash
 sudo cp systemd/mediastack-recovery.service /etc/systemd/system/
@@ -2859,7 +2921,9 @@ where Traefik/Authentik/the SSO gate itself is what's broken:
   companion `sshd` drop-in -- key-only auth, plus trusting Access's
   short-lived certificate authority.
 
-Neither depends on anything inside the Swarm stack.
+Neither depends on anything inside the Swarm stack. The organization-specific
+Cloudflare SSH CA public key must be installed from your own Access tenant and
+must not be committed as `cloudflared/access-ssh-ca.pub`.
 
 ## Organizarr -- one place for the settings that were painful to keep straight
 
@@ -2923,10 +2987,8 @@ picks the most specific matching application by hostname.
 | traefik `access.log` | 512 MB | the same script |
 
 The last two had no ceiling at all. Both are written straight to a volume
-by the app, and neither Traefik nor Suricata rotates its own. Measured
-over 48.9 hours they were growing at 3.67 GB/day and 0.17 GB/day, and
-`eve.json` had reached 7.1 GB. The only reason it had not filled the disk
-was that a redeploy truncates them.
+by the app, and neither Traefik nor Suricata rotates its own. Both can grow
+until they fill the disk unless the trim job enforces these ceilings.
 
 Two things fix it, and both are needed.
 
@@ -3182,18 +3244,16 @@ produced them and expires with it. Restoring last month's access logs
 tells you nothing useful about a host you have just rebuilt, and the
 compactor was deleting the oldest of them anyway.
 
-It was also the single largest thing in the backup at 7.8 GB, roughly
-60% of the off-site total. Oversized snapshots pushing past B2's cap is
+It can also become the largest item in an off-site backup. Oversized
+snapshots pushing past a provider cap are
 what silently broke that repo once before.
 
 ### Router logs are shipped, because the router cannot keep them
 
 The router's log lives in tmpfs -- `/opt/var/log/messages` is a symlink
-to `/tmp/syslog.log` -- so every reboot wipes it. That is exactly when it
-matters: after the 2026-09-02 reboot the network took 45 minutes to come
-back, and the boot sequence explaining why had already been flushed
-before anyone looked. It does not even survive a full day, because
-drop-packet logging (`fw_log_x`) writes a line every 5 to 20 seconds of
+to `/tmp/syslog.log` -- so every reboot wipes it, including the boot
+sequence needed to diagnose slow network recovery. It may not survive a
+full day because drop-packet logging (`fw_log_x`) writes frequent
 internet background scanning and pushes everything else out.
 
 `promtail` therefore listens for syslog on **1514/tcp**, published
@@ -3201,9 +3261,10 @@ internet background scanning and pushes everything else out.
 mesh, and the router ships to it. The receiving job is `router-syslog`
 in `promtail/promtail-config.yml`; query it in Grafana as `{job="router"}`.
 
-The router side is `router/syslog-ng-remote.conf`, kept in this repo
-because `/opt` and `/jffs` are covered by no backup here and a firmware
-update can discard them. Install and restart:
+The router side is rendered from
+`router/syslog-ng-remote.conf.template` using `COMMON_LAN_IP`. Run
+`scripts/deploy.sh configured` or `scripts/render-config.py` after exporting
+`.env`, then install the ignored generated file:
 
 ```bash
 scp router/syslog-ng-remote.conf <router>:/opt/etc/syslog-ng.d/remote
@@ -3753,8 +3814,8 @@ grep -hE "^      - alert:|severity:|summary:" prometheus/rules/*.yml
 | `AuthentikWatchdogStale` | warning | Authentik account watch has not run in over an hour |
 | **Media library** | | |
 | `MediaRootOwnedFiles` | warning | Root-owned files under <label> |
-| `MediaStorageCritical` | critical | Media storage below 75 GB free |
-| `MediaStorageFilling` | warning | Media storage below 250 GB free |
+| `MediaStorageCritical` | critical | Media storage below configured critical threshold |
+| `MediaStorageFilling` | warning | Media storage below configured warning threshold |
 | `MediaWatchdogFailed` | warning | Media watchdog could not complete its checks |
 | `MediaWatchdogStale` | warning | Media watchdog has not run in over 14 hours |
 | `PodcastEpisodesMissingDuration` | info | Episodes with no duration: <label> |
@@ -3778,8 +3839,8 @@ grep -hE "^      - alert:|severity:|summary:" prometheus/rules/*.yml
 | `ContainerRestartLoop` | warning | <label> is restarting repeatedly |
 | `HostMemoryPressure` | warning | Less than 10 percent memory available |
 | `PrometheusNotConnectedToAlertmanager` | critical | Prometheus cannot reach Alertmanager |
-| `SystemDiskCritical` | critical | System disk below 10 GB free |
-| `SystemDiskFilling` | warning | System disk below 25 GB free |
+| `SystemDiskCritical` | critical | System disk below configured critical threshold |
+| `SystemDiskFilling` | warning | System disk below configured warning threshold |
 | `TargetDown` | critical | <label> has been unreachable for 5 minutes |
 | `Watchdog` | none | Alerting pipeline is alive |
 | **Intrusion detection** | | |
@@ -3790,6 +3851,12 @@ grep -hE "^      - alert:|severity:|summary:" prometheus/rules/*.yml
 | `SuricataNotCapturing` | critical | Suricata is capturing no packets |
 | `SuricataRulesFailed` | warning | <label> Suricata rules failed to load |
 | `SuricataStale` | critical | Suricata is not emitting stats |
+| `AntivirusEngineDown` | critical | ClamAV is unavailable |
+| `AntivirusExporterDown` | critical | Antivirus scanner is unreachable |
+| `AntivirusFileScanErrors` | warning | Files could not be scanned |
+| `AntivirusOversizeFiles` | warning | Files exceed the automatic scan limit |
+| `AntivirusScanStale` | critical | Antivirus inventory scan is stale |
+| `AntivirusThreatDetected` | critical | Malware was detected in a scanned file |
 | **Image updates** | | |
 | `DiunStale` | warning | Diun has not completed a run in over 26 hours |
 | `DiunTrackingNothing` | warning | Diun completed a run but is tracking no images |
@@ -3871,12 +3938,12 @@ anywhere said the library was wrong.
 
 - A PinePods import that returns `500` and lands **zero** episodes, showing
   in the UI as a podcast that simply has nothing in it.
-- Six `.m4a` episodes imported with durations of `0` and no artwork,
+- `.m4a` episodes imported with durations of `0` and no artwork,
   because PinePods reads neither from MP4-container files.
-- 856 episode titles left stale for days after their files were retagged,
+- Episode titles left stale after their files were retagged,
   because an import only ever inserts *new* episodes and will never correct
   a row that already exists.
-- 1204 root-owned files under `Audiobooks`, from Audiobookshelf running as
+- Root-owned files under `Audiobooks`, from Audiobookshelf running as
   uid 0, found only because something else failed to write there.
 
 `scripts/media-watchdog.py` runs every 6 hours and compares what is on disk
@@ -3950,9 +4017,9 @@ AI_DIGEST_API_KEY_FILE=/path/to/key
 That is a config change, not a code change. Be aware it sends podcast names,
 alert text and hostnames to that provider, which the local default does not.
 
-The daily schedule is not arbitrary. `OLLAMA_MAX_LOADED_MODELS=1` on an 8 GB
-card means every digest run evicts whatever model Open WebUI had resident.
-Once a day is worth that; hourly would not be.
+The daily schedule is not arbitrary. With
+`OLLAMA_MAX_LOADED_MODELS=1`, every digest run can evict whatever model
+Open WebUI had resident. Once a day is worth that; hourly would not be.
 
 ### Installing the timers
 

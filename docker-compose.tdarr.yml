@@ -42,12 +42,11 @@ services:
       # One container, both roles. See the header.
       - internalNode=true
       - inContainer=true
-      - nodeName=media-node
-      # Turing has a hard cap on concurrent NVENC sessions and this card is
-      # already shared with Plex transcoding and Ollama. One worker means a
-      # library scan cannot starve a running stream.
+      - nodeName=${COMMON_TDARR_NODE_NAME}
+      # Keep concurrency conservative when Tdarr shares a GPU with Plex or
+      # Ollama; tune worker limits in Tdarr for the installed hardware.
       - NVIDIA_DRIVER_CAPABILITIES=all
-      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_VISIBLE_DEVICES=${COMMON_NVIDIA_VISIBLE_DEVICES}
     volumes:
       - ${COMMON_CONFIG}/tdarr/server:/app/server
       - ${COMMON_CONFIG}/tdarr/configs:/app/configs
@@ -68,7 +67,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: all
+              count: ${COMMON_NVIDIA_DEVICE_COUNT}
               capabilities: [gpu]
     networks:
       - edge

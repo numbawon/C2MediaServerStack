@@ -584,7 +584,7 @@
   {
    "type": "stat",
    "title": "Root-owned media files",
-   "description": "Anything running as uid 0 writing into a media tree. Audiobookshelf left 1204 such entries under Audiobooks that had to be chowned by hand.",
+   "description": "Anything running as uid 0 writing into a media tree. These files can block later writes by correctly configured services.",
    "gridPos": {
     "h": 5,
     "w": 8,

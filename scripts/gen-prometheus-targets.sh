@@ -65,9 +65,8 @@ cat > "$OUT/blackbox-open.json" <<JSON
 ]
 JSON
 
-# Pi-hole is the resolver containers should be using; the router is the
-# one that broke on 2026-08-27. Probing both says which is at fault.
-ROUTER="${COMMON_LAN_SUBNET%%/*}"; ROUTER="${ROUTER%.*}.1"
+# Probe both configured resolvers so a failure identifies which path broke.
+ROUTER="${COMMON_LAN_ROUTER}"
 # Origin certificate probe. One target is enough: Traefik serves the same
 # wildcard for every hostname, so this measures the cert all of them use.
 # The value is used as the `hostname` parameter (Host header + TLS SNI),

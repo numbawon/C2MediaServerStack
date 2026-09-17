@@ -29,7 +29,7 @@ filter f_not_scan_noise {
 
 destination d_promtail {
     syslog(
-        "192.168.1.10"
+        "${COMMON_LAN_IP}"
         transport("tcp")
         port(1514)
     );

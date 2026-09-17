@@ -47,14 +47,10 @@ services:
     container_name: ollama
     environment:
       - TZ=${COMMON_TZ}
-      # Models are multi-GB each and the OS SSD has under 80 GB free, so
-      # they go on the array with Immich's store rather than into a named
-      # volume under /var/lib/docker.
+      # Models are large, so keep them with managed application data rather
+      # than in an opaque named volume under /var/lib/docker.
       - OLLAMA_MODELS=/models
-      # This GPU has 8 GB. An 8B model at Q4 sits around 5.5 GB loaded,
-      # which leaves very little room, and Plex wants the same card for
-      # NVENC transcoding. These three settings are what stop the two
-      # from fighting:
+      # Tune these in .env for available VRAM and any GPU sharing with Plex.
       #
       #   MAX_LOADED_MODELS=1  a second model would not fit, and Ollama's
       #                        default is to keep several resident.
@@ -64,19 +60,12 @@ services:
       #   KEEP_ALIVE=5m        VRAM is released when idle, so a transcode
       #                        starting later is not competing with a
       #                        model nobody is talking to.
-      - OLLAMA_MAX_LOADED_MODELS=1
-      - OLLAMA_NUM_PARALLEL=1
-      - OLLAMA_KEEP_ALIVE=5m
-      # Hermes Agent refuses to start on a context below 64k, and at that
-      # size the KV cache is the larger half of the memory: an 8B model at
-      # Q4 is 4.9 GB, its 64k cache another 8 GB at full precision. Flash
-      # attention allows the cache to be quantised; q8_0 halves it to about
-      # 4 GB, which still spills some layers to the CPU on this card but
-      # keeps the answers intact. q4_0 would fit entirely in VRAM at a cost
-      # in quality. Both settings are global, and they only help the other
-      # models here.
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS}
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL}
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE}
+      # Flash attention allows a quantized KV cache for long-context agents.
       - OLLAMA_FLASH_ATTENTION=1
-      - OLLAMA_KV_CACHE_TYPE=q8_0
+      - OLLAMA_KV_CACHE_TYPE=${OLLAMA_KV_CACHE_TYPE}
     ports:
       # Loopback ONLY. This exists so host-side tooling (the foundry-delegate
       # skill) can reach the OpenAI-compatible API at /v1, and that skill
@@ -91,7 +80,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: all
+              count: ${COMMON_NVIDIA_DEVICE_COUNT}
               capabilities: [gpu]
     networks:
       - ai
@@ -117,8 +106,8 @@ services:
   # works identically on a phone.
   #
   # CPU image on purpose. Kokoro is 82M parameters and fast enough on this
-  # box, while the GPU has 8 GB shared with Ollama models up to 5.2 GB --
-  # a 1-2 GB TTS model resident there would cause evictions for no gain.
+  # host, while a GPU TTS model can evict an active Ollama model for little
+  # practical gain.
   #
   # On the `ai` bridge only, same reasoning as Ollama: an unauthenticated
   # inference API that exactly one container needs to reach. No Traefik

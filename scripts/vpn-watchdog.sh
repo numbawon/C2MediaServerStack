@@ -15,7 +15,7 @@
 # its own UI. Nothing else notices, because the container is up, the mount
 # is fine and there is no error in any log.
 #
-# Observed: exit IP moved 192.0.2.10 -> 192.0.2.11 and downloads
+# Observed: exit IP changed unexpectedly and downloads
 # stopped silently. A restart of qbittorrent fixed it instantly, going
 # from "firewalled / 0 DHT nodes" to "connected / 292 nodes / 18 MB/s".
 #

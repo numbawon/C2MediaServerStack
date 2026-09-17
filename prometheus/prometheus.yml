@@ -88,7 +88,7 @@ scrape_configs:
       - target_label: __address__
         replacement: blackbox-exporter:9115
 
-  # DNS health, A and AAAA split apart. The 2026-08-27 outage was AAAA
+  # DNS health, A and AAAA split apart. A prior outage affected AAAA
   # SERVFAILing at the router while A resolved fine; separating them
   # names the fault directly instead of surfacing it as an unrelated
   # service failure several layers downstream.
@@ -174,3 +174,7 @@ scrape_configs:
   - job_name: crowdsec
     static_configs:
       - targets: ["crowdsec:6060"]
+
+  - job_name: antivirus
+    static_configs:
+      - targets: ["antivirus-exporter:9102"]

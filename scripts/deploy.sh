@@ -12,6 +12,8 @@
 #   ./scripts/deploy.sh audiomuse   # docker compose -f docker-compose.audiomuse.yml up -d (AudioMuse-AI)
 #   ./scripts/deploy.sh ids         # docker compose -f docker-compose.ids.yml up -d (Suricata + CrowdSec)
 #   ./scripts/deploy.sh i2p         # docker compose -f docker-compose.i2p.yml up -d (I2P router)
+#   ./scripts/deploy.sh configured  # deploy COMMON_DEPLOYMENT_COMPONENTS in order
+#   ./scripts/deploy.sh recovery    # deploy COMMON_RECOVERY_COMPONENTS in order
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -19,8 +21,14 @@ set -a
 source .env
 set +a
 
-case "${1:-}" in
+python3 scripts/validate-env.py
+
+# Materialize deployment-specific configs kept out of Git. Safe and
+# idempotent; templates are the source of truth.
+deploy_component() {
+case "$1" in
   stack)
+    python3 scripts/render-config.py
     docker build --quiet \
       --tag c2mediaserverstack/pinepods:nightly20260911-upstream-09c3dcd \
       --file pinepods/Dockerfile pinepods >/dev/null
@@ -54,7 +62,28 @@ case "${1:-}" in
     docker compose -f docker-compose.i2p.yml up -d
     ;;
   *)
-    echo "Usage: $0 {stack|download|plex|dns|ai|tdarr|audiomuse|hermes|ids|i2p}" >&2
+    echo "Unknown deployment component: $1" >&2
+    exit 1
+    ;;
+esac
+}
+
+case "${1:-}" in
+  configured)
+    for component in ${COMMON_DEPLOYMENT_COMPONENTS:-stack}; do
+      deploy_component "$component"
+    done
+    ;;
+  recovery)
+    for component in ${COMMON_RECOVERY_COMPONENTS-dns download plex ids}; do
+      deploy_component "$component"
+    done
+    ;;
+  stack|download|plex|dns|ai|tdarr|audiomuse|hermes|ids|i2p)
+    deploy_component "$1"
+    ;;
+  *)
+    echo "Usage: $0 {configured|recovery|stack|download|plex|dns|ai|tdarr|audiomuse|hermes|ids|i2p}" >&2
     exit 1
     ;;
 esac

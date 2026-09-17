@@ -41,7 +41,7 @@ scrape_configs:
   #
   # The router keeps its log in tmpfs (/opt/var/log/messages is a symlink
   # to /tmp/syslog.log), so every reboot wipes it -- precisely when the
-  # contents matter most. After the 2026-09-02 reboot the network took 45
+  # contents matter most. After a slow reboot recovery, the network took
   # minutes to come back and the boot sequence explaining why had already
   # been flushed before anyone looked.
   #

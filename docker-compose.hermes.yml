@@ -9,11 +9,9 @@
 # where the image confines its writes (HERMES_WRITE_SAFE_ROOT=/opt/data).
 # No Docker socket, no host paths, no media. Widen this only on purpose.
 #
-# The model is `hermes3-64k`, created in Ollama from the hermes3:8b that
-# was already pulled, with num_ctx raised to 65536: Hermes refuses to
-# start under 64k for tool use, and Ollama's default is 2048. See the
-# KV-cache note in docker-compose.ai.yml for why that context does not
-# fit this 8 GB card on its own.
+# The model is `hermes3-64k`, created in Ollama with num_ctx raised to
+# 65536: Hermes refuses to start under 64k for tool use. Size Ollama's
+# KV-cache settings for the installed GPU.
 #
 #   scripts/deploy.sh hermes
 #   docker exec -it hermes hermes          # the terminal UI
@@ -39,8 +37,8 @@ services:
       # The image remaps its internal user to these and chowns /opt/data,
       # so files land owned by the host user rather than root. Starting it
       # with `--user` instead is rejected by its own entrypoint.
-      - HERMES_UID=1000
-      - HERMES_GID=1000
+      - HERMES_UID=${COMMON_PUID}
+      - HERMES_GID=${COMMON_PGID}
       - HERMES_DASHBOARD=1
       # Local inference is slow compared with a hosted API: a 64k prompt
       # can take minutes to process before the first token.
@@ -63,8 +61,8 @@ services:
       - chat
     # Bounded so an agent loop cannot starve Tdarr's encoding or
     # AudioMuse's analysis, which share this machine.
-    cpus: 6
-    mem_limit: 12g
+    cpus: ${HERMES_CPUS}
+    mem_limit: ${HERMES_MEMORY}
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]

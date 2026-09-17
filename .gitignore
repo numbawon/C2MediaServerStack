@@ -6,6 +6,7 @@
 # your own values (see README's Setup order).
 cloudflared/config.yml
 cloudflared/emergency-config.yml
+cloudflared/access-ssh-ca.pub
 homer/config.yml
 
 # Local file-based secrets for the standalone compose stacks
@@ -31,6 +32,12 @@ backups/
 # and LAN IP. Prometheus does no env substitution, so these cannot be
 # templated inline. Regenerate rather than commit.
 prometheus/targets/*.json
+
+# Generated from tracked templates by scripts/render-config.py. These contain
+# deployment-specific addresses and paths; edit the template or .env instead.
+crowdsec/whitelist.yaml
+prometheus/rules/alerts.yml
+router/syslog-ng-remote.conf
 
 # Python bytecode
 __pycache__/

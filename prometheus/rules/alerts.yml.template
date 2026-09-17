@@ -66,79 +66,57 @@ groups:
 
   - name: host
     rules:
-      # All disk thresholds are ABSOLUTE, not percentages. A percentage
-      # is meaningless across drives this different in size: 10% of the
-      # 10 TiB Downloads array is a terabyte of headroom, while 10% of
-      # the 450 GB system disk is 45 GB. What actually matters is
-      # "is there room for the next thing that needs to be written".
+      # Disk thresholds are absolute, not percentages: required write
+      # headroom depends on workload rather than filesystem size. Values
+      # and media mountpoint are rendered from .env.
 
-      # System disk (/dev/sdd2). Filling this stops Docker, Postgres,
-      # and every config volume at once, so it is the most severe of the
-      # three even though it is the smallest.
+      # Filling the system disk stops Docker, databases, and config writes.
       - alert: SystemDiskFilling
-        expr: node_filesystem_avail_bytes{mountpoint="/"} < 25e9
+        expr: node_filesystem_avail_bytes{mountpoint="/"} < ${PROM_SYSTEM_WARN_FREE_BYTES}
         for: 30m
         labels:
           severity: warning
         annotations:
-          summary: "System disk below 25 GB free"
+          summary: "System disk below configured warning threshold"
           description: >-
             Docker images, container logs, and the Postgres data
             directory all live on the root filesystem.
 
       - alert: SystemDiskCritical
-        expr: node_filesystem_avail_bytes{mountpoint="/"} < 10e9
+        expr: node_filesystem_avail_bytes{mountpoint="/"} < ${PROM_SYSTEM_CRIT_FREE_BYTES}
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "System disk below 10 GB free"
+          summary: "System disk below configured critical threshold"
           description: >-
             Postgres and Docker will start failing writes shortly.
 
-      # The array (/mnt/Media, btrfs across sda/sdb/sdc, 10.9 TiB).
-      # Library, downloads and completed all share this one filesystem
-      # so imports can hardlink, which also means there is exactly one
-      # number to watch instead of two. Thresholds are sized against a
-      # single large release: a 4K film runs 60-80 GB, so 250 GB is
-      # "a few more grabs left" and 75 GB is "the next one probably
-      # fails mid-import".
-      #
-      # There is deliberately no separate "downloads not clearing"
-      # alert any more. That used to be inferable because downloads had
-      # their own filesystem; now a stalled import queue just looks like
-      # the array filling, and the *arr queues are where you would look
-      # either way.
+      # Media, downloads, and completed should share one filesystem so
+      # imports can hardlink. Watch that filesystem's available bytes.
       - alert: MediaStorageFilling
-        expr: node_filesystem_avail_bytes{mountpoint="/mnt/Media"} < 250e9
+        expr: node_filesystem_avail_bytes{mountpoint="${COMMON_MEDIA}"} < ${PROM_MEDIA_WARN_FREE_BYTES}
         for: 1h
         labels:
           severity: warning
         annotations:
-          summary: "Media storage below 250 GB free"
+          summary: "Media storage below configured warning threshold"
           description: >-
-            /mnt/Media is filling up. The *arr apps will keep grabbing
+            ${COMMON_MEDIA} is filling up. The *arr apps will keep grabbing
             until it is full and then start failing imports. Check the
             import queues too, not just disk usage.
 
       - alert: MediaStorageCritical
-        expr: node_filesystem_avail_bytes{mountpoint="/mnt/Media"} < 75e9
+        expr: node_filesystem_avail_bytes{mountpoint="${COMMON_MEDIA}"} < ${PROM_MEDIA_CRIT_FREE_BYTES}
         for: 15m
         labels:
           severity: critical
         annotations:
-          summary: "Media storage below 75 GB free"
+          summary: "Media storage below configured critical threshold"
           description: >-
-            /mnt/Media has no room for another large release. Imports
+            ${COMMON_MEDIA} has no room for another large release. Imports
             will fail and partially-moved files can be left behind.
 
-      # The array is btrfs -d single -m raid1: metadata is mirrored, but
-      # file data is not, so losing one disk loses whatever extents were
-      # allocated on it rather than the whole filesystem. btrfs records
-      # per-device read/write/flush/corruption counters and keeps serving
-      # reads regardless, so this is silent until something goes to read
-      # a file that is already gone.
-      #
       # increase() rather than > 0 because these counters never reset
       # short of `btrfs device stats -z`, so a bare threshold would latch
       # on forever after a single historical blip.
@@ -151,9 +129,8 @@ groups:
           summary: "btrfs {{ $labels.type }} errors on {{ $labels.device }}"
           description: >-
             The array logged new {{ $labels.type }} errors on
-            {{ $labels.device }}. Run `btrfs device stats /mnt/Media` and
-            check SMART. Data is -d single, so a failing disk takes its
-            share of the files with it.
+            {{ $labels.device }}. Run
+            `btrfs device stats ${COMMON_MEDIA}` and check SMART.
 
       - alert: HostMemoryPressure
         expr: >-
@@ -290,7 +267,7 @@ groups:
 
   - name: external
     rules:
-      # The alerts that would have caught the 2026-08-27 outage. Every
+      # These alerts catch failures outside the internal network. Every
       # other check in this file runs on the internal network, on the
       # server side of the tunnel, and all of them reported healthy for
       # the entire time nothing was reachable from outside.
@@ -759,8 +736,7 @@ groups:
             correct these; the rows have to be updated directly.
 
       - alert: MediaRootOwnedFiles
-        # Audiobookshelf running as uid 0 left 1204 root-owned entries
-        # under /mnt/Media/Audiobooks that had to be chowned by hand.
+        # Detects containers accidentally writing media as root.
         expr: mediastack_media_root_owned_files > 0
         for: 1h
         labels:

@@ -7,6 +7,7 @@ whitelist:
   reason: "local networks and container infrastructure"
   cidr:
     - 127.0.0.0/8
-    - 10.0.0.0/8          # swarm overlay, incl. cloudflared and traefik
-    - 172.16.0.0/12       # docker bridges
-    - 192.168.1.0/24     # your LAN -- change to match yours
+    - ${COMMON_EDGE_SUBNET}
+    - ${COMMON_INTERNAL_SUBNET}
+    - ${COMMON_DOCKER_GWBRIDGE_SUBNET}
+    - ${COMMON_LAN_SUBNET}

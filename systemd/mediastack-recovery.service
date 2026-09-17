@@ -1,4 +1,5 @@
-# Recovers the two standalone (non-swarm) compose stacks after a host
+# Recovers standalone (non-swarm) compose stacks that need explicit
+# reconciliation after a host
 # reboot. The Swarm stack (docker-stack.yml) doesn't need this -- Swarm's
 # manager reconciles service state on its own once the daemon comes back.
 #
@@ -7,8 +8,9 @@
 # `network_mode: service:vpn-client`, which does NOT reliably reattach to
 # vpn-client's network namespace across a full daemon restart -- qbittorrent
 # comes back Exited and Compose's `restart: unless-stopped` policy doesn't
-# retry it. `docker compose up -d` is idempotent, so re-running it here is
-# a safe, cheap fix regardless of whether anything actually needed it.
+# retry it. Suricata has shown the same failure mode after a clean host
+# reboot. `docker compose up -d` is idempotent, so re-running these stacks
+# here is a safe, cheap fix regardless of whether anything actually needed it.
 #
 # Replace youruser (below) with your actual repo path before installing.
 #
@@ -25,11 +27,8 @@ Requires=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=/home/youruser/C2MediaServerStack
-# DNS first: everything else resolves through it, and Swarm has no
-# ordering primitive to express that.
-ExecStart=/home/youruser/C2MediaServerStack/scripts/deploy.sh dns
-ExecStart=/home/youruser/C2MediaServerStack/scripts/deploy.sh download
-ExecStart=/home/youruser/C2MediaServerStack/scripts/deploy.sh plex
+# Order comes from COMMON_RECOVERY_COMPONENTS; put DNS first when enabled.
+ExecStart=/home/youruser/C2MediaServerStack/scripts/deploy.sh recovery
 
 [Install]
 WantedBy=multi-user.target

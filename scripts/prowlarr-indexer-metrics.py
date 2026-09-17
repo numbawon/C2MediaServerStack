@@ -5,7 +5,7 @@ WHY THIS REPLACES THE SYNTHETIC PROBE AS THE PRIMARY SIGNAL
 
 This replaced scripts/solver-probe.py, which asked both Cloudflare solvers
 for the same URLs and compared them. That probe was deleted along with
-FlareSolverr on 2026-09-06. It was a fair comparison and it measured the
+FlareSolverr before removal. It was a fair comparison and measured the
 wrong thing three ways:
 
   - It fetches homepages. Prowlarr fetches SEARCH pages with parameters and
@@ -78,7 +78,7 @@ def main():
     # once: FlareSolverr's tag was `flare` while its proxy was named
     # "FlareSolverr", so matching on display names attributed those indexers
     # to "none" and the numbers read as though nothing used it. FlareSolverr
-    # was removed on 2026-09-06, but the old tags stay mapped so history
+    # was removed, but the old tags stay mapped so history
     # from before then still attributes correctly rather than vanishing
     # into "none".
     solver_aliases = {"byparr": "byparr", "flare": "flaresolverr",

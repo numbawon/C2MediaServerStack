@@ -108,7 +108,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: all
+              count: ${COMMON_NVIDIA_DEVICE_COUNT}
               capabilities: [gpu]
     networks:
       - music
@@ -139,7 +139,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: all
+              count: ${COMMON_NVIDIA_DEVICE_COUNT}
               capabilities: [gpu]
     networks:
       - music

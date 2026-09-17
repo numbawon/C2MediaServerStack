@@ -19,9 +19,9 @@ Type=oneshot
 WorkingDirectory=/home/youruser/C2MediaServerStack
 # The API key is read from Lidarr's own config at run time rather than
 # duplicated into a unit file or an env file that would then drift.
-ExecStart=/bin/sh -c 'exec /usr/bin/docker run --rm --network edge -u 1000:1000 \
+ExecStart=/bin/sh -c '. /home/youruser/C2MediaServerStack/.env; exec /usr/bin/docker run --rm --network edge -u "$$COMMON_PUID:$$COMMON_PGID" \
   -v /home/youruser/C2MediaServerStack/scripts:/s:ro \
-  -v /mnt/Media/Music:/music \
-  -e LIDARR_API_KEY="$(grep -o "<ApiKey>[^<]*" /home/youruser/C2MediaServerStack/.appdata/lidarr/config.xml | cut -c9-)" \
+  -v "$$COMMON_MEDIA/Music:/music" \
+  -e LIDARR_API_KEY="$$(grep -o "<ApiKey>[^<]*" "$$COMMON_CONFIG/lidarr/config.xml" | cut -c9-)" \
   python:3.12-alpine python /s/lidarr-file-categories.py --apply --quiet'
 TimeoutStartSec=2h

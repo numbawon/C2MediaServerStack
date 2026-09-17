@@ -22,6 +22,7 @@ set -a
 source .env
 set +a
 
+status=0
 REAL_USER="${USER:-$(id -un)}"
 
 # e.g. 10.9.8.0/24 -> prefix 10.9.8, router 10.9.8.1
@@ -69,9 +70,12 @@ check_pair() {
     echo "DRIFT: $example is out of sync with $real"
     echo "$diff_out"
     echo
+    status=1
   fi
 }
 
 check_pair cloudflared/config.yml           cloudflared/config.yml.example
 check_pair cloudflared/emergency-config.yml cloudflared/emergency-config.yml.example
 check_pair homer/config.yml                 homer/config.yml.example
+
+exit "$status"

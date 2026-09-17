@@ -77,16 +77,16 @@ services:
 
       # gluetun's firewall drops everything not explicitly allowed. These
       # three subnets are the ones that must bypass the tunnel:
-      #   10.0.1.0/24    the `edge` overlay -- how Traefik reaches the four
+      #   COMMON_EDGE_SUBNET    the `edge` overlay -- how Traefik reaches the four
       #                  web UIs sharing this namespace. Without it their
       #                  replies get routed into the tunnel and every app
       #                  behind this container goes dark.
-      #   172.20.0.0/16  docker_gwbridge, this container's actual path off
+      #   COMMON_DOCKER_GWBRIDGE_SUBNET  docker_gwbridge, this container's path off
       #                  the host (the old image needed a hand-written
       #                  iptables script in ./vpn-init for exactly this;
       #                  gluetun makes it a setting, so that script is gone).
       #   the LAN        so LAN clients can use the HTTP proxy below.
-      - FIREWALL_OUTBOUND_SUBNETS=10.0.1.0/24,172.20.0.0/16,${COMMON_LAN_SUBNET}
+      - FIREWALL_OUTBOUND_SUBNETS=${COMMON_EDGE_SUBNET},${COMMON_DOCKER_GWBRIDGE_SUBNET},${COMMON_LAN_SUBNET}
       # Inbound on the default interface: the HTTP proxy, plus qBittorrent's
       # web UI. 8989/7878/5299 were here for Sonarr/Radarr/LazyLibrarian
       # back when they shared this namespace; they are swarm services now

@@ -21,7 +21,7 @@ hardcoding addresses, so a node that changes DHCP lease is still found.
 
 RUNS AS A USER, NOT ROOT
 
-Unlike the other timers here, this one needs User=youruser in its unit: the
+Unlike the other timers here, this one needs the deploying user in its unit: the
 SSH key is in that user's ~/.ssh and root would not find it. That user is in
 the docker group, so writing the metrics still works.
 

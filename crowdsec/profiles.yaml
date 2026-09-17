@@ -5,7 +5,7 @@
 # longer knows, and because the plugin fails CLOSED on an auth failure,
 # every request to every site returns 403. Benign traffic included.
 #
-# This was done on 2026-09-09 while clearing four registrations that
+# This was done while clearing stale registrations that
 # looked stale, and it took the whole site down for several minutes --
 # the second time this exact mistake has been made here. What made it
 # convincing was that blocking kept working with zero registrations,
@@ -14,7 +14,7 @@
 #
 # Recovery, if it happens again: read the key out of Traefik's own secret
 # and hand it straight back. Check dynamic.yml for the current secret
-# name -- it is versioned, and was rotated to _v2 on 2026-09-09.
+# name -- it is versioned and can be rotated without editing this file.
 #   docker exec <traefik> cat /run/secrets/crowdsec_bouncer_key_v2
 #   docker exec <crowdsec> cscli bouncers add traefik-bouncer-vN --key <that>
 #
@@ -35,7 +35,7 @@
 # never used, which looks identical to working right up until the first
 # real attack produces silence.
 #
-# ESCALATION, added 2026-09-09. Previously every ban was a flat 4h, so a
+# ESCALATION. A flat ban duration lets a
 # host probing for CVEs for the tenth time got exactly what a single
 # mistyped login got. Profiles are evaluated top to bottom and the first
 # match with `on_success: break` wins, so the specific cases have to come

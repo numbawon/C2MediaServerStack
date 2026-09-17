@@ -57,7 +57,7 @@ http:
         period: 1s
         # Left at the default (bucket per client address), which is
         # correct here ONLY because both entrypoints set
-        # forwardedheaders.trustedips=10.0.0.0/8: Traefik resolves the
+        # forwardedheaders.trustedips=COMMON_EDGE_SUBNET: Traefik resolves the
         # tunnel's X-Forwarded-For into the client address before any
         # middleware sees it. Verified in the access log -- on every
         # tunnel request ClientHost equals Cf-Connecting-Ip exactly,
@@ -122,10 +122,10 @@ http:
           # Trust the tunnel's forwarded client IP, or every ban would be
           # evaluated against cloudflared's address instead of the attacker.
           forwardedHeadersTrustedIPs:
-            - 10.0.0.0/8
+            - {{ env "COMMON_EDGE_SUBNET" }}
           # clientTrustedIPs are never blocked, and it must NOT contain the
           # overlay: every external request reaches Traefik from cloudflared
-          # at 10.0.1.x, so trusting 10.0.0.0/8 here silently exempts the
+          # on the edge overlay, so trusting that subnet here silently exempts the
           # entire internet and the bouncer blocks nothing. Only the LAN
           # belongs here. The overlay stays in forwardedHeadersTrustedIPs
           # above, which is a different thing: it decides whose
@@ -139,7 +139,7 @@ http:
           # above: those ask whether an IP misbehaves over time, this asks
           # whether one request is an attack.
           #
-          # FailureBlock is ON as of 2026-09-09, after a detect-only trial.
+          # FailureBlock is ON after a detect-only trial.
           # The trial is what justifies it: 106 alerts recorded, 36 distinct
           # external sources across Google Cloud, Oracle and Cloudflare WARP,
           # and NOT ONE from a real user. The only two internal-looking
@@ -180,7 +180,7 @@ http:
     # included, and looks the user up by name with no password. Its /rest
     # router has no forward-auth to overwrite the header, so before this a
     # request from the internet carrying `X-authentik-username: <user>` was
-    # signed in as that user. Verified 2026-09-13 with a nonexistent name:
+    # signed in as that user. Verified with a nonexistent name:
     # Navidrome logged auth=reverse-proxy. An empty value deletes the header.
     strip-authentik-identity:
       headers:
@@ -364,7 +364,7 @@ http:
     terminal:
       loadBalancer:
         servers:
-          - url: "http://172.20.0.1:7681"
+          - url: 'http://{{ env "COMMON_DOCKER_GWBRIDGE_GATEWAY" }}:7681'
 
     # qbittorrent/sonarr/radarr/lazylibrarian all share vpn-client's
     # network namespace (see docker-compose.download.yml), but each has
@@ -380,7 +380,7 @@ http:
           # :8053, not :80 -- Traefik publishes the host's 80/443 itself
           # now, so FTL's admin webserver was moved off them. See
           # FTLCONF_webserver_port in docker-compose.dns.yml.
-          - url: "http://172.20.0.1:8053"
+          - url: 'http://{{ env "COMMON_DOCKER_GWBRIDGE_GATEWAY" }}:8053'
 
     qbittorrent:
       loadBalancer:

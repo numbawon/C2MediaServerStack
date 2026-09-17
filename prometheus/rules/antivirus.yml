@@ -1,0 +1,62 @@
+groups:
+  - name: antivirus
+    rules:
+      - alert: AntivirusExporterDown
+        expr: up{job="antivirus"} == 0 or absent(up{job="antivirus"})
+        for: 10m
+        labels:
+          severity: critical
+          service: antivirus
+        annotations:
+          summary: "Antivirus scanner is unreachable"
+          description: "Prometheus has received no scanner metrics for 10 minutes."
+
+      - alert: AntivirusEngineDown
+        expr: antivirus_up == 0
+        for: 10m
+        labels:
+          severity: critical
+          service: antivirus
+        annotations:
+          summary: "ClamAV is unavailable"
+          description: "The scanner cannot reach clamd, so new files are not being checked."
+
+      - alert: AntivirusScanStale
+        expr: time() - antivirus_last_scan_timestamp_seconds > 900
+        for: 5m
+        labels:
+          severity: critical
+          service: antivirus
+        annotations:
+          summary: "Antivirus inventory scan is stale"
+          description: "No completed scan cycle has been recorded for over 15 minutes."
+
+      - alert: AntivirusThreatDetected
+        expr: antivirus_files_infected > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: antivirus
+        annotations:
+          summary: "{{ $value }} file(s) failed malware scanning"
+          description: "Alert-only mode leaves files in place. Check antivirus-exporter logs for paths and signatures, then isolate them manually."
+
+      - alert: AntivirusFileScanErrors
+        expr: antivirus_files_error + antivirus_inventory_errors > 0
+        for: 15m
+        labels:
+          severity: warning
+          service: antivirus
+        annotations:
+          summary: "{{ $value }} file(s) could not be scanned"
+          description: "Coverage is incomplete. Check antivirus-exporter logs for file or scan-root errors."
+
+      - alert: AntivirusOversizeFiles
+        expr: antivirus_files_skipped_oversize > 0
+        for: 1h
+        labels:
+          severity: warning
+          service: antivirus
+        annotations:
+          summary: "{{ $value }} file(s) exceed the antivirus scan limit"
+          description: "Files over 100 MiB are intentionally not streamed to clamd. Review whether they are expected media or require a manual scan."

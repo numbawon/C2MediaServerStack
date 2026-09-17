@@ -6,7 +6,7 @@
 # 1. Real client IPs. As a Swarm service with port 53 published mode=host,
 #    every query still crossed Docker's NAT on the way into the container
 #    and arrived with its source rewritten to the docker_gwbridge gateway
-#    (172.20.0.1). Pi-hole saw the entire LAN as a single client, so
+#    (COMMON_DOCKER_GWBRIDGE_GATEWAY). Pi-hole saw the LAN as one client, so
 #    per-client stats, groups and blocking were all useless.
 #    network_mode: host removes that hop entirely.
 #
@@ -41,7 +41,7 @@ services:
     logging: *logging
     image: pihole/pihole:latest
     container_name: pihole
-    hostname: pihole
+    hostname: ${COMMON_PIHOLE_HOSTNAME}
     # Shares the host's network stack: binds :53 and :8053 directly, sees
     # real LAN source addresses. No `ports:` key -- publishing is
     # meaningless (and rejected) under host networking.
