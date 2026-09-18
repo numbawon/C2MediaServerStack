@@ -120,7 +120,7 @@ never needs membership in the narrower groups.
 | --- | --- | --- |
 | Infrastructure | `Admin` | Portainer, Traefik dashboard, web terminal, Pi-hole, Organizarr, Cleanuparr* |
 | Media management | `Admin`, `Contributor` | Prowlarr, Sonarr, Radarr, Lidarr, LazyLibrarian, Bazarr, qBittorrent |
-| Monitoring | `Admin`, `Metrics` | Grafana, Prometheus, Tautulli |
+| Monitoring | `Admin`, `Metrics` | Grafana, Prometheus, Tautulli, Scrutiny |
 | Household | none (domain-level) | Seerr, Navidrome, Homer, files, browse |
 | Family requests | `Admin`, `Contributor`, `Family` | Ombi (music requests) |
 | Not forward-auth gated | see below | Plex, Audiobookshelf, Immich, PinePods, Open WebUI, Cleanuparr, ntfy |
@@ -567,7 +567,8 @@ COMMON_RECOVERY_COMPONENTS="home"
 read-only, and only configured devices. An NVMe controller path such as
 `/dev/nvme0` also adds `SYS_ADMIN`; SATA/SAS disks do not. It never receives
 `privileged: true` or all of `/dev`. Its UI is
-`scrutiny.<domain>` behind an Admin-bound Authentik proxy provider.
+`scrutiny.<domain>` behind an Admin- and Metrics-bound Authentik proxy
+provider, same tier as Grafana/Prometheus/Tautulli.
 
 Home Assistant Container uses host networking so Zeroconf/mDNS reaches LAN
 devices. It receives no host devices and no privileged mode for OpenEVSE.
@@ -587,8 +588,23 @@ temperatures, faults, charge-rate control, and pause/resume. Add energy
 sensor to Home Assistant's Energy dashboard. No cloud account is required.
 
 Create explicit Cloudflare tunnel DNS routes for `home.<domain>` and
-`scrutiny.<domain>`. Create only Scrutiny's Authentik application/provider;
-Home Assistant deliberately has none.
+`scrutiny.<domain>`.
+
+Home Assistant still carries no forward-auth gate, for the reason above,
+but can optionally offer Authentik SSO as a native login option instead:
+an OAuth2/OIDC application (`Home Assistant OIDC`, no group binding of
+its own) plus the community `hass-oidc-auth` custom component (HACS),
+not a Traefik change. That component maps its own `roles.admin`/
+`roles.user` config to the `Admin`/`Family` Authentik groups; anyone
+outside both gets rejected at login (`user_not_in_group`), which is what
+actually limits who can SSO in, since the Authentik application itself is
+unbound. The component only has two roles, admin and full-control user;
+there is no automatic mapping to Home Assistant's built-in read-only
+group. A `Family` login lands as a full-control user on first sign-in --
+demote each one afterward under **Settings -> People -> Users** to the
+`Read Only` group by hand. Home Assistant only applies the mapped role at
+account creation, never on later logins, so that demotion is a one-time
+step per person, not a recurring chore.
 
 ## Before you start
 
