@@ -31,6 +31,24 @@ x-logging: &logging
     max-size: "10m"
     max-file: "3"
 
+# Green phosphor CRT palette, shared by the three zork-N terminals and (as
+# CSS custom properties) zork/landing/index.html so the terminal a link
+# leads to actually matches the page it left. No fontFamily override here
+# on purpose -- see the terminal service's own note in traefik/dynamic/
+# dynamic.yml and systemd/ttyd.service: a client without a pinned custom
+# font degrades xterm.js's cell-metrics measurement to a 0-size grid, i.e.
+# a blank screen that still silently accepts keystrokes. Leaving font
+# alone and only overriding color keeps that failure mode off the table.
+x-zork-theme: &zork-theme >-
+  theme={"background":"#0b0f0c","foreground":"#4ee88a","cursor":"#b8ffcf",
+  "cursorAccent":"#0b0f0c","selectionBackground":"#1e5c3a",
+  "selectionForeground":"#b8ffcf","black":"#0b0f0c","red":"#2b7a4e",
+  "green":"#4ee88a","yellow":"#6fffb0","blue":"#2b7a4e","magenta":"#4ee88a",
+  "cyan":"#4ee88a","white":"#b8ffcf","brightBlack":"#2b7a4e",
+  "brightRed":"#6fffb0","brightGreen":"#b8ffcf","brightYellow":"#e8fff0",
+  "brightBlue":"#6fffb0","brightMagenta":"#b8ffcf","brightCyan":"#b8ffcf",
+  "brightWhite":"#e8fff0"}
+
 networks:
   # Created once by scripts/bootstrap.sh (`docker network create --driver
   # overlay --attachable edge`) rather than inline here, so the standalone
@@ -1565,6 +1583,15 @@ services:
         - "traefik.enable=true"
         - "traefik.http.routers.zork-landing.rule=Host(`zork.${COMMON_DOMAIN}`)"
         - "traefik.http.routers.zork-landing.entrypoints=web,websecure"
+        # Explicit and deliberately the lowest of the four zork routers.
+        # Traefik's default (rule length) is NOT reliably "shorter rule
+        # loses": this bare Host rule computed to priority 25, which beat
+        # zork-1's 10 and zork-2's 20 -- nginx has nothing at /i or /ii,
+        # so both 404'd through the landing page instead of ever reaching
+        # their backend. Confirmed via Traefik's own /api/http/routers,
+        # not assumed. Fixed by giving every router here an explicit,
+        # verified priority instead of trusting any of them by default.
+        - "traefik.http.routers.zork-landing.priority=1"
         - "traefik.http.routers.zork-landing.middlewares=authentik@file"
         - "traefik.http.services.zork-landing.loadbalancer.server.port=80"
 
@@ -1574,7 +1601,7 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
-    command: ["-W", "-p", "7681", "-b", "/i", "frotz", "/games/zork1.z3"]
+    command: ["-W", "-p", "7681", "-t", *zork-theme, "-t", "cursorBlink=true", "-b", "/i", "frotz", "/games/zork1.z3"]
     networks:
       - edge
     deploy:
@@ -1598,7 +1625,7 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
-    command: ["-W", "-p", "7681", "-b", "/ii", "frotz", "/games/zork2.z3"]
+    command: ["-W", "-p", "7681", "-t", *zork-theme, "-t", "cursorBlink=true", "-b", "/ii", "frotz", "/games/zork2.z3"]
     networks:
       - edge
     deploy:
@@ -1618,7 +1645,7 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
-    command: ["-W", "-p", "7681", "-b", "/iii", "frotz", "/games/zork3.z3"]
+    command: ["-W", "-p", "7681", "-t", *zork-theme, "-t", "cursorBlink=true", "-b", "/iii", "frotz", "/games/zork3.z3"]
     networks:
       - edge
     deploy:

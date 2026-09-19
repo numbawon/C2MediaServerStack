@@ -626,14 +626,27 @@ picks the game, and each game is an otherwise-identical `ttyd`+`frotz`
 container answering its own path under that same hostname --
 `/i`, `/ii`, `/iii` -- via `ttyd`'s `-b/--base-path`. Roman numerals nest
 as literal string prefixes (`/i` is a prefix of both `/ii` and `/iii`),
-so unlike Navidrome and Komga's split routers, Traefik's default
-rule-length priority isn't enough to pick the right one; each `zork-N`
-router sets an explicit `priority`, same fix as `komga-claim`.
+so all four routers (the landing page included) need an explicit
+`priority`, same fix as `komga-claim` -- Traefik's own default for the
+landing page's bare `Host()` rule turned out to be 25, which beat two of
+the three game routers and 404'd them through nginx. Confirmed against
+Traefik's `/api/http/routers`, not assumed; do not remove any of these
+priorities on the assumption the rule-length default is good enough.
 
 Gated by `authentik@file` with no dedicated application or group
 binding -- any authenticated household account can play. It is a game;
 there is no reason to keep it away from the `Family` accounts the way
 the media-management tier is.
+
+The three game terminals share a green-phosphor theme (`x-zork-theme` in
+`docker-stack.yml`) matching the landing page's CSS, passed to `ttyd` as
+a `-t theme={...}` xterm.js `ITheme` JSON blob. Deliberately no `-t
+fontFamily=...` alongside it: a client without a pinned custom font
+installed degrades xterm.js's cell-metrics measurement to a 0-size grid
+-- a blank screen that still silently accepts keystrokes -- exactly the
+bug the host terminal service's own font pin caused before it was
+removed (see `systemd/ttyd.service`). Color is safe to override; font
+is not, unless the font is one every client is guaranteed to have.
 
 Create an explicit Cloudflare tunnel DNS route for `zork.<domain>`, same
 as every other hostname.
