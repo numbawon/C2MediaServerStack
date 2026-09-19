@@ -118,7 +118,7 @@ never needs membership in the narrower groups.
 
 | Tier | Group(s) bound | Apps |
 | --- | --- | --- |
-| Infrastructure | `Admin` | Portainer, Traefik dashboard, web terminal, Pi-hole, Organizarr, Cleanuparr* |
+| Infrastructure | `Admin` | Portainer, Traefik dashboard, web terminal, Pi-hole, Organizarr, Hermes dashboard, Cleanuparr* |
 | Media management | `Admin`, `Contributor` | Prowlarr, Sonarr, Radarr, Lidarr, LazyLibrarian, Bazarr, qBittorrent |
 | Monitoring | `Admin`, `Metrics` | Grafana, Prometheus, Tautulli, Scrutiny |
 | Household | none (domain-level) | Seerr, Navidrome, Homer, files, browse, Zork |
@@ -705,6 +705,7 @@ cloudflared tunnel create mediastack
 #   grep -ohE 'Host\(`[^`]+`\)' docker-stack.yml traefik/dynamic/dynamic.yml \
 #     | sort -u
 # As of writing: ai, alertmanager, audiobookshelf, audiomuse, auth, bazarr, browse,
+# hermes, hermes-api,
 # cleanuparr, files, flood, grafana, i2p, immich, komga, lazylibrarian,
 # home, lidarr, mylar3, navidrome, ntfy, ombi, organizarr, overseerr, pihole, plex,
 # podcasts, portainer, prometheus, prowlarr, qbittorrent, radarr, seerr,
@@ -1708,6 +1709,48 @@ behind Cloudflare Access and a container cannot log in to it, and `edge` would
 have handed a sandboxed agent the whole stack. ntfy has no user identity, so
 the topic itself is the trust boundary: private, token-protected, and pinned
 with `NTFY_ALLOWED_USERS`.
+
+**Fourth way in: the Android client, over two hostnames.**
+[hermes-android](https://github.com/rusty4444/hermes-android) (community
+Flutter app, MIT) talks to Hermes's API server on 8642 with a bearer
+`API_SERVER_KEY` and nothing else, so it cannot complete an Authentik
+browser redirect. That forces a split, and it has to be two hostnames, not
+one path split: the dashboard and the API server both serve `/api/sessions`,
+so no path rule can tell them apart.
+
+| Hostname | Backend | Gate |
+|---|---|---|
+| `hermes.<domain>` | dashboard, 9119 | `authentik@file`, Admin-only application, plus the dashboard's own basic-auth login |
+| `hermes-api.<domain>` | API server, 8642 | none at Traefik; bearer `API_SERVER_KEY` only (plus the stack-wide rate limit and CrowdSec bouncer) |
+
+Hermes runs commands, so that key is a shell credential. The API server
+refuses to start with a weak one, and unauthenticated requests get a 401 from
+Hermes itself, but there is no second lock on that hostname by design.
+Both ports are published on the `docker_gwbridge` gateway address
+(`docker-compose.hermes.yml`) and reached by static routes in
+`traefik/dynamic/dynamic.yml`, the Pi-hole and Home Assistant pattern, so
+Hermes never joins `edge` and the sandbox is unchanged. 8642 is not published
+on the LAN address at all.
+
+The key lives in `.appdata/hermes/.env`, which Hermes generates itself and
+which wins over the container environment (setting `API_SERVER_KEY` in
+`secrets/hermes.env` as well just logs a conflict warning at boot; only
+`API_SERVER_ENABLED`, `API_SERVER_HOST=0.0.0.0` and `API_SERVER_PORT` belong
+there). In the app, set Host to `https://hermes-api.<domain>` and paste the
+key. The app's dashboard features (memory, cron, skills) will not work over
+the public hostname, since they would have to pass Authentik. Create
+explicit Cloudflare tunnel DNS routes for both hostnames, and the `hermes`
+Authentik application/provider bound to `Admin` (proxy provider, forward
+single, on the embedded outpost).
+
+**One agent per profile, not one bot for everyone.** A single gateway means
+one memory and one set of skills shared by whoever holds the key. Separate
+users need separate profiles (`hermes profile create alice`), each with its
+own config, memory, skills, `API_SERVER_KEY` and port, and a gateway per
+profile; each advertises its profile name as its model ID, which is how a
+frontend such as Open WebUI can treat them as isolated backends. None of that
+is set up here. Note `MAX_LOADED_MODELS=1` on a card shared with Tdarr and
+AudioMuse: concurrent users evict each other's model.
 
 **Side tasks run locally too.** Session titles, context compression and the
 post-turn review default to Gemini Flash through OpenRouter or Nous Portal,

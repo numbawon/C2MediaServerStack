@@ -52,6 +52,16 @@ services:
       # .appdata/hermes/config.yaml) is the only gate in front of it, which is
       # the trade for reaching it from another machine in the house.
       - "${COMMON_LAN_IP}:9119:9119"
+      # Traefik's way in, without joining `edge` (which would hand this
+      # sandboxed agent the whole stack). Published on the docker_gwbridge
+      # gateway address, reachable only from containers on this host, the
+      # same trick as the Pi-hole and Home Assistant routes. 9119 is the
+      # dashboard (Authentik-gated at hermes.<domain>), 8642 is the API
+      # server the Android client talks to (hermes-api.<domain>, bearer
+      # API_SERVER_KEY from secrets/hermes.env, deliberately not
+      # Authentik-gated because the app cannot follow a browser redirect).
+      - "${COMMON_DOCKER_GWBRIDGE_GATEWAY}:9119:9119"
+      - "${COMMON_DOCKER_GWBRIDGE_GATEWAY}:8642:8642"
     networks:
       - ai
       # ntfy only. Its public hostname is behind Cloudflare Access, which a

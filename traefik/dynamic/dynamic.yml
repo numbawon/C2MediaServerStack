@@ -244,6 +244,31 @@ http:
         - authentik
       service: pihole
 
+    # Hermes is two hostnames, not one path split, because the dashboard and
+    # the API server both serve /api/sessions -- a path rule cannot tell them
+    # apart. hermes.<domain> is the agent console: Admin-only Authentik
+    # application plus its own basic-auth login. hermes-api.<domain> is what
+    # the Android client talks to; the app only speaks a bearer key and cannot
+    # complete a browser redirect, so this one is deliberately NOT behind
+    # Authentik. API_SERVER_KEY (64 random chars, secrets/hermes.env) is the
+    # only lock, and the API server refuses to start with a weak one. Hermes
+    # runs commands, so treat that key like a shell credential.
+    hermes:
+      rule: 'Host(`hermes.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+        - websecure
+      middlewares:
+        - authentik
+      service: hermes
+
+    hermes-api:
+      rule: 'Host(`hermes-api.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+        - websecure
+      service: hermes-api
+
     # Scrutiny has no authentication of its own. Its disk-health UI and
     # hardware inventory are therefore always protected by Authentik.
     scrutiny:
@@ -402,6 +427,23 @@ http:
           # now, so FTL's admin webserver was moved off them. See
           # FTLCONF_webserver_port in docker-compose.dns.yml.
           - url: 'http://{{ env "COMMON_DOCKER_GWBRIDGE_GATEWAY" }}:8053'
+
+    # Hermes publishes both ports on the docker_gwbridge gateway (see
+    # docker-compose.hermes.yml), so Traefik reaches it without Hermes
+    # joining `edge`.
+    hermes:
+      loadBalancer:
+        servers:
+          - url: 'http://{{ env "COMMON_DOCKER_GWBRIDGE_GATEWAY" }}:9119'
+
+    hermes-api:
+      loadBalancer:
+        # No response buffering surprises for streaming: chat and runs are
+        # SSE, flushed as they arrive.
+        responseForwarding:
+          flushInterval: "100ms"
+        servers:
+          - url: 'http://{{ env "COMMON_DOCKER_GWBRIDGE_GATEWAY" }}:8642'
 
     scrutiny:
       loadBalancer:

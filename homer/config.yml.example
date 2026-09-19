@@ -216,6 +216,11 @@ services:
         url: "https://ai.example.com"
         subtitle: "Local models on the GPU. Conversations are saved."
         target: "_blank"
+      - name: "Hermes"
+        icon: "fas fa-bolt"
+        url: "https://hermes.example.com"
+        subtitle: "Agent console"
+        target: "_blank"
 
   - name: "Home"
     icon: "fas fa-house"
