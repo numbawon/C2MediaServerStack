@@ -1030,9 +1030,21 @@ services:
     # Pinned, not :latest. This service can rewrite routers and
     # middlewares, so an unattended image change here is an unattended
     # change to how the whole stack authenticates. Note the tag carries
-    # no 'v' prefix even though the GitHub releases do: v1.13.5 is a
+    # no 'v' prefix even though the GitHub releases do: v1.14.0 is a
     # 404 on ghcr and Swarm reports it only as "manifest unknown".
-    image: ghcr.io/chr0nzz/traefik-manager:1.13.5
+    #
+    # 1.14.0 fixes two bugs found and reported from this deployment
+    # (chr0nzz/traefik-manager#173, #174): the *.yml scan picking up
+    # manager.yml/notifications.yml as Traefik config -- CONFIG_DIR and
+    # SETTINGS_PATH's folder are still the same here (below), but the fix
+    # landed in the scan itself, not as a required reconfiguration.
+    # Verified against this deployment's own logs post-upgrade: manager.yml
+    # now shows only as "Settings Path", never "Config File", so it no
+    # longer rides along on git backup pushes. The other fix was a bundled
+    # Promise.all in the CrowdSec tab that reported the whole LAPI
+    # unreachable whenever only /v1/alerts failed (bouncer key without
+    # machine login).
+    image: ghcr.io/chr0nzz/traefik-manager:1.14.0
     # Plain python daemon: binds no privileged port and drops no privileges
     # of its own, so it needs no capabilities.
     cap_drop: [ALL]
