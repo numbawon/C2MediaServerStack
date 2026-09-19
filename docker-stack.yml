@@ -49,14 +49,27 @@ x-zork-theme: &zork-theme >-
   "brightBlue":"#6fffb0","brightMagenta":"#b8ffcf","brightCyan":"#b8ffcf",
   "brightWhite":"#e8fff0"}
 
-# Chrome on Android has a known, unfixed xterm.js/ttyd row-count bug
-# (tsl0922/ttyd#191, closed "not planned" upstream): the fit calculation
-# on some mobile devices comes out wrong, leaving most of the screen
-# blank with the actual game text crammed at the bottom. -t fontSize
-# removes auto-detected cell-size guessing as a variable; -t
-# rendererType=dom replaces the canvas-based cell-metrics math (where the
-# bug actually lives) with real DOM elements per cell. Neither is a
-# confirmed fix, both are cheap and safe to carry regardless.
+# Chrome on Android has a known, unfixed ttyd/xterm.js bug (tsl0922/
+# ttyd#191, closed "not planned" upstream): the fit calculation on tall
+# mobile viewports reports far more terminal rows than the screen can
+# actually show at a normal font size. Root-caused by capturing the real
+# WebSocket frames, not guessed: frotz positions its opening screen with
+# an absolute cursor move computed from that reported row count (e.g.
+# `ESC[109d` on a wrongly-inflated 117-row terminal), so what looks
+# completely normal on an ordinary ~24-row terminal leaves most of the
+# screen blank on one that large. zork/Dockerfile fixes the row count
+# itself via a max-height media query in a generated custom ttyd index
+# page (`-I`), which is the actual fix -- see that Dockerfile for the
+# full writeup.
+#
+# `-t fontSize`/`-t rendererType` were tried first and made things worse:
+# either one forces xterm.js to re-measure cell metrics after the initial
+# connect, which triggers a SECOND resize once frotz has already drawn
+# its opening screen, and frotz's redraw-on-resize is what actually
+# leaves the screen blank -- confirmed by capturing that second resize
+# in the WebSocket trace and reproducing the identical bug with the row
+# count already fixed. Theme colors and cursorBlink don't touch cell
+# metrics, so they don't trigger a re-fit and are safe to keep.
 
 networks:
   # Created once by scripts/bootstrap.sh (`docker network create --driver
@@ -1610,7 +1623,7 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
-    command: ["-W", "-p", "7681", "-t", *zork-theme, "-t", "cursorBlink=true", "-t", "fontSize=15", "-t", "rendererType=dom", "-b", "/i", "frotz", "/games/zork1.z3"]
+    command: ["-W", "-p", "7681", "-t", *zork-theme, "-t", "cursorBlink=true", "-b", "/i", "frotz", "/games/zork1.z3"]
     networks:
       - edge
     deploy:
@@ -1634,7 +1647,7 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
-    command: ["-W", "-p", "7681", "-t", *zork-theme, "-t", "cursorBlink=true", "-t", "fontSize=15", "-t", "rendererType=dom", "-b", "/ii", "frotz", "/games/zork2.z3"]
+    command: ["-W", "-p", "7681", "-t", *zork-theme, "-t", "cursorBlink=true", "-b", "/ii", "frotz", "/games/zork2.z3"]
     networks:
       - edge
     deploy:
@@ -1654,7 +1667,7 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
-    command: ["-W", "-p", "7681", "-t", *zork-theme, "-t", "cursorBlink=true", "-t", "fontSize=15", "-t", "rendererType=dom", "-b", "/iii", "frotz", "/games/zork3.z3"]
+    command: ["-W", "-p", "7681", "-t", *zork-theme, "-t", "cursorBlink=true", "-b", "/iii", "frotz", "/games/zork3.z3"]
     networks:
       - edge
     deploy:

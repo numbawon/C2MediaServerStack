@@ -38,6 +38,35 @@ RUN mkdir -p /games \
     && echo "${ZORK2_SHA256}  /games/zork2.z3" | sha256sum -c - \
     && echo "${ZORK3_SHA256}  /games/zork3.z3" | sha256sum -c -
 
+# Chrome on Android has a known, unfixed xterm.js/ttyd bug (tsl0922/
+# ttyd#191, closed "not planned"): the fit calculation on tall mobile
+# viewports reports far more terminal rows than the screen can actually
+# show at a normal font size. frotz's opening screen positions itself
+# with an absolute cursor move computed from that reported row count
+# (confirmed against the real WebSocket frames: `ESC[109d`/`ESC[117d`
+# on a 117-row terminal, i.e. "near the bottom"), so on a normal ~24-row
+# terminal that convention looks completely normal, but on a
+# wrongly-inflated 100+ row one it leaves most of the screen blank with
+# the actual text crammed at the very bottom.
+#
+# The real fix has to stop the terminal from reporting that many rows
+# in the first place -- ttyd client options (fontSize, rendererType)
+# only change how a cell is measured, not the row-count bug itself,
+# confirmed by testing both and neither helping. This caps the
+# container's CSS height, but only under a max-width media query so
+# desktop/tablet sessions (where this bug does not happen) keep using
+# the full window instead of being shrunk for no reason.
+#
+# Generated at build time, not vendored, so it always matches whatever
+# TTYD_VERSION is pinned above: briefly runs ttyd to fetch its own
+# default index.html, then injects the override.
+RUN (ttyd -p 19999 true &) \
+    && sleep 1 \
+    && wget -qO /ttyd-index.html http://127.0.0.1:19999/ \
+    && pkill ttyd \
+    && sed -i 's|</head>|<style>@media (max-width: 1000px){#terminal-container{max-height:640px!important}}</style></head>|' /ttyd-index.html \
+    && grep -q "max-width: 1000px" /ttyd-index.html
+
 # frotz refuses outright to run as root ("I won't run as root!"), so this
 # needs a real non-root user regardless of the stack's usual PUID/PGID
 # convention -- there is nothing here to chown against a bind mount, no
@@ -56,4 +85,4 @@ USER player
 # the same reason documented there: a font missing on the client degrades
 # to a 0-size xterm.js grid, not a fallback font.
 EXPOSE 7681
-ENTRYPOINT ["ttyd"]
+ENTRYPOINT ["ttyd", "-I", "/ttyd-index.html"]
