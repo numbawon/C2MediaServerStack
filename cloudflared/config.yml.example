@@ -2,7 +2,7 @@
 # the DNS CNAME records -- it doesn't tell the tunnel where to send traffic.
 # Everything routes to Traefik on the shared `edge` overlay network; Traefik
 # does the actual host-based routing to each backend service from there.
-# This wildcard already carries optional `home`, `scrutiny`, `zork`, `hermes`, and `hermes-api`
+# This wildcard already carries optional `home`, `scrutiny`, `zork`, `hermes`, `hermes-api`, and `syncthing`
 # hostnames; each still needs its own explicit tunnel DNS route.
 #
 # Copy this file to config.yml (git-ignored -- holds your real domain) and

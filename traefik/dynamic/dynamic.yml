@@ -345,6 +345,19 @@ http:
         - websecure
       service: open-webui
 
+    # Syncthing's admin GUI. Device sync does not use this hostname at all
+    # (relays and global discovery); this is only the console, so it is
+    # gated like any admin tool: Admin-only Authentik application, plus a
+    # GUI password set inside Syncthing.
+    syncthing:
+      rule: 'Host(`syncthing.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+        - websecure
+      middlewares:
+        - authentik
+      service: syncthing
+
     # Tdarr rewrites files in the library, so it sits behind authentik with
     # no exception. It has no SSO of its own -- its only built-in gate is a
     # paid feature -- which means forward-auth is the whole of its security.
@@ -482,6 +495,11 @@ http:
       loadBalancer:
         servers:
           - url: "http://open-webui:8080"
+
+    syncthing:
+      loadBalancer:
+        servers:
+          - url: "http://syncthing:8384"
 
     # 8265 is the web UI. 8266 is the server API the node talks to; it stays
     # on the overlay and is deliberately not routed.

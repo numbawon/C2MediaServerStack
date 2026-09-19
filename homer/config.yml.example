@@ -221,6 +221,11 @@ services:
         url: "https://hermes.example.com"
         subtitle: "Agent console"
         target: "_blank"
+      - name: "Syncthing"
+        icon: "fas fa-rotate"
+        url: "https://syncthing.example.com"
+        subtitle: "Obsidian vault sync, admins only"
+        target: "_blank"
 
   - name: "Home"
     icon: "fas fa-house"

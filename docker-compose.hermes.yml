@@ -45,6 +45,15 @@ services:
       - HERMES_API_TIMEOUT=1800
     volumes:
       - ${COMMON_CONFIG}/hermes:/opt/data
+      # The Obsidian vault, synced by Syncthing (docker-compose.ai.yml).
+      # Read-only, with one writable subfolder: the agent can search and
+      # read every note and add its own under Hermes/, but cannot edit or
+      # delete yours. Inside /opt/data, so it is also within
+      # HERMES_WRITE_SAFE_ROOT. The nested mount only works if
+      # obsidian/vault/Hermes already exists on the host (bootstrap.sh
+      # creates it); otherwise Docker would create it root-owned.
+      - ${COMMON_CONFIG}/obsidian/vault:/opt/data/vault:ro
+      - ${COMMON_CONFIG}/obsidian/vault/Hermes:/opt/data/vault/Hermes
     ports:
       # The LAN address, not 0.0.0.0: this host also has docker bridges, the
       # swarm overlays and the VPN namespace, and the console has no business

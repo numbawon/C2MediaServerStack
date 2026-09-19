@@ -118,7 +118,7 @@ never needs membership in the narrower groups.
 
 | Tier | Group(s) bound | Apps |
 | --- | --- | --- |
-| Infrastructure | `Admin` | Portainer, Traefik dashboard, web terminal, Pi-hole, Organizarr, Hermes dashboard, Cleanuparr* |
+| Infrastructure | `Admin` | Portainer, Traefik dashboard, web terminal, Pi-hole, Organizarr, Hermes dashboard, Syncthing GUI, Cleanuparr* |
 | Media management | `Admin`, `Contributor` | Prowlarr, Sonarr, Radarr, Lidarr, LazyLibrarian, Bazarr, qBittorrent |
 | Monitoring | `Admin`, `Metrics` | Grafana, Prometheus, Tautulli, Scrutiny |
 | Household | none (domain-level) | Seerr, Navidrome, Homer, files, browse, Zork |
@@ -705,7 +705,7 @@ cloudflared tunnel create mediastack
 #   grep -ohE 'Host\(`[^`]+`\)' docker-stack.yml traefik/dynamic/dynamic.yml \
 #     | sort -u
 # As of writing: ai, alertmanager, audiobookshelf, audiomuse, auth, bazarr, browse,
-# hermes, hermes-api,
+# hermes, hermes-api, syncthing,
 # cleanuparr, files, flood, grafana, i2p, immich, komga, lazylibrarian,
 # home, lidarr, mylar3, navidrome, ntfy, ombi, organizarr, overseerr, pihole, plex,
 # podcasts, portainer, prometheus, prowlarr, qbittorrent, radarr, seerr,
@@ -1757,6 +1757,43 @@ profile; each advertises its profile name as its model ID, which is how a
 frontend such as Open WebUI can treat them as isolated backends. None of that
 is set up here. Note `MAX_LOADED_MODELS=1` on a card shared with Tdarr and
 AudioMuse: concurrent users evict each other's model.
+
+**A shared Obsidian vault.** Syncthing (`syncthing` in
+`docker-compose.ai.yml`) keeps `${COMMON_CONFIG}/obsidian/vault` in step with
+the phone as plain files, so Hermes reads the same notes. LiveSync was
+rejected for that reason: it keeps notes in CouchDB, which the agent could
+not read without a bridge. The vault is under `.appdata`, so the normal
+config backup covers it.
+
+Hermes gets the vault at `/opt/data/vault`, **read-only, with one writable
+subfolder, `Hermes/`** (`docker-compose.hermes.yml`). It can search and read
+every note and add its own under `Hermes/`, which syncs to the phone, but it
+cannot edit or delete yours, and a bad agent run cannot rewrite notes that
+Syncthing would then carry to every device. The nested mount only works if
+`obsidian/vault/Hermes` already exists on the host; `bootstrap.sh` creates
+it. To use it, tell the agent to read `/opt/data/vault` and write only under
+`/opt/data/vault/Hermes`.
+
+Sync needs no public hostname: devices find each other through Syncthing's
+global discovery and relays, authenticated by device ID and TLS. 22000 is
+published on the LAN address only for direct connections at home, and
+nothing is forwarded on the router. The only web surface is the admin GUI at
+`syncthing.<domain>`: an Admin-only Authentik application, plus a GUI
+password of its own because `edge` is shared and any container there could
+otherwise reach 8384. Usage reporting is off. `insecure-skip-host-check` is
+on, which Syncthing needs behind a reverse proxy and which is acceptable
+only because the Authentik gate and password sit in front.
+
+Pairing, once: install Syncthing-Fork on the phone (the official Android
+app was discontinued), add this server's device ID there, then accept the
+phone in the GUI and share the `obsidian` folder. Point Obsidian's vault at
+the synced folder. Add the same ignore lines as the server's `.stignore`
+(`.obsidian/workspace.json`, `.obsidian/workspace-mobile.json`,
+`.obsidian/cache`, `.trash`) on the phone: `.stignore` itself is never
+synced, and per-device workspace state conflicts constantly otherwise.
+Create a Cloudflare tunnel DNS route for `syncthing.<domain>` and the
+`syncthing` Authentik application/provider bound to `Admin`. The image is
+pinned to `syncthing/syncthing:2` and excluded from `roll-unpinned.sh`.
 
 **Side tasks run locally too.** Session titles, context compression and the
 post-turn review default to Gemini Flash through OpenRouter or Nous Portal,

@@ -238,6 +238,54 @@ services:
       - edge
     restart: unless-stopped
 
+  # ---------------------------------------------------------------------
+  # Syncthing -- keeps the Obsidian vault in step with the phone (and any
+  # other device) as plain files, so Hermes can read the same notes.
+  # LiveSync was rejected for exactly that reason: it keeps notes in
+  # CouchDB, which the agent could not read without a bridge.
+  #
+  # Files, not a database: ${COMMON_CONFIG}/obsidian/vault is the vault.
+  # Hermes mounts it too (docker-compose.hermes.yml), read-only, with a
+  # single writable Hermes/ subfolder, so an agent run can add notes but
+  # cannot edit or delete yours, and a bad edit cannot sync to every device.
+  #
+  # Sync itself needs no public hostname: devices meet through Syncthing's
+  # global discovery and relays. 22000 is published on the LAN address only,
+  # for direct connections from the phone at home. Nothing is forwarded on
+  # the router. The admin GUI is the only web surface: syncthing.<domain>,
+  # Admin-only Authentik application plus a GUI password of its own, because
+  # `edge` is shared and other containers there could otherwise reach 8384.
+  #
+  # Pinned to the 2 series: major bumps migrate the on-disk database and
+  # this is data you cannot regenerate, so it stays out of roll-unpinned.sh
+  # and updates are a deliberate act.
+  # ---------------------------------------------------------------------
+  syncthing:
+    image: syncthing/syncthing:2
+    container_name: syncthing
+    hostname: syncthing
+    logging: *logging
+    restart: unless-stopped
+    # Runs as the host account directly (no PUID remap), so no capabilities
+    # are needed at all.
+    user: "${COMMON_PUID}:${COMMON_PGID}"
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - HOME=/var/syncthing
+      - STGUIADDRESS=0.0.0.0:8384
+      # No default "Sync" folder; the vault is added explicitly.
+      - STNODEFAULTFOLDER=1
+    volumes:
+      - ${COMMON_CONFIG}/syncthing:/var/syncthing
+      - ${COMMON_CONFIG}/obsidian/vault:/vault
+    ports:
+      - "${COMMON_LAN_IP}:22000:22000/tcp"
+      - "${COMMON_LAN_IP}:22000:22000/udp"
+    networks:
+      - edge
+
 networks:
   edge:
     external: true   # the attachable overlay created by the swarm stack

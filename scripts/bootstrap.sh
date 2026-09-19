@@ -72,6 +72,8 @@ done
 mkdir -p \
   "$COMMON_CONFIG/home-assistant" \
   "$COMMON_CONFIG/scrutiny/config" \
-  "$COMMON_CONFIG/scrutiny/influxdb"
+  "$COMMON_CONFIG/scrutiny/influxdb" \
+  "$COMMON_CONFIG/syncthing" \
+  "$COMMON_CONFIG/obsidian/vault/Hermes"
 
 echo "Bootstrap done. Next: scripts/init-secrets.sh, then deploy (see README.md)."

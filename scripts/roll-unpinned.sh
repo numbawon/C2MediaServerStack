@@ -55,6 +55,9 @@ SWARM_EXCLUDE=(
 )
 STANDALONE_EXCLUDE=(
   audiomuse-postgres
+  # Holds the Obsidian vault's sync state; pinned to the 2 series because
+  # a major bump migrates its database. Updated deliberately.
+  syncthing
 )
 
 # Standalone compose files this repo knows about; mirrors deploy.sh's list.
