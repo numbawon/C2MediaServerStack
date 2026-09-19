@@ -49,6 +49,15 @@ x-zork-theme: &zork-theme >-
   "brightBlue":"#6fffb0","brightMagenta":"#b8ffcf","brightCyan":"#b8ffcf",
   "brightWhite":"#e8fff0"}
 
+# Chrome on Android has a known, unfixed xterm.js/ttyd row-count bug
+# (tsl0922/ttyd#191, closed "not planned" upstream): the fit calculation
+# on some mobile devices comes out wrong, leaving most of the screen
+# blank with the actual game text crammed at the bottom. -t fontSize
+# removes auto-detected cell-size guessing as a variable; -t
+# rendererType=dom replaces the canvas-based cell-metrics math (where the
+# bug actually lives) with real DOM elements per cell. Neither is a
+# confirmed fix, both are cheap and safe to carry regardless.
+
 networks:
   # Created once by scripts/bootstrap.sh (`docker network create --driver
   # overlay --attachable edge`) rather than inline here, so the standalone
@@ -1601,7 +1610,7 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
-    command: ["-W", "-p", "7681", "-t", *zork-theme, "-t", "cursorBlink=true", "-b", "/i", "frotz", "/games/zork1.z3"]
+    command: ["-W", "-p", "7681", "-t", *zork-theme, "-t", "cursorBlink=true", "-t", "fontSize=15", "-t", "rendererType=dom", "-b", "/i", "frotz", "/games/zork1.z3"]
     networks:
       - edge
     deploy:
@@ -1625,7 +1634,7 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
-    command: ["-W", "-p", "7681", "-t", *zork-theme, "-t", "cursorBlink=true", "-b", "/ii", "frotz", "/games/zork2.z3"]
+    command: ["-W", "-p", "7681", "-t", *zork-theme, "-t", "cursorBlink=true", "-t", "fontSize=15", "-t", "rendererType=dom", "-b", "/ii", "frotz", "/games/zork2.z3"]
     networks:
       - edge
     deploy:
@@ -1645,7 +1654,7 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
-    command: ["-W", "-p", "7681", "-t", *zork-theme, "-t", "cursorBlink=true", "-b", "/iii", "frotz", "/games/zork3.z3"]
+    command: ["-W", "-p", "7681", "-t", *zork-theme, "-t", "cursorBlink=true", "-t", "fontSize=15", "-t", "rendererType=dom", "-b", "/iii", "frotz", "/games/zork3.z3"]
     networks:
       - edge
     deploy:
