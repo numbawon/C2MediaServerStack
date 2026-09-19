@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zork</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0f0c;
+    --fg: #4ee88a;
+    --fg-dim: #2b7a4e;
+    --fg-bright: #b8ffcf;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "Courier New", ui-monospace, Menlo, Consolas, monospace;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px 64px;
+  }
+  pre.art {
+    color: var(--fg-dim);
+    font-size: clamp(6px, 1.6vw, 12px);
+    line-height: 1.15;
+    text-align: center;
+    margin: 0 0 8px;
+    text-shadow: 0 0 6px rgba(78, 232, 138, 0.25);
+  }
+  pre.title {
+    color: var(--fg-bright);
+    font-size: clamp(10px, 2.6vw, 20px);
+    line-height: 1.1;
+    text-align: center;
+    margin: 0 0 4px;
+    text-shadow: 0 0 8px rgba(184, 255, 207, 0.4);
+  }
+  .subtitle {
+    color: var(--fg-dim);
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    font-size: 12px;
+    margin: 0 0 40px;
+  }
+  .flavor {
+    max-width: 560px;
+    text-align: center;
+    color: var(--fg);
+    opacity: 0.85;
+    line-height: 1.6;
+    margin: 0 0 40px;
+  }
+  .flavor em { color: var(--fg-bright); font-style: normal; }
+  .games {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .game {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-decoration: none;
+    color: inherit;
+    border: 1px solid var(--fg-dim);
+    border-radius: 4px;
+    padding: 24px 28px;
+    width: 180px;
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+  }
+  .game:hover, .game:focus-visible {
+    border-color: var(--fg-bright);
+    background: rgba(78, 232, 138, 0.06);
+    transform: translateY(-2px);
+    outline: none;
+  }
+  .numeral {
+    font-size: 40px;
+    color: var(--fg-bright);
+    margin-bottom: 10px;
+  }
+  .game-name {
+    font-size: 13px;
+    letter-spacing: 0.05em;
+  }
+  .game-sub {
+    font-size: 11px;
+    color: var(--fg-dim);
+    margin-top: 4px;
+    text-align: center;
+  }
+  footer {
+    margin-top: 56px;
+    font-size: 11px;
+    color: var(--fg-dim);
+    text-align: center;
+    max-width: 480px;
+    line-height: 1.6;
+  }
+  footer a { color: var(--fg); }
+</style>
+</head>
+<body>
+
+<pre class="art" aria-hidden="true">
+                                    .
+                                   / \
+                                  /___\
+                                  |[ ]|
+                                  |   |
+                               .--|   |--.
+                              /   '---'   \
+                             /_____________\
+                                |  door  |
+                       ~~~~~~~~~|________|~~~~~~~~~
+                    ~~~~~~            ~~~~~~~~
+                ~~~~~~     grue territory     ~~~~
+</pre>
+
+<pre class="title" aria-hidden="true">
+ _____  ___  ____  _  __
+|__  / / _ \|  _ \| |/ /
+  / / | | | | |_) | ' /
+ / /_ | |_| |  _ <| . \
+/____(_)___/|_| \_\_|\_\
+</pre>
+<div class="subtitle">The Great Underground Empire</div>
+
+<p class="flavor">
+  You are standing in an open field west of a white house, with a boarded
+  front door. There is a small mailbox here. Somewhere below,
+  <em>it is pitch black</em>, and you are likely to be eaten by a grue.
+</p>
+
+<div class="games">
+  <a class="game" href="/i/">
+    <span class="numeral">I</span>
+    <span class="game-name">ZORK I</span>
+    <span class="game-sub">The Great Underground Empire</span>
+  </a>
+  <a class="game" href="/ii/">
+    <span class="numeral">II</span>
+    <span class="game-name">ZORK II</span>
+    <span class="game-sub">The Wizard of Frobozz</span>
+  </a>
+  <a class="game" href="/iii/">
+    <span class="numeral">III</span>
+    <span class="game-name">ZORK III</span>
+    <span class="game-sub">The Dungeon Master</span>
+  </a>
+</div>
+
+<footer>
+  Story files: Microsoft/Activision's November 2025 MIT-licensed release of
+  the original Zork I/II/III source
+  (<a href="https://github.com/historicalsource" target="_blank" rel="noopener">github.com/historicalsource</a>).
+  Played through <a href="https://gitlab.com/DavidGriffith/frotz" target="_blank" rel="noopener">frotz</a>
+  over <a href="https://github.com/tsl0922/ttyd" target="_blank" rel="noopener">ttyd</a>.
+</footer>
+
+</body>
+</html>

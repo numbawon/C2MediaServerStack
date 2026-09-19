@@ -231,6 +231,15 @@ services:
         subtitle: "SMART disk health"
         target: "_blank"
 
+  - name: "Games"
+    icon: "fas fa-dungeon"
+    items:
+      - name: "Zork"
+        icon: "fas fa-dungeon"
+        url: "https://zork.example.com"
+        subtitle: "I, II, and III"
+        target: "_blank"
+
   - name: "Monitoring"
     icon: "fas fa-chart-line"
     items:

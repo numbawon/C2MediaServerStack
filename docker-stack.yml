@@ -1526,6 +1526,111 @@ services:
         - "traefik.http.routers.pinepods.entrypoints=web,websecure"
         - "traefik.http.services.pinepods.loadbalancer.server.port=8040"
 
+  # ---------------------------------------------------------------------
+  # Zork I/II/III -- a browser-based version of the "log in and get Zork
+  # instead of a shell" trick, using ttyd (same tool as the host terminal
+  # service) to wrap frotz instead of login. Story files come from
+  # Microsoft/Activision's November 2025 MIT-licensed release of the
+  # original ZIL source (github.com/historicalsource/zork{1,2,3}); see
+  # zork/Dockerfile for the pinned commits and checksums. Local image,
+  # same pattern as pinepods above: built by `stack` in deploy.sh, not
+  # pulled.
+  #
+  # One image, four services: a static landing page picks the game, and
+  # three otherwise-identical ttyd+frotz backends each answer one path
+  # under the same hostname (zork.<domain>/i, /ii, /iii) via ttyd's own
+  # -b/--base-path, which is what makes that work behind a reverse proxy.
+  # Traefik's default priority (longer rule wins) puts the PathPrefix
+  # routers ahead of the landing page's bare Host rule without needing an
+  # explicit priority, same as every other split-router service here.
+  #
+  # Gated by authentik@file with no dedicated application/group binding --
+  # any authenticated household account can play, deliberately not
+  # restricted the way the media-management tier is. This is a game, not
+  # something that needs to stay away from the kid accounts.
+  # ---------------------------------------------------------------------
+  zork-landing:
+    logging: *logging
+    image: nginx:alpine
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID, NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./zork/landing/index.html:/usr/share/nginx/html/index.html:ro
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.zork-landing.rule=Host(`zork.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.zork-landing.entrypoints=web,websecure"
+        - "traefik.http.routers.zork-landing.middlewares=authentik@file"
+        - "traefik.http.services.zork-landing.loadbalancer.server.port=80"
+
+  zork-1:
+    logging: *logging
+    image: c2mediaserverstack/zork:1
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    command: ["-W", "-p", "7681", "-b", "/i", "frotz", "/games/zork1.z3"]
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.zork-1.rule=Host(`zork.${COMMON_DOMAIN}`) && PathPrefix(`/i`)"
+        - "traefik.http.routers.zork-1.entrypoints=web,websecure"
+        # Roman numerals nest as literal string prefixes (/i is a prefix of
+        # both /ii and /iii), so Traefik's default priority -- the rule's
+        # length in characters, see the komga-api comment for the same
+        # gotcha -- would otherwise let this router win requests meant for
+        # II or III. Lowest priority of the three PathPrefix routers here,
+        # below zork-2 and zork-3.
+        - "traefik.http.routers.zork-1.priority=10"
+        - "traefik.http.routers.zork-1.middlewares=authentik@file"
+        - "traefik.http.services.zork-1.loadbalancer.server.port=7681"
+
+  zork-2:
+    logging: *logging
+    image: c2mediaserverstack/zork:1
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    command: ["-W", "-p", "7681", "-b", "/ii", "frotz", "/games/zork2.z3"]
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.zork-2.rule=Host(`zork.${COMMON_DOMAIN}`) && PathPrefix(`/ii`)"
+        - "traefik.http.routers.zork-2.entrypoints=web,websecure"
+        # /ii is also a prefix of /iii -- see zork-1's comment. Above
+        # zork-1, below zork-3.
+        - "traefik.http.routers.zork-2.priority=20"
+        - "traefik.http.routers.zork-2.middlewares=authentik@file"
+        - "traefik.http.services.zork-2.loadbalancer.server.port=7681"
+
+  zork-3:
+    logging: *logging
+    image: c2mediaserverstack/zork:1
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    command: ["-W", "-p", "7681", "-b", "/iii", "frotz", "/games/zork3.z3"]
+    networks:
+      - edge
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.zork-3.rule=Host(`zork.${COMMON_DOMAIN}`) && PathPrefix(`/iii`)"
+        - "traefik.http.routers.zork-3.entrypoints=web,websecure"
+        # Highest of the three -- see zork-1's comment.
+        - "traefik.http.routers.zork-3.priority=30"
+        - "traefik.http.routers.zork-3.middlewares=authentik@file"
+        - "traefik.http.services.zork-3.loadbalancer.server.port=7681"
+
   pinepods-postgres:
     logging: *logging
     # 18 as the project documents. PGDATA is set explicitly because the

@@ -121,7 +121,7 @@ never needs membership in the narrower groups.
 | Infrastructure | `Admin` | Portainer, Traefik dashboard, web terminal, Pi-hole, Organizarr, Cleanuparr* |
 | Media management | `Admin`, `Contributor` | Prowlarr, Sonarr, Radarr, Lidarr, LazyLibrarian, Bazarr, qBittorrent |
 | Monitoring | `Admin`, `Metrics` | Grafana, Prometheus, Tautulli, Scrutiny |
-| Household | none (domain-level) | Seerr, Navidrome, Homer, files, browse |
+| Household | none (domain-level) | Seerr, Navidrome, Homer, files, browse, Zork |
 | Family requests | `Admin`, `Contributor`, `Family` | Ombi (music requests) |
 | Not forward-auth gated | see below | Plex, Audiobookshelf, Immich, PinePods, Open WebUI, Cleanuparr, ntfy |
 
@@ -606,6 +606,38 @@ demote each one afterward under **Settings -> People -> Users** to the
 account creation, never on later logins, so that demotion is a one-time
 step per person, not a recurring chore.
 
+### Zork
+
+A browser-playable Zork I/II/III -- the same "log in and get the game
+instead of a shell" trick as a Unix account with Zork for a login shell,
+just over `ttyd` (the same tool the host terminal service uses) instead
+of SSH. Local image, built by `stack` in `deploy.sh`, same pattern as
+PinePods above.
+
+Story files come from Microsoft and Activision's November 2025
+MIT-licensed release of the original ZIL source
+(`github.com/historicalsource/zork{1,2,3}`); `zork/Dockerfile` downloads
+each repo's pre-built `COMPILED/zorkN.z3` from a pinned commit and
+checksums it, so no ZIL compiler is needed at build time.
+
+One image, four services (`zork-landing`, `zork-1`, `zork-2`, `zork-3`):
+a static landing page (`zork/landing/index.html`) at `zork.<domain>/`
+picks the game, and each game is an otherwise-identical `ttyd`+`frotz`
+container answering its own path under that same hostname --
+`/i`, `/ii`, `/iii` -- via `ttyd`'s `-b/--base-path`. Roman numerals nest
+as literal string prefixes (`/i` is a prefix of both `/ii` and `/iii`),
+so unlike Navidrome and Komga's split routers, Traefik's default
+rule-length priority isn't enough to pick the right one; each `zork-N`
+router sets an explicit `priority`, same fix as `komga-claim`.
+
+Gated by `authentik@file` with no dedicated application or group
+binding -- any authenticated household account can play. It is a game;
+there is no reason to keep it away from the `Family` accounts the way
+the media-management tier is.
+
+Create an explicit Cloudflare tunnel DNS route for `zork.<domain>`, same
+as every other hostname.
+
 ## Before you start
 
 - **A domain**, added to a Cloudflare account with nameservers pointed
@@ -664,7 +696,7 @@ cloudflared tunnel create mediastack
 # home, lidarr, mylar3, navidrome, ntfy, ombi, organizarr, overseerr, pihole, plex,
 # podcasts, portainer, prometheus, prowlarr, qbittorrent, radarr, seerr,
 # scrutiny, traefik-manager,
-# sonarr, tautulli, tdarr, terminal, traefik, and the bare domain for homer:
+# sonarr, tautulli, tdarr, terminal, traefik, zork, and the bare domain for homer:
 cloudflared tunnel route dns mediastack <sub>.yourdomain.com
 # Grab the tunnel token for init-secrets.sh next: Cloudflare Zero Trust
 # dashboard -> Networks -> Tunnels -> mediastack -> Configure -> copy token

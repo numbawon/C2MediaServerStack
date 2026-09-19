@@ -33,6 +33,9 @@ case "$1" in
     docker build --quiet \
       --tag c2mediaserverstack/pinepods:nightly20260911-upstream-09c3dcd \
       --file pinepods/Dockerfile pinepods >/dev/null
+    docker build --quiet \
+      --tag c2mediaserverstack/zork:1 \
+      --file zork/Dockerfile zork >/dev/null
     docker stack deploy -c docker-stack.yml mediastack
     ;;
   download)
