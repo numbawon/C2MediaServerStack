@@ -29,6 +29,7 @@ python3 scripts/validate-env.py
 deploy_component() {
 case "$1" in
   stack)
+    ./scripts/swarm-preflight.sh
     python3 scripts/render-config.py
     docker build --quiet \
       --tag c2mediaserverstack/pinepods:nightly20260911-upstream-09c3dcd \

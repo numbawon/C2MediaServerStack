@@ -26,6 +26,11 @@ else
   echo "Swarm already active, skipping init."
 fi
 
+# Every stateful service is pinned to this label (see swarm-preflight.sh), so
+# extra nodes can join later without picking up anything that has local data.
+# Idempotent; only the node running bootstrap is labelled.
+docker node update --label-add role=core "$(docker info --format '{{.Swarm.NodeID}}')" >/dev/null
+
 actual_gw_subnet="$(docker network inspect docker_gwbridge --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')"
 actual_gw_gateway="$(docker network inspect docker_gwbridge --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}')"
 if [ "$actual_gw_subnet" != "$COMMON_DOCKER_GWBRIDGE_SUBNET" ] ||

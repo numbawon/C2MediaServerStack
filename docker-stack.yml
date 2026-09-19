@@ -15,6 +15,13 @@
 # --attachable) so Traefik, which lives in this swarm stack, can still route
 # to them by service name.
 
+# Placement: every service that mounts anything is pinned to the node
+# labelled role=core (`docker node update --label-add role=core <node>`,
+# done by bootstrap.sh). Bind mounts and named volumes are both local to one
+# node, so an unpinned service could land on a node holding none of its
+# data. scripts/swarm-preflight.sh enforces this and runs before every
+# `deploy.sh stack`. Services with no volumes are free to move.
+
 # Log rotation for every service below, via the &logging anchor.
 #
 # Docker's json-file driver defaults to UNLIMITED size with no rotation, so
@@ -269,7 +276,7 @@ services:
       - internal
     deploy:
       placement:
-        constraints: [node.role == manager]
+        constraints: [node.role == manager, node.labels.role == core]
 
   # ---------------------------------------------------------------------
   # Traefik -- reads the Docker API via the proxy above, never the raw
@@ -449,7 +456,7 @@ services:
         mode: host
     deploy:
       placement:
-        constraints: [node.role == manager]
+        constraints: [node.role == manager, node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.traefik.rule=Host(`traefik.${COMMON_DOMAIN}`)"
@@ -494,6 +501,8 @@ services:
     networks:
       - edge
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       replicas: 1
 
   # ---------------------------------------------------------------------
@@ -536,6 +545,8 @@ services:
       - edge
       - internal
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.authentik.rule=Host(`auth.${COMMON_DOMAIN}`)"
@@ -567,6 +578,9 @@ services:
       - authentik_data:/media
     networks:
       - internal
+    deploy:
+      placement:
+        constraints: [node.labels.role == core]
 
   postgres:
     logging: *logging
@@ -589,6 +603,9 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - internal
+    deploy:
+      placement:
+        constraints: [node.labels.role == core]
 
   redis:
     logging: *logging
@@ -639,7 +656,7 @@ services:
       - internal
     deploy:
       placement:
-        constraints: [node.role == manager]
+        constraints: [node.role == manager, node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.portainer.rule=Host(`portainer.${COMMON_DOMAIN}`)"
@@ -668,6 +685,8 @@ services:
       # Ombi reaches Lidarr here instead of joining `edge`; see `requests`.
       - requests
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.lidarr.rule=Host(`lidarr.${COMMON_DOMAIN}`)"
@@ -694,6 +713,8 @@ services:
     networks:
       - edge
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.bazarr.rule=Host(`bazarr.${COMMON_DOMAIN}`)"
@@ -732,6 +753,8 @@ services:
     networks:
       - edge
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.seerr.rule=Host(`seerr.${COMMON_DOMAIN}`)"
@@ -772,6 +795,8 @@ services:
       - internal
       - requests
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.docker.network=mediastack_internal"
@@ -797,6 +822,8 @@ services:
     networks:
       - edge
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.prowlarr.rule=Host(`prowlarr.${COMMON_DOMAIN}`)"
@@ -897,6 +924,8 @@ services:
     networks:
       - edge
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.tautulli.rule=Host(`tautulli.${COMMON_DOMAIN}`)"
@@ -950,6 +979,8 @@ services:
       # Shared with AudioMuse-AI only; not a trusted subnet. See `music`.
       - music
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         # See grafana: overrides the global swarm provider network so
@@ -1014,6 +1045,8 @@ services:
     networks:
       - edge
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.komga.rule=Host(`komga.${COMMON_DOMAIN}`) && !PathPrefix(`/api`) && !PathPrefix(`/opds`) && !PathPrefix(`/sse`) && !PathPrefix(`/kobo`)"
@@ -1131,6 +1164,8 @@ services:
     networks:
       - edge
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.traefik-manager.rule=Host(`traefik-manager.${COMMON_DOMAIN}`)"
@@ -1233,6 +1268,8 @@ services:
     networks:
       - edge
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.organizarr.rule=Host(`organizarr.${COMMON_DOMAIN}`)"
@@ -1273,6 +1310,8 @@ services:
     networks:
       - edge
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.homer.rule=Host(`homer.${COMMON_DOMAIN}`)"
@@ -1317,7 +1356,7 @@ services:
       - internal
     deploy:
       placement:
-        constraints: [node.role == manager]
+        constraints: [node.role == manager, node.labels.role == core]
 
   # ---------------------------------------------------------------------
   # Antivirus -- clamd stays isolated from host paths. The companion
@@ -1336,7 +1375,7 @@ services:
       - internal
     deploy:
       placement:
-        constraints: [node.role == manager]
+        constraints: [node.role == manager, node.labels.role == core]
       resources:
         limits:
           cpus: "2"
@@ -1374,7 +1413,7 @@ services:
       - internal
     deploy:
       placement:
-        constraints: [node.role == manager]
+        constraints: [node.role == manager, node.labels.role == core]
       resources:
         limits:
           cpus: "1"
@@ -1398,7 +1437,7 @@ services:
       - internal
     deploy:
       placement:
-        constraints: [node.role == manager]
+        constraints: [node.role == manager, node.labels.role == core]
 
   prometheus:
     logging: *logging
@@ -1417,6 +1456,8 @@ services:
       - edge
       - internal
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.prometheus.rule=Host(`prometheus.${COMMON_DOMAIN}`)"
@@ -1458,6 +1499,8 @@ services:
       - edge
       - internal
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.alertmanager.rule=Host(`alertmanager.${COMMON_DOMAIN}`)"
@@ -1493,6 +1536,9 @@ services:
       - ./alert-relay:/app:ro
     networks:
       - internal
+    deploy:
+      placement:
+        constraints: [node.labels.role == core]
 
   # ---------------------------------------------------------------------
   # PinePods -- podcast manager. Replaces using Audiobookshelf for
@@ -1560,6 +1606,8 @@ services:
       - edge
       - internal
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.pinepods.rule=Host(`podcasts.${COMMON_DOMAIN}`)"
@@ -1601,6 +1649,8 @@ services:
     networks:
       - edge
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.zork-landing.rule=Host(`zork.${COMMON_DOMAIN}`)"
@@ -1701,6 +1751,9 @@ services:
       - pinepods_db_data:/var/lib/pgdata
     networks:
       - internal
+    deploy:
+      placement:
+        constraints: [node.labels.role == core]
 
   pinepods-valkey:
     logging: *logging
@@ -1759,6 +1812,8 @@ services:
     networks:
       - edge
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.sonarr.rule=Host(`sonarr.${COMMON_DOMAIN}`)"
@@ -1786,6 +1841,8 @@ services:
     networks:
       - edge
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.radarr.rule=Host(`radarr.${COMMON_DOMAIN}`)"
@@ -1824,6 +1881,8 @@ services:
     networks:
       - edge
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.lazylibrarian.rule=Host(`lazylibrarian.${COMMON_DOMAIN}`)"
@@ -1861,6 +1920,8 @@ services:
     networks:
       - edge
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.mylar3.rule=Host(`mylar3.${COMMON_DOMAIN}`)"
@@ -1903,6 +1964,8 @@ services:
       # one network it shares with anything in the stack.
       - chat
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.ntfy.rule=Host(`ntfy.${COMMON_DOMAIN}`)"
@@ -1958,7 +2021,7 @@ services:
       - internal
     deploy:
       placement:
-        constraints: [node.role == manager]
+        constraints: [node.role == manager, node.labels.role == core]
 
   grafana:
     logging: *logging
@@ -2001,6 +2064,8 @@ services:
       # both already on `internal` too, so nothing else needs to change.
       - internal
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         # Traefik's global --providers.swarm.network is `edge`, and grafana
@@ -2044,6 +2109,9 @@ services:
       - loki_data:/loki
     networks:
       - internal
+    deploy:
+      placement:
+        constraints: [node.labels.role == core]
 
   # Discovers and tails every container's logs through the socket proxy's
   # existing CONTAINERS permission (already granted above for Portainer/
@@ -2092,6 +2160,9 @@ services:
       - ./recyclarr/configs:/config/configs:ro
     networks:
       - edge
+    deploy:
+      placement:
+        constraints: [node.labels.role == core]
 
   # ---------------------------------------------------------------------
   # Cleanuparr -- removes stalled, blocked and known-malware downloads
@@ -2126,6 +2197,8 @@ services:
     networks:
       - edge
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.cleanuparr.rule=Host(`cleanuparr.${COMMON_DOMAIN}`)"
@@ -2173,7 +2246,7 @@ services:
       - internal
     deploy:
       placement:
-        constraints: [node.role == manager]
+        constraints: [node.role == manager, node.labels.role == core]
 
   # ---------------------------------------------------------------------
   # copyparty (files) -- ADMIN file manager. Read-write over Media and
@@ -2243,6 +2316,8 @@ services:
       - edge
     logging: *logging
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       replicas: 1
       labels:
         - traefik.enable=true
@@ -2308,6 +2383,8 @@ services:
       - edge
     logging: *logging
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       replicas: 1
       labels:
         - traefik.enable=true
@@ -2377,6 +2454,8 @@ services:
     networks:
       - edge
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.flood.rule=Host(`flood.${COMMON_DOMAIN}`)"
@@ -2428,6 +2507,8 @@ services:
     networks:
       - edge
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=false"
 
@@ -2473,6 +2554,8 @@ services:
     networks:
       - edge
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.audiobookshelf.rule=Host(`audiobookshelf.${COMMON_DOMAIN}`)"
@@ -2530,6 +2613,8 @@ services:
       - edge
       - internal
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.immich.rule=Host(`immich.${COMMON_DOMAIN}`)"
@@ -2550,6 +2635,8 @@ services:
     networks:
       - internal
     deploy:
+      placement:
+        constraints: [node.labels.role == core]
       resources:
         limits:
           # Model inference is memory-hungry and will happily take
@@ -2579,6 +2666,9 @@ services:
       - immich_db_data:/var/lib/postgresql/data
     networks:
       - internal
+    deploy:
+      placement:
+        constraints: [node.labels.role == core]
 
   immich-redis:
     logging: *logging
@@ -2623,6 +2713,9 @@ services:
     networks:
       - edge
       - internal
+    deploy:
+      placement:
+        constraints: [node.labels.role == core]
 
   promtail:
     logging: *logging
@@ -2656,4 +2749,4 @@ services:
       # constraint the task could be scheduled elsewhere and the router
       # would be shipping logs at a closed port with nothing to say so.
       placement:
-        constraints: [node.role == manager]
+        constraints: [node.role == manager, node.labels.role == core]
