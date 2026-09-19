@@ -1,0 +1,2 @@
+# Re-include scripts/, which the indexer skips by default.
+!scripts/
