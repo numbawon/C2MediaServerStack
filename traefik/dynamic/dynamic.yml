@@ -262,8 +262,14 @@ http:
         - authentik
       service: hermes
 
+    # Only the surface the chat client needs: /v1 (chat, responses, runs,
+    # models), /api/sessions and /health. Everything else the API server
+    # serves (/api/jobs, /api/cron, /api/model, /api/platforms,
+    # /health/detailed) never matches a router here and 404s at Traefik, so
+    # a leaked key cannot schedule jobs or reconfigure the agent, and
+    # /v1/browser-control (remote browser driving) is carved back out of /v1.
     hermes-api:
-      rule: 'Host(`hermes-api.{{ env "COMMON_DOMAIN" }}`)'
+      rule: 'Host(`hermes-api.{{ env "COMMON_DOMAIN" }}`) && !PathPrefix(`/v1/browser-control`) && (PathPrefix(`/v1`) || PathPrefix(`/api/sessions`) || Path(`/health`))'
       entryPoints:
         - web
         - websecure

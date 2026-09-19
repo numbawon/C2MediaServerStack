@@ -1723,6 +1723,12 @@ so no path rule can tell them apart.
 | `hermes.<domain>` | dashboard, 9119 | `authentik@file`, Admin-only application, plus the dashboard's own basic-auth login |
 | `hermes-api.<domain>` | API server, 8642 | none at Traefik; bearer `API_SERVER_KEY` only (plus the stack-wide rate limit and CrowdSec bouncer) |
 
+The hermes-api router only matches `/v1` (minus `/v1/browser-control`),
+`/api/sessions` and `/health`; `/api/jobs`, `/api/cron`, `/api/model`,
+`/api/platforms` and `/health/detailed` 404 at Traefik even with the key, so
+a leaked key cannot schedule jobs or reconfigure the agent. If the app
+complains about a missing feature, that allowlist is the first place to look.
+
 Hermes runs commands, so that key is a shell credential. The API server
 refuses to start with a weak one, and unauthenticated requests get a 401 from
 Hermes itself, but there is no second lock on that hostname by design.
