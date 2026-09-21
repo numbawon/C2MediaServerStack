@@ -3960,6 +3960,26 @@ Diun watches *registries*, not GitHub releases. That is the more
 reliable signal here: several of these projects tag releases
 inconsistently, but all of them have to push an image.
 
+## Multi-node placement and checks
+
+Bind mounts and named volumes are both local to one node, so a service that
+mounts anything must never be schedulable on a node that lacks its data. Every
+such service in `docker-stack.yml` carries `node.labels.role == core`
+(`bootstrap.sh` labels the first node; add the label to any other node that
+should hold state). `scripts/swarm-preflight.sh` fails when a service with
+volumes is unpinned or when no node carries the label, and `deploy.sh stack`
+runs it first.
+
+`scripts/ci-validate.sh` runs the checks that need no live stack: the
+placement preflight, `.env.example` against `validate-env.py`, `docker stack
+config` and every compose file rendering, and shellcheck. The `Validate`
+workflow runs it on every push.
+
+New Authentik forward-auth apps: `scripts/authentik-proxy-app.sh <slug> <host>
+<group[,group]>`. Providers made by hand in `ak shell` lack redirect URIs,
+scope mappings and grant types, which shows up as "Redirect URI Error"; the
+script sets all three and is safe to re-run on an existing app.
+
 ## Alerting
 
 ```

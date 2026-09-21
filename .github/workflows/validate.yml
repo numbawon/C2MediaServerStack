@@ -1,0 +1,29 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install PyYAML
+        run: sudo apt-get install -y --no-install-recommends python3-yaml
+
+      # .env.example, swarm placement, stack and compose rendering, shellcheck.
+      # See the header of the script for exactly what it covers.
+      - name: Validate
+        env:
+          CI: "true"
+        run: scripts/ci-validate.sh
