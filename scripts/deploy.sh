@@ -84,9 +84,26 @@ case "${1:-}" in
     done
     ;;
   recovery)
+    # Unattended (run by mediastack-recovery.service after a reboot), so one
+    # component failing must not stop the rest from being tried. A stray
+    # container name conflict on `download` silently left `ids` and `home`
+    # never re-applied for 21 hours after a reboot -- `set -e` on the loop
+    # itself turned one bad recreate into every component after it never
+    # running. Still exits non-zero if anything failed, so the systemd unit
+    # shows failed and `systemctl status mediastack-recovery.service` says
+    # which component, but every component gets a chance regardless.
+    failed=()
     for component in ${COMMON_RECOVERY_COMPONENTS-dns download plex ids}; do
-      deploy_component "$component"
+      echo "== recovery: $component =="
+      if ! deploy_component "$component"; then
+        echo "FAILED: $component" >&2
+        failed+=("$component")
+      fi
     done
+    if [ "${#failed[@]}" -gt 0 ]; then
+      echo "recovery: failed components: ${failed[*]}" >&2
+      exit 1
+    fi
     ;;
   stack|download|plex|dns|ai|tdarr|audiomuse|hermes|ids|i2p|home)
     deploy_component "$1"
