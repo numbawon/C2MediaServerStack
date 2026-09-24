@@ -1,0 +1,114 @@
+# Tdarr remote worker for C2-Swarm-01's AMD GPU (Polaris 22 XL / Radeon RX
+# Vega M GL, the discrete half of this NUC's Kaby Lake-G chip). VAAPI
+# hardware transcode, connecting to the Tdarr server already running on
+# C2Storage rather than running its own server (Tdarr's usual shape: one
+# server, any number of node workers).
+#
+# Lives here, not in the main repo's docker-compose.*.yml files, because
+# this node has no checkout of that repo and none of its .env/.appdata
+# conventions -- everything here is self-contained. Still tracked in git
+# for the same reason everything else in this stack is: so the NUC's
+# config is not the only copy of it.
+#
+# Why plain compose, not the Swarm stack: Swarm mode does not support the
+# `devices:` key at all (the same reason Plex, Tdarr and Ollama are
+# standalone on C2Storage -- see docker-compose.tdarr.yml's header), so a
+# GPU-passthrough service can never be a Swarm service, full stop,
+# regardless of which node it targets.
+#
+# Reaches the server over the `edge` overlay network (the same attachable
+# network Plex/Tdarr/Traefik use), joined here as a plain container the
+# same way those are on C2Storage. Tested working: a container on this
+# overlay reaches other edge-attached containers on other Swarm nodes by
+# name, no LAN IP or published port needed.
+#
+# Uses the ghcr.io/haveagitgat/tdarr_node image, not plain `tdarr`. They
+# are not the same thing configured differently: `tdarr`'s image always
+# ships a full Tdarr_Server service directory, and its node service's own
+# startup script (/etc/services.d/tdarr_node/run) exits immediately
+# unless internalNode=true -- there is no env var that makes that image
+# run the node half without also running a server. Confirmed the hard
+# way: without internalNode=true, only Tdarr_Server started, the node
+# process never launched at all, and it never showed up on the real
+# server's node list. tdarr_node has no server service directory in the
+# image at all, so its node script's guard condition is always false and
+# it starts unconditionally -- the actual node-only image, not a flag.
+#
+# Deploy:
+#   docker compose -f docker-compose.tdarr-node.yml up -d
+#
+# Prerequisites on this node (see the runbook for the reasoning on each):
+#   - joined the Swarm as a worker (already done)
+#   - mesa installed, for the amdgpu/VAAPI userspace driver (already done)
+#   - the NFS export on C2Storage grants this node (192.168.50.9) rw, not
+#     just ro like C2-Swarm-02 -- Tdarr replaces files in place, the same
+#     reason docker-compose.tdarr.yml's own /media mount is rw
+#   - /mnt/media-nfs mounted via /etc/fstab, NFSv4, matching the server's
+#     fsid=0 pseudo-root:
+#       192.168.50.10:/ /mnt/media-nfs nfs4 rw,hard,timeo=100,_netdev,x-systemd.automount 0 0
+name: tdarr-node
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  tdarr-node:
+    logging: *logging
+    # Pinned to match the server's current version (docker-compose.tdarr.yml
+    # on C2Storage, still on :latest there as of this writing -- 2.88.01).
+    # Tdarr refuses to connect on any version mismatch at all, confirmed:
+    # 2.90.01 against a 2.88.01 server exits immediately with "Node version
+    # ... does not match Server version ...". Bump this by hand alongside
+    # the server, never let this one float ahead on its own via :latest.
+    image: ghcr.io/haveagitgat/tdarr_node:2.88.01
+    container_name: tdarr-node
+    environment:
+      - TZ=America/Los_Angeles
+      - PUID=1000
+      - PGID=1000
+      - UMASK_SET=002
+      # `tdarr` resolves over the edge overlay to the server container on
+      # C2Storage.
+      - nodeName=C2-Swarm-01
+      - serverIP=tdarr
+      - serverPort=8266
+    volumes:
+      # Node-local config, separate from the server's -- not the same
+      # ${COMMON_CONFIG}/tdarr/server the main server uses.
+      - tdarr_node_config:/app/configs
+      - tdarr_node_logs:/app/logs
+      # The shared library over NFS, rw (see the header). A bind mount of
+      # an OS-level mount, not Docker's own NFS volume driver -- that
+      # driver does a fairly raw mount(2) call and does not reliably do
+      # NFSv4 (confirmed: it fails with "protocol not supported" using
+      # the exact same options that work fine as a plain `mount -t
+      # nfs4`). /mnt/media-nfs is mounted via /etc/fstab on this node;
+      # see the runbook for the fstab line. fsid=0 on the server's export
+      # makes `:/` the pseudo-root, equivalent to mounting /mnt/Media
+      # directly.
+      - /mnt/media-nfs:/media
+      # Scratch space for in-progress encodes, local disk, never NFS: an
+      # in-progress transcode doing constant read/write over the network
+      # for scratch data would be both slow and needless load on the
+      # export. Plain bind mount to a directory on this node, not a
+      # named volume, so its size is visible with ordinary `du` on the
+      # NUC without going through Docker.
+      - /home/numbawon/tdarr-temp:/temp
+    devices:
+      # renderD129 confirmed as the AMD GPU's render node (amdgpu driver,
+      # PCI 01:00.0), not renderD128 (that's the Intel iGPU, i915).
+      - /dev/dri/renderD129:/dev/dri/renderD129
+    networks:
+      - edge
+    restart: unless-stopped
+
+networks:
+  edge:
+    external: true
+
+volumes:
+  tdarr_node_config:
+  tdarr_node_logs:
