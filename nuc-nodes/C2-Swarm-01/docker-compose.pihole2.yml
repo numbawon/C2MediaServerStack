@@ -1,0 +1,58 @@
+# C2-pihole2 -- a second, independent Pi-hole on C2-Swarm-01, so the house
+# does not lose DNS/internet if C2Storage goes down. See the runbook's
+# "Major objective" note for the full plan; this is the first slice of it:
+# get the instance itself running tonight. Not yet done, deliberately:
+#   - list sync with the primary (Nebula Sync or Orbital Sync, Pi-hole v6's
+#     Teleporter API -- compare the two before picking)
+#   - router/DHCP failover (two DNS entries vs a keepalived floating VIP)
+#   - a public hostname behind Traefik/Authentik, matching the primary
+# Until those exist this is a second, unsynced, independent resolver you
+# can point a device at by hand, not an automatic failover yet.
+#
+# Same reasoning as docker-compose.dns.yml on C2Storage for every choice
+# below: network_mode: host (real client IPs, not the docker_gwbridge
+# gateway for every query), restart: always (up before anything else,
+# no depends_on in Swarm anyway), plain compose (Pi-hole is
+# infrastructure other things depend on, not something that should live
+# inside a stack that gets torn down together).
+#
+# No FTLCONF_webserver_api_password override, unlike the primary: that one
+# is blank because Traefik's authentik@file middleware is the real gate in
+# front of it. This one has no Traefik route yet (see above), so it keeps
+# Pi-hole's own auto-generated random admin password -- check this
+# container's startup logs for it, never put it in chat.
+#
+# Deploy:
+#   docker compose -f docker-compose.pihole2.yml up -d
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+name: pihole2
+
+services:
+  pihole2:
+    logging: *logging
+    image: pihole/pihole:latest
+    container_name: pihole2
+    hostname: C2-pihole2
+    network_mode: host
+    environment:
+      - TZ=America/Los_Angeles
+      # Same reasoning as the primary: this LAN has no IPv6, and the
+      # use-application-dns.net NXDOMAIN answer keeps Firefox from
+      # bypassing Pi-hole via DNS-over-HTTPS.
+      - FTLCONF_misc_dnsmasq_lines=filter-AAAA;server=/use-application-dns.net/
+    volumes:
+      # Local to this node, not shared with the primary -- an independent
+      # copy is the whole point of a second instance. Plain directories
+      # under this user's home rather than a repo-relative path: this
+      # node has no checkout of the main repo.
+      - /home/numbawon/pihole2/config:/etc/pihole
+      - /home/numbawon/pihole2/dnsmasq:/etc/dnsmasq.d
+    cap_add:
+      - NET_BIND_SERVICE
+    restart: always
