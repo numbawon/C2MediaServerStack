@@ -205,6 +205,14 @@ secrets:
   # ntfy's first boot (`ntfy token add`), see README.
   ntfy_relay_token:
     external: true
+  # SSH private key for numbawon@<router>, used only by
+  # minecraft-router-relay to reach router/minecraft-port-toggle.sh.
+  minecraft_router_key:
+    external: true
+  # Bearer token minecraft-router-relay requires on its own /toggle
+  # endpoint -- Crafty's start/stop command needs to send this.
+  minecraft_relay_token:
+    external: true
   crowdsec_bouncer_key_v3:
     external: true
   # Cloudflare API token for the ACME DNS-01 challenge. Zone:Read +
@@ -1609,6 +1617,44 @@ services:
       - ./alert-relay:/app:ro
     networks:
       - internal
+    deploy:
+      placement:
+        constraints: [node.labels.role == core]
+
+  # ---------------------------------------------------------------------
+  # Crafty Controller (on C2-Swarm-02) -> this -> the router's port-forward
+  # toggle script. See minecraft-router-relay/relay.py's own header for the
+  # full reasoning: Minecraft is raw TCP so Authentik cannot gate it, and
+  # the router's dropbear SSH does not enforce authorized_keys `command=`
+  # restrictions (confirmed directly), so Crafty never holds a router
+  # credential -- it only ever makes a bearer-token HTTP call here. This is
+  # the one thing that holds the actual SSH key.
+  #
+  # On `edge`, not `internal`: Crafty is a standalone container on a
+  # different physical node, reaching this by name over the attachable
+  # overlay, the same pattern proven for the Tdarr worker reaching its
+  # server.
+  # ---------------------------------------------------------------------
+  minecraft-router-relay:
+    logging: *logging
+    image: python:3-alpine
+    cap_drop: [ALL]
+    # openssh-client isn't in stock python:3-alpine. Installed at start
+    # rather than a custom image, same "no image to build" reasoning as
+    # everything else run straight off python:3-alpine here.
+    command: sh -c "apk add --no-cache openssh-client >/dev/null && python /app/relay.py"
+    environment:
+      - TZ=${COMMON_TZ}
+      - ROUTER_HOST=${COMMON_LAN_ROUTER}
+      - ROUTER_USER=numbawon
+      - PYTHONUNBUFFERED=1
+    secrets:
+      - minecraft_router_key
+      - minecraft_relay_token
+    volumes:
+      - ./minecraft-router-relay:/app:ro
+    networks:
+      - edge
     deploy:
       placement:
         constraints: [node.labels.role == core]

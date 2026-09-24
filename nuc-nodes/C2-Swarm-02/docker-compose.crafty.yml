@@ -1,0 +1,66 @@
+# Crafty Controller -- web dashboard for spinning Minecraft servers up and
+# down, switching modpacks, and managing worlds/backups without touching a
+# terminal. Lives on C2-Swarm-02: idle otherwise (only the global
+# node-exporter/cadvisor/promtail run there), and Minecraft is pure
+# CPU/RAM, no GPU, so it doesn't compete with the Tdarr transcode work on
+# C2-Swarm-01.
+#
+# Same reasoning as the Tdarr worker and pihole2 for living here rather
+# than in the main repo: this node has no checkout of it, and Crafty
+# itself doesn't gain anything from being a Swarm service -- it's a
+# single, stateful, resource-heavy app (worlds, Crafty's own DB, backups),
+# exactly the shape docker-compose.tdarr.yml and docker-compose.dns.yml
+# already argue standalone is right for.
+#
+# Honest resource note before adding a second or third server: this node
+# has 16GB RAM / 8 threads total. Modded Minecraft servers commonly want
+# 4-8GB each on their own; three concurrent modded servers plus Crafty
+# itself and the OS will not fit comfortably here. One modded server, or
+# two lighter/vanilla-leaning ones, is the realistic ceiling -- worth
+# confirming with real usage before promising three to the kids.
+#
+# Ports: Crafty spawns each Minecraft server it manages on its own port,
+# assigned per-server in its UI. 25565-25580 gives headroom for several
+# defined servers (only a few running at once) plus the RCON port each
+# one also wants. 19132/udp is Bedrock (mobile/console), harmless to
+# leave open even if nothing uses it yet.
+#
+# Deploy:
+#   docker compose -f docker-compose.crafty.yml up -d
+# First login: https://192.168.50.8:8443 -- Crafty's cert is self-signed
+# (it's LAN-only, not behind Traefik yet), the browser warning is
+# expected. Default admin account/password are printed to this
+# container's own startup logs on first boot -- check those, don't put
+# them in chat.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+name: crafty
+
+services:
+  crafty:
+    logging: *logging
+    image: registry.gitlab.com/crafty-controller/crafty-4:latest
+    container_name: crafty
+    environment:
+      - TZ=America/Los_Angeles
+    ports:
+      - "192.168.50.8:8443:8443"   # web panel (HTTPS, self-signed)
+      - "192.168.50.8:8123:8123"   # dynmap, if a server enables it
+      - "192.168.50.8:19132:19132/udp"  # Bedrock
+      - "192.168.50.8:25565-25580:25565-25580"
+    volumes:
+      # Local to this node -- worlds and Crafty's own state, not shared
+      # with anything else. Wiring into the repo's backup scripts is a
+      # follow-up once this is actually running real worlds worth
+      # protecting.
+      - /home/numbawon/crafty/backups:/crafty/backups
+      - /home/numbawon/crafty/logs:/crafty/logs
+      - /home/numbawon/crafty/servers:/crafty/servers
+      - /home/numbawon/crafty/config:/crafty/app/config
+      - /home/numbawon/crafty/import:/crafty/import
+    restart: unless-stopped
