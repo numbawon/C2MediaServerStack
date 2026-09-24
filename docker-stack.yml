@@ -1355,8 +1355,17 @@ services:
     networks:
       - internal
     deploy:
-      placement:
-        constraints: [node.role == manager, node.labels.role == core]
+      # global, not pinned: one node-exporter per node, including future
+      # swarm members, so every node shows up in Prometheus rather than
+      # just the manager. Each node gets its own local
+      # node_exporter_textfile volume; only C2Storage's copy is ever
+      # populated (verify-backups.sh's systemd timer only runs there), a
+      # node with nothing written to it just reports no textfile metrics,
+      # which is fine. Scraped via Prometheus DNS SD on `tasks.node-exporter`
+      # (prometheus/prometheus.yml), not a static single target, since a
+      # bare service-name target would round-robin across nodes instead of
+      # scraping each one.
+      mode: global
 
   # ---------------------------------------------------------------------
   # Antivirus -- clamd stays isolated from host paths. The companion
@@ -1436,8 +1445,9 @@ services:
     networks:
       - internal
     deploy:
-      placement:
-        constraints: [node.role == manager, node.labels.role == core]
+      # global, same reasoning as node-exporter above: per-container metrics
+      # need one cAdvisor per node, discovered the same DNS SD way.
+      mode: global
 
   prometheus:
     logging: *logging

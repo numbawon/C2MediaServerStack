@@ -7,6 +7,11 @@
 # starts empty. So every service that mounts anything must be pinned to the
 # node labelled role=core, and that label must exist or nothing schedules.
 #
+# Exception: `mode: global` services. Those run on every node on purpose,
+# so a volume/bind mount there is understood to be per-node data (e.g.
+# node-exporter's textfile collector), not something that needs a single
+# node's copy to follow it around.
+#
 #   ./scripts/swarm-preflight.sh
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -19,7 +24,10 @@ d = yaml.safe_load(open("docker-stack.yml"))
 for name, svc in d["services"].items():
     if not svc.get("volumes"):
         continue
-    cons = ((svc.get("deploy") or {}).get("placement") or {}).get("constraints") or []
+    deploy = svc.get("deploy") or {}
+    if deploy.get("mode") == "global":
+        continue
+    cons = (deploy.get("placement") or {}).get("constraints") or []
     if "node.labels.role == core" not in cons:
         print(name)
 PY
