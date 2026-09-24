@@ -1,0 +1,48 @@
+# Reproduces last night's manual work on all three nodes at once:
+# /etc/docker/daemon.json pointing every node at the LAN registry, applied
+# correctly the first time instead of hitting the missing-/etc/docker
+# directory the hard way three separate times.
+#
+# Idempotent by construction, not by careful hand-checking: `copy` only
+# reports changed when the file's content actually differs, and the
+# handler only restarts docker when that task actually changed something.
+# Run this twice in a row and the second run should show 0 changed, 0
+# restarted -- that's the whole point, worth actually doing once to see it.
+#
+#   cd ansible
+#   ansible-playbook playbooks/docker-insecure-registry.yml --ask-become-pass
+---
+- name: Configure Docker's insecure registry allowlist
+  hosts: cluster
+  become: true
+  vars:
+    registry_address: "192.168.50.10:5000"
+
+  tasks:
+    - name: Ensure /etc/docker exists
+      # This exact step is why the manual version failed on the first
+      # host: `tee` can create the file but not a missing parent
+      # directory, and nothing had ever touched /etc/docker here before.
+      ansible.builtin.file:
+        path: /etc/docker
+        state: directory
+        mode: "0755"
+
+    - name: Write daemon.json
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        mode: "0644"
+        # Compact single-line, matching what's already on disk on all
+        # three nodes byte-for-byte (checked against the actual file on
+        # C2Storage before writing this) -- a pretty-printed version here
+        # would report "changed" and restart docker on every single run
+        # even though nothing meaningful differs, for no reason beyond a
+        # cosmetic formatting mismatch.
+        content: "{\"insecure-registries\": [\"{{ registry_address }}\"]}\n"
+      notify: Restart docker
+
+  handlers:
+    - name: Restart docker
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted
