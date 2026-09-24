@@ -135,6 +135,10 @@ volumes:
     name: pinepods_backups
   traefik_logs:
     name: traefik_logs
+  # The one copy of every locally-built image (PineData, Zork). Worth
+  # backing up the same as anything else with no upstream source.
+  registry_data:
+    name: registry_data
   # Explicit `name:` on every volume so it doesn't get the `<stack-name>_`
   # prefix Swarm adds by default -- keeps scripts/backup-local.sh's volume
   # list stable regardless of what you name the stack at deploy time.
@@ -297,6 +301,47 @@ services:
         constraints: [node.role == manager, node.labels.role == core]
 
   # ---------------------------------------------------------------------
+  # ---------------------------------------------------------------------
+  # A private registry for images this repo builds locally (PineData,
+  # Zork). Swarm cannot distribute a locally-built image to another node
+  # on its own -- each node would build its own copy independently,
+  # possibly diverging (exactly the warning `docker stack deploy` prints
+  # for these two today). Pushing them here and referencing the registry
+  # tag in `image:` fixes that: any node can pull the one built copy.
+  #
+  # Plain HTTP, LAN-only, no auth, published directly on the host rather
+  # than routed through Traefik: this is a homelab-internal build tool
+  # bootstrapping itself, not something worth a public hostname or an
+  # ACME cert for, and Traefik's Cloudflare Tunnel is not how any node's
+  # own dockerd would reach it for a pull regardless. Requires
+  # `insecure-registries` in /etc/docker/daemon.json on every node that
+  # pulls from it (including this one) -- see the README for why plain
+  # HTTP needs that and the exact steps. Needs a `docker restart` of that
+  # node's daemon to take effect, which is low-impact on an
+  # otherwise-empty node but briefly stops every container on one that
+  # is not, so this is a deliberately-timed step, not part of any deploy.
+  # ---------------------------------------------------------------------
+  registry:
+    logging: *logging
+    image: registry:2
+    environment:
+      - REGISTRY_STORAGE_DELETE_ENABLED=true
+    volumes:
+      - registry_data:/var/lib/registry
+    ports:
+      - target: 5000
+        published: 5000
+        protocol: tcp
+        mode: host
+    networks:
+      - internal
+    deploy:
+      # Pinned: it is the one copy of these images. Losing registry_data
+      # to a node with no data there would mean every node's next pull
+      # fails, not just a metrics gap the way node-exporter's would.
+      placement:
+        constraints: [node.labels.role == core]
+
   # Traefik -- reads the Docker API via the proxy above, never the raw
   # socket. No dashboard insecure-mode. Only ingress is the Cloudflare
   # Tunnel below; no host ports published at all.
@@ -1587,7 +1632,7 @@ services:
     logging: *logging
     # Local image patches PinePods 0.9.0 subscription paths to accept missing
     # host artwork and missing podcast categories.
-    image: c2mediaserverstack/pinepods:nightly20260911-upstream-09c3dcd
+    image: ${COMMON_LAN_IP}:5000/c2mediaserverstack/pinepods:nightly20260911-upstream-09c3dcd
     environment:
       - TZ=${COMMON_TZ}
       # PUID/PGID keep downloaded episodes owned by the configured host
@@ -1697,7 +1742,7 @@ services:
 
   zork-1:
     logging: *logging
-    image: c2mediaserverstack/zork:1
+    image: ${COMMON_LAN_IP}:5000/c2mediaserverstack/zork:1
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
@@ -1721,7 +1766,7 @@ services:
 
   zork-2:
     logging: *logging
-    image: c2mediaserverstack/zork:1
+    image: ${COMMON_LAN_IP}:5000/c2mediaserverstack/zork:1
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
@@ -1741,7 +1786,7 @@ services:
 
   zork-3:
     logging: *logging
-    image: c2mediaserverstack/zork:1
+    image: ${COMMON_LAN_IP}:5000/c2mediaserverstack/zork:1
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true

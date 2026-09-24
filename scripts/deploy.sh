@@ -31,13 +31,32 @@ case "$1" in
   stack)
     ./scripts/swarm-preflight.sh
     python3 scripts/render-config.py
+    # Built directly under the registry-qualified tag so it matches
+    # docker-stack.yml's `image:` exactly -- Docker treats
+    # ${COMMON_LAN_IP}:5000/x and localhost:5000/x as different registries
+    # even when both resolve to the same server, so build/push/deploy all
+    # have to agree on the one string.
     docker build --quiet \
-      --tag c2mediaserverstack/pinepods:nightly20260911-upstream-09c3dcd \
+      --tag "${COMMON_LAN_IP}:5000/c2mediaserverstack/pinepods:nightly20260911-upstream-09c3dcd" \
       --file pinepods/Dockerfile pinepods >/dev/null
     docker build --quiet \
-      --tag c2mediaserverstack/zork:1 \
+      --tag "${COMMON_LAN_IP}:5000/c2mediaserverstack/zork:1" \
       --file zork/Dockerfile zork >/dev/null
     docker stack deploy -c docker-stack.yml mediastack
+    # Push after deploy, not before: on a from-scratch bootstrap the
+    # registry service does not exist until this same deploy creates it.
+    # Non-fatal, same reasoning as roll-unpinned.sh's pull failures --
+    # every other node still runs whatever it already had, this only
+    # means a node with none of that image yet cannot schedule it until
+    # the next successful push.
+    for i in $(seq 1 10); do
+      curl -sf "http://${COMMON_LAN_IP}:5000/v2/" >/dev/null 2>&1 && break
+      sleep 1
+    done
+    docker push "${COMMON_LAN_IP}:5000/c2mediaserverstack/pinepods:nightly20260911-upstream-09c3dcd" \
+      || echo "WARNING: could not push pinepods to the registry, nodes without a local copy cannot run it yet" >&2
+    docker push "${COMMON_LAN_IP}:5000/c2mediaserverstack/zork:1" \
+      || echo "WARNING: could not push zork to the registry, nodes without a local copy cannot run it yet" >&2
     ;;
   download)
     docker compose -f docker-compose.download.yml up -d
