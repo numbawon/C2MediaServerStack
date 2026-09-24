@@ -18,6 +18,12 @@
 #   sudo cp systemd/mediastack-recovery.service /etc/systemd/system/
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now mediastack-recovery.service
+#
+# This unit alone only covers an actual host boot (WantedBy below). A
+# plain `systemctl restart docker` stops these same containers without
+# triggering this service at all -- see
+# docker-service-mediastack-recovery.conf in this same directory for the
+# companion fix that also covers that case.
 
 [Unit]
 Description=Re-apply standalone mediastack compose files after boot
