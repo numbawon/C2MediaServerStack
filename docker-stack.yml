@@ -168,6 +168,16 @@ volumes:
   immich_model_cache:
     name: immich_model_cache
 
+# Non-secret config files that a multi-node service needs on every node,
+# unlike a bind mount of ./promtail (repo-relative, only exists on the node
+# holding the checkout). Not external, on purpose: `docker stack deploy`
+# hashes the file's current content, creates a config object under that
+# hash, and swaps the service to it automatically whenever the file
+# changes, so there is no manual create/rotate step the way secrets need.
+configs:
+  promtail_config:
+    file: ./promtail/promtail-config.yml
+
 secrets:
   postgres_password:
     external: true
@@ -2737,11 +2747,16 @@ services:
     cap_drop: [ALL]
     environment:
       - TZ=${COMMON_TZ}
-    # Directory mount, not a single-file one -- see the repo-wide fix for
-    # why (single-file bind mounts go stale on host-side edits/recreates).
     command: -config.file=/etc/promtail/promtail-config.yml
-    volumes:
-      - ./promtail:/etc/promtail:ro
+    # A Swarm config, not a bind mount -- a repo-relative bind only exists
+    # on the node holding the checkout, which would leave promtail broken
+    # on every other node now that it runs everywhere (mode: global,
+    # below). Configs are cluster-wide by design, injected fresh from
+    # Swarm's own store rather than a live host path, so this also sidesteps
+    # the single-file-bind-mount staleness problem outright.
+    configs:
+      - source: promtail_config
+        target: /etc/promtail/promtail-config.yml
     networks:
       - internal
     # Receives the router's syslog (see the router-syslog job in
@@ -2755,8 +2770,9 @@ services:
         protocol: tcp
         mode: host
     deploy:
-      # Pinned so the published port is always on this host. Without a
-      # constraint the task could be scheduled elsewhere and the router
-      # would be shipping logs at a closed port with nothing to say so.
-      placement:
-        constraints: [node.role == manager, node.labels.role == core]
+      # global, not pinned: one promtail per node collecting that node's
+      # own container logs, the same reasoning as node-exporter/cadvisor.
+      # C2Storage is always included, so the router's syslog target stays
+      # valid; the other nodes just carry an unused idle listener on 1514,
+      # internal-network only, harmless.
+      mode: global
