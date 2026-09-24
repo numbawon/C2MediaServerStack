@@ -156,6 +156,10 @@ volumes:
   # on the next verification run.
   node_exporter_textfile:
     name: node_exporter_textfile
+  # Promtail's read-position bookkeeping. See promtail-config.yml's
+  # `positions:` comment for why this needs to survive a restart.
+  promtail_positions:
+    name: promtail_positions
   # Virus definitions are derived and can be re-downloaded. Keeping them
   # avoids a full refresh on every task replacement; backups omit this volume.
   clamav_db:
@@ -170,12 +174,16 @@ volumes:
 
 # Non-secret config files that a multi-node service needs on every node,
 # unlike a bind mount of ./promtail (repo-relative, only exists on the node
-# holding the checkout). Not external, on purpose: `docker stack deploy`
-# hashes the file's current content, creates a config object under that
-# hash, and swaps the service to it automatically whenever the file
-# changes, so there is no manual create/rotate step the way secrets need.
+# holding the checkout). Not external, so `docker stack deploy` can create
+# and update it directly from the file here rather than needing an
+# out-of-band `docker config create` the way secrets do -- but Swarm
+# configs are just as immutable as secrets once created (content can't
+# change, only Labels), so a content change still means a new name, not an
+# in-place update. Bump the _vN suffix here and in the service's `configs:`
+# list below whenever promtail-config.yml's content changes, same pattern
+# as crowdsec_bouncer_key_v3.
 configs:
-  promtail_config:
+  promtail_config_v2:
     file: ./promtail/promtail-config.yml
 
 secrets:
@@ -2755,8 +2763,12 @@ services:
     # Swarm's own store rather than a live host path, so this also sidesteps
     # the single-file-bind-mount staleness problem outright.
     configs:
-      - source: promtail_config
+      - source: promtail_config_v2
         target: /etc/promtail/promtail-config.yml
+    # Persists the positions file across restarts -- see promtail-config.yml
+    # for why that matters. Node-local, one copy per node (mode: global).
+    volumes:
+      - promtail_positions:/positions
     networks:
       - internal
     # Receives the router's syslog (see the router-syslog job in
