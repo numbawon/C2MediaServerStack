@@ -220,12 +220,18 @@ secrets:
   #   printf %s '<token>' | docker secret create cloudflare_dns_token -
   cloudflare_dns_token:
     external: true
-  # Same values as the file-backed Compose secrets used by gluetun. Swarm
-  # copies let the solver processes authenticate to gluetun without putting
-  # proxy credentials in this tracked file or their service environment.
+  # Meant to be the same values as the file-backed Compose secrets used by
+  # gluetun (docker-compose.download.yml's ./secrets/httpproxy_*.txt) --
+  # Swarm copies let the solver processes authenticate to gluetun without
+  # putting proxy credentials in this tracked file or their service
+  # environment. "Meant to be" because httpproxy_password drifted from
+  # gluetun's real file-backed value at some point with nothing to catch
+  # it, and Swarm secrets can't be edited in place, only replaced under a
+  # new name -- hence _v2. Keep both copies in sync by hand on any future
+  # rotation, same discipline as crowdsec_bouncer_key_v3 above.
   httpproxy_user:
     external: true
-  httpproxy_password:
+  httpproxy_password_v2:
     external: true
 
 # CAPABILITY DROPPING
@@ -934,7 +940,7 @@ services:
     command:
       - |
         export PROXY_USERNAME="$$(cat /run/secrets/httpproxy_user)"
-        export PROXY_PASSWORD="$$(cat /run/secrets/httpproxy_password)"
+        export PROXY_PASSWORD="$$(cat /run/secrets/httpproxy_password_v2)"
         exec /app/.venv/bin/python /app/main.py
     environment:
       - TZ=${COMMON_TZ}
@@ -961,7 +967,7 @@ services:
       retries: 3
     secrets:
       - httpproxy_user
-      - httpproxy_password
+      - httpproxy_password_v2
     networks:
       - edge
     deploy:
