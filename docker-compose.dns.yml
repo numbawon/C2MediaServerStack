@@ -107,6 +107,48 @@ services:
       - NET_BIND_SERVICE
     restart: always
 
+  # ---------------------------------------------------------------------
+  # Keeps C2-pihole2 (nuc-nodes/C2-Swarm-01/docker-compose.pihole2.yml)
+  # in step with this one: blocklists, allowlists, groups and per-client
+  # rules, on a schedule, so the secondary is an actual failover rather
+  # than a second, independently-drifting resolver someone has to
+  # remember to update by hand. Orbital Sync (the older option) was
+  # archived upstream in March 2025 and never adapted to Pi-hole v6's
+  # rewritten API; nebula-sync is the maintained one built for it.
+  #
+  # Both Pi-holes run with an explicit blank webserver password (Traefik
+  # + Authentik is the real gate on both), so both sides of PRIMARY/
+  # REPLICAS below end with a bare `|` and no credential to manage.
+  #
+  # FULL_SYNC is deliberately off in favor of naming the config/gravity
+  # sections explicitly: FULL_SYNC's complete Teleporter import/export
+  # is a wider blast radius than "make the blocklists match" needs, and
+  # DHCP is left out entirely on purpose -- this LAN's DHCP is the
+  # router's job, and syncing that section would be the one way this
+  # could reach out and change something neither Pi-hole should own.
+  nebula-sync:
+    logging: *logging
+    image: ghcr.io/lovelaze/nebula-sync:latest
+    container_name: nebula-sync
+    environment:
+      - TZ=${COMMON_TZ}
+      - PRIMARY=http://${COMMON_LAN_IP}:8053|
+      - REPLICAS=http://192.168.50.9:80|
+      - CRON=*/30 * * * *
+      - FULL_SYNC=false
+      - RUN_GRAVITY=true
+      - SYNC_CONFIG_DNS=true
+      - SYNC_CONFIG_RESOLVER=true
+      - SYNC_CONFIG_NTP=true
+      - SYNC_GRAVITY_GROUP=true
+      - SYNC_GRAVITY_AD_LIST=true
+      - SYNC_GRAVITY_AD_LIST_BY_GROUP=true
+      - SYNC_GRAVITY_DOMAIN_LIST=true
+      - SYNC_GRAVITY_DOMAIN_LIST_BY_GROUP=true
+      - SYNC_GRAVITY_CLIENT=true
+      - SYNC_GRAVITY_CLIENT_BY_GROUP=true
+    restart: unless-stopped
+
 volumes:
   pihole_config:
     external: true

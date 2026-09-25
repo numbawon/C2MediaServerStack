@@ -16,11 +16,13 @@
 # infrastructure other things depend on, not something that should live
 # inside a stack that gets torn down together).
 #
-# No FTLCONF_webserver_api_password override, unlike the primary: that one
-# is blank because Traefik's authentik@file middleware is the real gate in
-# front of it. This one has no Traefik route yet (see above), so it keeps
-# Pi-hole's own auto-generated random admin password -- check this
-# container's startup logs for it, never put it in chat.
+# Same reasoning as the primary now: FTLCONF_webserver_api_password is
+# explicit empty, not left on Pi-hole's own auto-generated one, because
+# Traefik + Authentik (Admin group) is the real gate in front of this,
+# same pattern as the primary (see traefik/dynamic/dynamic.yml's
+# pihole2 router/service, reached over the LAN directly since this node
+# has no route to the `edge` overlay the way a same-host container would).
+# A second, native Pi-hole login on top would be redundant.
 #
 # Deploy:
 #   docker compose -f docker-compose.pihole2.yml up -d
@@ -42,6 +44,12 @@ services:
     network_mode: host
     environment:
       - TZ=America/Los_Angeles
+      # Explicit empty string, not a *_FILE variant -- the web UI sits
+      # behind Traefik's authentik@file middleware now, same reasoning
+      # and same FTL behavior as the primary: this actively clears any
+      # password set previously, including one auto-generated on first
+      # boot, every time the container starts.
+      - FTLCONF_webserver_api_password=
       # Same reasoning as the primary: this LAN has no IPv6, and the
       # use-application-dns.net NXDOMAIN answer keeps Firefox from
       # bypassing Pi-hole via DNS-over-HTTPS.

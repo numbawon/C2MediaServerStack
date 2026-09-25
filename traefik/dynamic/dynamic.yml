@@ -244,6 +244,20 @@ http:
         - authentik
       service: pihole
 
+    # Secondary Pi-hole (C2-pihole2, on C2-Swarm-01), same host-networking
+    # reasoning as the primary. Different node, so no docker_gwbridge
+    # trick applies here -- reached at its own real LAN address instead,
+    # which is exactly as valid a route for Traefik as any container name.
+    # Same Admin-only Authentik gate as the primary.
+    pihole2:
+      rule: 'Host(`pihole2.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+        - websecure
+      middlewares:
+        - authentik
+      service: pihole2
+
     # Hermes is two hostnames, not one path split, because the dashboard and
     # the API server both serve /api/sessions -- a path rule cannot tell them
     # apart. hermes.<domain> is the agent console: Admin-only Authentik
@@ -460,6 +474,13 @@ http:
           # now, so FTL's admin webserver was moved off them. See
           # FTLCONF_webserver_port in docker-compose.dns.yml.
           - url: 'http://{{ env "COMMON_DOCKER_GWBRIDGE_GATEWAY" }}:8053'
+
+    # Plain :80, unlike the primary -- this one has no Traefik of its own
+    # competing for the host's real ports, so FTL keeps its default.
+    pihole2:
+      loadBalancer:
+        servers:
+          - url: "http://192.168.50.9:80"
 
     # Hermes publishes both ports on the docker_gwbridge gateway (see
     # docker-compose.hermes.yml), so Traefik reaches it without Hermes
