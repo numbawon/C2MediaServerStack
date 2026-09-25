@@ -27,11 +27,13 @@
 #
 # Deploy:
 #   docker compose -f docker-compose.crafty.yml up -d
-# First login: https://192.168.50.8:8443 -- Crafty's cert is self-signed
-# (it's LAN-only, not behind Traefik yet), the browser warning is
-# expected. Default admin account/password are printed to this
-# container's own startup logs on first boot -- check those, don't put
-# them in chat.
+# First login: https://192.168.50.8:8443 (LAN, still works directly) or
+# https://crafty.<domain> (Traefik + Authentik, Admin-only -- see
+# traefik/dynamic/dynamic.yml's crafty router/service/serversTransport;
+# insecureSkipVerify there is what lets Traefik accept this self-signed
+# cert on the backend leg, the browser only ever sees Traefik's real one).
+# Default admin account/password are printed to this container's own
+# startup logs on first boot -- check those, don't put them in chat.
 
 x-logging: &logging
   driver: json-file
@@ -63,4 +65,10 @@ services:
       - /home/numbawon/crafty/servers:/crafty/servers
       - /home/numbawon/crafty/config:/crafty/app/config
       - /home/numbawon/crafty/import:/crafty/import
+    networks:
+      - edge
     restart: unless-stopped
+
+networks:
+  edge:
+    external: true

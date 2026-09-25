@@ -358,6 +358,20 @@ http:
         - authentik
       service: syncthing
 
+    # Crafty's own dashboard on C2-Swarm-02, reached over the edge overlay
+    # (the same cross-node pattern proven for the Tdarr worker). Admin-only:
+    # this panel can create and delete whole Minecraft servers, not just
+    # start/stop one. Crafty also has its own separate login underneath
+    # this gate, unrelated to Authentik, so it is a second layer either way.
+    crafty:
+      rule: 'Host(`crafty.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+        - websecure
+      middlewares:
+        - authentik
+      service: crafty
+
     # Tdarr rewrites files in the library, so it sits behind authentik with
     # no exception. It has no SSO of its own -- its only built-in gate is a
     # paid feature -- which means forward-auth is the whole of its security.
@@ -501,6 +515,12 @@ http:
         servers:
           - url: "http://syncthing:8384"
 
+    crafty:
+      loadBalancer:
+        servers:
+          - url: "https://crafty:8443"
+        serversTransport: crafty-insecure
+
     # 8265 is the web UI. 8266 is the server API the node talks to; it stays
     # on the overlay and is deliberately not routed.
     tdarr:
@@ -527,3 +547,12 @@ http:
       loadBalancer:
         servers:
           - url: "http://seerr:5055"
+
+  # Only entry: Crafty's backend cert is self-signed (LAN-only until this
+  # route existed, see docker-compose.crafty.yml's own header), so Traefik
+  # needs to be told not to verify it. This does not weaken anything the
+  # client sees -- Traefik's own certificate at the edge, issued normally
+  # via Let's Encrypt, is what a browser actually checks.
+  serversTransports:
+    crafty-insecure:
+      insecureSkipVerify: true
