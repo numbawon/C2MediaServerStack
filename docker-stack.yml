@@ -1666,6 +1666,40 @@ services:
         constraints: [node.labels.role == core]
 
   # ---------------------------------------------------------------------
+  # Crafty status -> minecraft-router-relay, the other half of the lever.
+  # Crafty has no usable start/stop hook (its webhooks are hard-coded to
+  # Discord/Slack/Mattermost/Teams payload shapes, confirmed by reading
+  # Crafty's own source; its task scheduler is time-based only). This
+  # polls Crafty's status endpoint instead and calls the relay on any
+  # observed running-state change. See watcher.py's own header for the
+  # full reasoning, including why it watches state rather than wrapping
+  # Crafty's execution command.
+  #
+  # SERVER_PORT_MAP needs a server_id:port entry added by hand for every
+  # Minecraft server that should drive the router lever, and that server
+  # needs "Show Status" enabled in its Crafty settings, or it never shows
+  # up in the status response at all.
+  # ---------------------------------------------------------------------
+  minecraft-server-watcher:
+    logging: *logging
+    image: python:3-alpine
+    cap_drop: [ALL]
+    command: sh -c "python /app/watcher.py"
+    environment:
+      - TZ=${COMMON_TZ}
+      - PYTHONUNBUFFERED=1
+      - SERVER_PORT_MAP=${MINECRAFT_SERVER_PORT_MAP:-}
+    secrets:
+      - minecraft_relay_token
+    volumes:
+      - ./minecraft-server-watcher:/app:ro
+    networks:
+      - edge
+    deploy:
+      placement:
+        constraints: [node.labels.role == core]
+
+  # ---------------------------------------------------------------------
   # PinePods -- podcast manager. Replaces using Audiobookshelf for
   # podcasts, which it was never really built for.
   #
