@@ -16,7 +16,10 @@
   hosts: cluster
   become: true
   vars:
-    registry_address: "192.168.50.10:5000"
+    # Derived from inventory rather than hardcoded here a second time --
+    # the manager's address is already the one source of truth in
+    # inventory.ini (git-ignored; see inventory.ini.example).
+    registry_address: "{{ hostvars[groups['manager'][0]].ansible_host }}:5000"
 
   tasks:
     - name: Ensure /etc/docker exists
@@ -34,7 +37,7 @@
         mode: "0644"
         # Compact single-line, matching what's already on disk on all
         # three nodes byte-for-byte (checked against the actual file on
-        # C2Storage before writing this) -- a pretty-printed version here
+        # the manager before writing this) -- a pretty-printed version here
         # would report "changed" and restart docker on every single run
         # even though nothing meaningful differs, for no reason beyond a
         # cosmetic formatting mismatch.

@@ -1,0 +1,27 @@
+# The three-machine cluster. IPs, not hostnames -- mDNS/.local resolution
+# isn't something every playbook run should depend on, and these are
+# already static (DHCP reservations on the router).
+#
+# manager is its own group (not just a host var) because playbooks that
+# should only ever touch the swarm manager -- anything joining/draining
+# nodes, the registry, NFS exports -- can target `manager` by name instead
+# of hardcoding the manager's real name everywhere. workers is the NUCs,
+# cluster is both groups together for things that apply everywhere
+# (packages, the insecure-registries config, time sync checks).
+#
+# Copy this to inventory.ini (git-ignored -- holds your real hostnames,
+# addresses and SSH user) and fill in your own values.
+
+[manager]
+YOUR_MANAGER_HOSTNAME ansible_host=192.168.1.10
+
+[workers]
+YOUR_WORKER_1_HOSTNAME ansible_host=192.168.1.11
+YOUR_WORKER_2_HOSTNAME ansible_host=192.168.1.12
+
+[cluster:children]
+manager
+workers
+
+[cluster:vars]
+ansible_user=youruser

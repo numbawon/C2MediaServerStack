@@ -8,6 +8,7 @@ cloudflared/config.yml
 cloudflared/emergency-config.yml
 cloudflared/access-ssh-ca.pub
 homer/config.yml
+ansible/inventory.ini
 
 # Local file-based secrets for the standalone compose stacks
 secrets/

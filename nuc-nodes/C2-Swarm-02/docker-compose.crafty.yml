@@ -65,12 +65,12 @@ services:
       # Local to this node -- worlds and Crafty's own state, not shared
       # with anything else. Wiring into the repo's backup scripts is a
       # follow-up once this is actually running real worlds worth
-      # protecting.
-      - /home/numbawon/crafty/backups:/crafty/backups
-      - /home/numbawon/crafty/logs:/crafty/logs
-      - /home/numbawon/crafty/servers:/crafty/servers
-      - /home/numbawon/crafty/config:/crafty/app/config
-      - /home/numbawon/crafty/import:/crafty/import
+      # protecting. Swap YOUR_USER for the real account on this node.
+      - /home/YOUR_USER/crafty/backups:/crafty/backups
+      - /home/YOUR_USER/crafty/logs:/crafty/logs
+      - /home/YOUR_USER/crafty/servers:/crafty/servers
+      - /home/YOUR_USER/crafty/config:/crafty/app/config
+      - /home/YOUR_USER/crafty/import:/crafty/import
     networks:
       - edge
     restart: unless-stopped

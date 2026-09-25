@@ -19,7 +19,7 @@ real, WebUI-integrated mechanism), not /jffs/.ssh/authorized_keys --
 confirmed the hard way that dropbear on this router does not read that
 file at all despite it looking like a normal authorized_keys location.
 `service restart_sshd` is what actually regenerates
-~numbawon/.ssh/authorized_keys from the nvram value; a bare `nvram
+~ROUTER_USER/.ssh/authorized_keys from the nvram value; a bare `nvram
 commit` alone does not.
 
 Deliberately stdlib-only (http.server + subprocess), same reasoning as
@@ -29,8 +29,8 @@ Mounted in as a directory, not a single file, same reason as everywhere
 else in this repo: single-file bind mounts go stale on host-side edits.
 
 Config, all via env:
-  ROUTER_HOST       router's LAN address                 (default 192.168.50.1)
-  ROUTER_USER       SSH user on the router                (default numbawon)
+  ROUTER_HOST       router's LAN address                 (default 192.168.1.1, always set explicitly in practice -- see docker-stack.yml's COMMON_LAN_ROUTER)
+  ROUTER_USER       SSH user on the router                (default admin, always set explicitly in practice -- see docker-stack.yml's COMMON_SSH_USER)
   ROUTER_KEY_FILE   path to the private key for that user (default /run/secrets/minecraft_router_key)
   TOKEN_FILE        path to the bearer token this relay requires (default /run/secrets/minecraft_relay_token)
   LISTEN_PORT       port to receive requests on            (default 8080)
@@ -49,8 +49,8 @@ import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-ROUTER_HOST = os.environ.get("ROUTER_HOST", "192.168.50.1")
-ROUTER_USER = os.environ.get("ROUTER_USER", "numbawon")
+ROUTER_HOST = os.environ.get("ROUTER_HOST", "192.168.1.1")
+ROUTER_USER = os.environ.get("ROUTER_USER", "admin")
 ROUTER_KEY_FILE = os.environ.get("ROUTER_KEY_FILE", "/run/secrets/minecraft_router_key")
 TOKEN_FILE = os.environ.get("TOKEN_FILE", "/run/secrets/minecraft_relay_token")
 LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "8080"))

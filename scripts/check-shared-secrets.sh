@@ -32,7 +32,8 @@ PAIRS=(
 # actually running. Standalone containers (like vpn-client) are always
 # local. Swarm services (mediastack_*) can float to any node with no
 # placement constraint -- found the hard way this script needs to look,
-# not assume C2Storage. Prints a sha256 or nothing on failure.
+# not assume this runs on the manager node. Prints a sha256 or nothing
+# on failure.
 checksum_in_container() {
   local name="$1" path="$2"
   local cid
@@ -48,7 +49,7 @@ checksum_in_container() {
     node=$(docker service ps "$name" --filter desired-state=running \
       --format '{{.Node}}' 2>/dev/null | head -1)
     if [ -n "$node" ] && [ "$node" != "$LOCAL_HOST" ]; then
-      ssh -o ConnectTimeout=8 "$node" \
+      ssh -n -o ConnectTimeout=8 "$node" \
         "docker exec \$(docker ps -q -f name=${name} | head -1) sh -c \"sha256sum '$path' 2>/dev/null | cut -d' ' -f1\"" \
         2>/dev/null
     fi

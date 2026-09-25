@@ -49,7 +49,7 @@ case "$1" in
     # every other node still runs whatever it already had, this only
     # means a node with none of that image yet cannot schedule it until
     # the next successful push.
-    for i in $(seq 1 10); do
+    for _ in $(seq 1 10); do
       curl -sf "http://${COMMON_LAN_IP}:5000/v2/" >/dev/null 2>&1 && break
       sleep 1
     done

@@ -5,7 +5,7 @@ one person administers, not a gap. See the runbook for the reasoning.
 
 ## Setup
 
-Installed on `C2Storage` only (it's agentless -- nothing runs on the
+Installed on the swarm manager only (it's agentless -- nothing runs on the
 managed nodes beyond the Python they already have):
 
 ```
@@ -16,10 +16,11 @@ Everything below runs from this directory.
 
 ## Inventory
 
-`inventory.ini` -- the three machines, grouped as `manager` (C2Storage),
-`workers` (the two NUCs) and `cluster` (both). SSH keys between all three
-were already set up before Ansible existed, so there's nothing extra to
-configure for connectivity.
+`inventory.ini` (git-ignored -- copy `inventory.ini.example` and fill in
+your own hostnames, addresses and SSH user) -- the three machines,
+grouped as `manager` (the swarm manager), `workers` (the NUCs) and
+`cluster` (both). SSH keys between all three were already set up before
+Ansible existed, so there's nothing extra to configure for connectivity.
 
 ## Running a playbook
 

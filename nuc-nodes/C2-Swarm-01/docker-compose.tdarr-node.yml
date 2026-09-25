@@ -1,7 +1,7 @@
 # Tdarr remote worker for C2-Swarm-01's AMD GPU (Polaris 22 XL / Radeon RX
 # Vega M GL, the discrete half of this NUC's Kaby Lake-G chip). VAAPI
 # hardware transcode, connecting to the Tdarr server already running on
-# C2Storage rather than running its own server (Tdarr's usual shape: one
+# the manager node rather than running its own server (Tdarr's usual shape: one
 # server, any number of node workers).
 #
 # Lives here, not in the main repo's docker-compose.*.yml files, because
@@ -12,13 +12,13 @@
 #
 # Why plain compose, not the Swarm stack: Swarm mode does not support the
 # `devices:` key at all (the same reason Plex, Tdarr and Ollama are
-# standalone on C2Storage -- see docker-compose.tdarr.yml's header), so a
+# standalone on the manager node -- see docker-compose.tdarr.yml's header), so a
 # GPU-passthrough service can never be a Swarm service, full stop,
 # regardless of which node it targets.
 #
 # Reaches the server over the `edge` overlay network (the same attachable
 # network Plex/Tdarr/Traefik use), joined here as a plain container the
-# same way those are on C2Storage. Tested working: a container on this
+# same way those are on the manager node. Tested working: a container on this
 # overlay reaches other edge-attached containers on other Swarm nodes by
 # name, no LAN IP or published port needed.
 #
@@ -40,12 +40,12 @@
 # Prerequisites on this node (see the runbook for the reasoning on each):
 #   - joined the Swarm as a worker (already done)
 #   - mesa installed, for the amdgpu/VAAPI userspace driver (already done)
-#   - the NFS export on C2Storage grants this node (192.168.50.9) rw, not
+#   - the NFS export on the manager node grants this node rw, not
 #     just ro like C2-Swarm-02 -- Tdarr replaces files in place, the same
 #     reason docker-compose.tdarr.yml's own /media mount is rw
 #   - /mnt/media-nfs mounted via /etc/fstab, NFSv4, matching the server's
 #     fsid=0 pseudo-root:
-#       192.168.50.10:/ /mnt/media-nfs nfs4 rw,hard,timeo=100,_netdev,x-systemd.automount 0 0
+#       YOUR_MANAGER_IP:/ /mnt/media-nfs nfs4 rw,hard,timeo=100,_netdev,x-systemd.automount 0 0
 name: tdarr-node
 
 x-logging: &logging
@@ -58,7 +58,7 @@ services:
   tdarr-node:
     logging: *logging
     # Pinned to match the server's current version (docker-compose.tdarr.yml
-    # on C2Storage, still on :latest there as of this writing -- 2.88.01).
+    # on the manager node, still on :latest there as of this writing -- 2.88.01).
     # Tdarr refuses to connect on any version mismatch at all, confirmed:
     # 2.90.01 against a 2.88.01 server exits immediately with "Node version
     # ... does not match Server version ...". Bump this by hand alongside
@@ -71,7 +71,7 @@ services:
       - PGID=1000
       - UMASK_SET=002
       # `tdarr` resolves over the edge overlay to the server container on
-      # C2Storage.
+      # the manager node.
       - nodeName=C2-Swarm-01
       - serverIP=tdarr
       - serverPort=8266
@@ -96,7 +96,8 @@ services:
       # export. Plain bind mount to a directory on this node, not a
       # named volume, so its size is visible with ordinary `du` on the
       # NUC without going through Docker.
-      - /home/numbawon/tdarr-temp:/temp
+      # Swap YOUR_USER for the real account on this node.
+      - /home/YOUR_USER/tdarr-temp:/temp
     devices:
       # renderD129 confirmed as the AMD GPU's render node (amdgpu driver,
       # PCI 01:00.0), not renderD128 (that's the Intel iGPU, i915).

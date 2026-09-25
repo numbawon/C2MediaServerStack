@@ -4,8 +4,18 @@
 #   - .env.example satisfies validate-env.py
 #   - every stateful swarm service is pinned (swarm-preflight.sh)
 #   - docker-stack.yml and each docker-compose.*.yml render with .env.example
-#   - shellcheck on scripts/*.sh (warnings and errors; the three exclusions are
-#     noise in this repo: sourcing .env, and `cd` under `set -e`)
+#   - shellcheck on scripts/*.sh and scripts/**/*.sh (warnings and errors; the
+#     three exclusions are noise in this repo: sourcing .env, and `cd` under
+#     `set -e`)
+#   - no deployment-specific hostnames, addresses or paths in tracked content
+#     (check-repository-privacy.sh)
+#
+# check-repository-privacy.sh existed on its own, as a separate GitHub
+# Actions workflow, for two days before landing here -- nobody runs a
+# workflow that isn't part of the one script everyone actually runs before
+# pushing, so it silently failed on every commit in that window and nobody
+# noticed until the email did. If a new static check gets added later, it
+# belongs in this file, not as its own island.
 #
 #   ./scripts/ci-validate.sh
 #   CI=true ./scripts/ci-validate.sh   # also creates empty stubs for the
@@ -54,10 +64,14 @@ done
 
 step "shellcheck"
 if command -v shellcheck >/dev/null 2>&1; then
-  run shellcheck -S warning -e SC1090,SC1091,SC2164 -x scripts/*.sh
+  # shellcheck disable=SC2046
+  run shellcheck -S warning -e SC1090,SC1091,SC2164 -x $(find scripts -name '*.sh')
 else
   echo "shellcheck not installed, skipping"
 fi
+
+step "repository privacy"
+run ./scripts/check-repository-privacy.sh
 
 echo
 [ "$fail" -eq 0 ] && echo "ci-validate: ok" || echo "ci-validate: FAILED" >&2

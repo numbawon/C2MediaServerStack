@@ -34,7 +34,7 @@ while IFS=$'\t' read -r svc replicas; do
     if [ "$node" = "$LOCAL_HOST" ]; then
       count=$(docker ps --format '{{.Names}}' | grep -c "^${svc}\.")
     else
-      count=$(ssh -o ConnectTimeout=8 "$node" \
+      count=$(ssh -n -o ConnectTimeout=8 "$node" \
         "docker ps --format '{{.Names}}' | grep -c '^${svc}\.'" 2>/dev/null)
       count="${count:-0}"
     fi

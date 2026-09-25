@@ -1,5 +1,5 @@
 # C2-pihole2 -- a second, independent Pi-hole on C2-Swarm-01, so the house
-# does not lose DNS/internet if C2Storage goes down. See the runbook's
+# does not lose DNS/internet if the manager node goes down. See the runbook's
 # "Major objective" note for the full plan; this is the first slice of it:
 # get the instance itself running tonight. Not yet done, deliberately:
 #   - list sync with the primary (Nebula Sync or Orbital Sync, Pi-hole v6's
@@ -9,7 +9,7 @@
 # Until those exist this is a second, unsynced, independent resolver you
 # can point a device at by hand, not an automatic failover yet.
 #
-# Same reasoning as docker-compose.dns.yml on C2Storage for every choice
+# Same reasoning as docker-compose.dns.yml on the manager node for every choice
 # below: network_mode: host (real client IPs, not the docker_gwbridge
 # gateway for every query), restart: always (up before anything else,
 # no depends_on in Swarm anyway), plain compose (Pi-hole is
@@ -50,9 +50,10 @@ services:
       # Local to this node, not shared with the primary -- an independent
       # copy is the whole point of a second instance. Plain directories
       # under this user's home rather than a repo-relative path: this
-      # node has no checkout of the main repo.
-      - /home/numbawon/pihole2/config:/etc/pihole
-      - /home/numbawon/pihole2/dnsmasq:/etc/dnsmasq.d
+      # node has no checkout of the main repo. Swap YOUR_USER for the
+      # real account on this node.
+      - /home/YOUR_USER/pihole2/config:/etc/pihole
+      - /home/YOUR_USER/pihole2/dnsmasq:/etc/dnsmasq.d
     cap_add:
       - NET_BIND_SERVICE
     restart: always
