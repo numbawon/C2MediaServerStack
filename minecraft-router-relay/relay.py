@@ -1,8 +1,9 @@
 """
 Crafty Controller -> router port-forward relay.
 
-Why this exists: Minecraft's protocol is raw TCP, so Authentik cannot gate
-it the way it gates everything else in this stack, and the router's SSH
+Why this exists: Minecraft Java is raw TCP, Bedrock and Hytale are raw
+UDP, so none of them can go through Authentik/Traefik the way everything
+else in this stack does, and the router's SSH
 server (dropbear) turned out not to enforce authorized_keys `command=`
 restrictions at all -- confirmed the hard way, an "attacker" command ran
 straight through despite a forced-command entry. So Crafty never gets a
@@ -33,10 +34,14 @@ Config, all via env:
   ROUTER_KEY_FILE   path to the private key for that user (default /run/secrets/minecraft_router_key)
   TOKEN_FILE        path to the bearer token this relay requires (default /run/secrets/minecraft_relay_token)
   LISTEN_PORT       port to receive requests on            (default 8080)
-  MIN_PORT/MAX_PORT the same range router/minecraft-port-toggle.sh accepts (default 25565/25580)
 
-POST /toggle, JSON body {"action": "open"|"close", "port": 25565}
+POST /toggle, JSON body {"action": "open"|"close", "port": 25565, "protocol": "tcp"}
 Header: Authorization: Bearer <token>
+
+The (protocol, port) allow-list below is a second, independent check --
+router/minecraft-port-toggle.sh enforces the same thing itself on the
+router end, belt and suspenders, not a single point of trust. Keep the
+two in sync by hand if a game type is ever added or removed.
 """
 import json
 import os
@@ -49,8 +54,14 @@ ROUTER_USER = os.environ.get("ROUTER_USER", "numbawon")
 ROUTER_KEY_FILE = os.environ.get("ROUTER_KEY_FILE", "/run/secrets/minecraft_router_key")
 TOKEN_FILE = os.environ.get("TOKEN_FILE", "/run/secrets/minecraft_relay_token")
 LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "8080"))
-MIN_PORT = int(os.environ.get("MIN_PORT", "25565"))
-MAX_PORT = int(os.environ.get("MAX_PORT", "25580"))
+
+
+def _port_allowed(protocol: str, port: int) -> bool:
+    if protocol == "tcp":
+        return 25565 <= port <= 25580  # Java, headroom for several servers
+    if protocol == "udp":
+        return port in (19132, 5520)  # Bedrock, Hytale -- one each at a time
+    return False
 
 
 def _read(path: str) -> str:
@@ -73,12 +84,12 @@ with open(ROUTER_KEY_FILE, "r", encoding="utf-8") as src, \
 os.chmod(ROUTER_KEY_RUNTIME, 0o600)
 
 
-def _toggle(action: str, port: int) -> tuple[bool, str]:
+def _toggle(action: str, port: int, protocol: str) -> tuple[bool, str]:
     cmd = [
         "ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
         "-o", "ConnectTimeout=8", "-i", ROUTER_KEY_RUNTIME,
         f"{ROUTER_USER}@{ROUTER_HOST}",
-        "/jffs/scripts/minecraft-port-toggle.sh", action, str(port),
+        "/jffs/scripts/minecraft-port-toggle.sh", action, str(port), protocol,
     ]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
@@ -122,14 +133,18 @@ class Handler(BaseHTTPRequestHandler):
 
         action = data.get("action")
         port = data.get("port")
+        protocol = data.get("protocol")
         if action not in ("open", "close"):
             self._reply(400, {"error": "action must be 'open' or 'close'"})
             return
-        if not isinstance(port, int) or not (MIN_PORT <= port <= MAX_PORT):
-            self._reply(400, {"error": f"port must be an integer {MIN_PORT}-{MAX_PORT}"})
+        if protocol not in ("tcp", "udp"):
+            self._reply(400, {"error": "protocol must be 'tcp' or 'udp'"})
+            return
+        if not isinstance(port, int) or not _port_allowed(protocol, port):
+            self._reply(400, {"error": f"{protocol}/{port} is not on the allow-list"})
             return
 
-        ok, detail = _toggle(action, port)
+        ok, detail = _toggle(action, port, protocol)
         self._reply(200 if ok else 502, {"ok": ok, "detail": detail})
 
 

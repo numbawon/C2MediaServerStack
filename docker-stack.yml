@@ -210,8 +210,15 @@ secrets:
   minecraft_router_key:
     external: true
   # Bearer token minecraft-router-relay requires on its own /toggle
-  # endpoint -- Crafty's start/stop command needs to send this.
+  # endpoint -- minecraft-server-watcher sends this.
   minecraft_relay_token:
+    external: true
+  # Crafty API token for minecraft-server-watcher's read-only server
+  # discovery (GET /api/v2/servers/{id}/stats, for the port lookup). Use a
+  # token from a dedicated low-privilege Crafty user, not an admin's own
+  # token -- create it in Crafty's UI, then:
+  #   printf %s '<token>' | docker secret create crafty_api_token -
+  crafty_api_token:
     external: true
   crowdsec_bouncer_key_v3:
     external: true
@@ -1670,15 +1677,16 @@ services:
   # Crafty has no usable start/stop hook (its webhooks are hard-coded to
   # Discord/Slack/Mattermost/Teams payload shapes, confirmed by reading
   # Crafty's own source; its task scheduler is time-based only). This
-  # polls Crafty's status endpoint instead and calls the relay on any
-  # observed running-state change. See watcher.py's own header for the
-  # full reasoning, including why it watches state rather than wrapping
+  # polls Crafty's status API instead and calls the relay on any observed
+  # running-state change. See watcher.py's own header for the full
+  # reasoning, including why it watches state rather than wrapping
   # Crafty's execution command.
   #
-  # SERVER_PORT_MAP needs a server_id:port entry added by hand for every
-  # Minecraft server that should drive the router lever, and that server
-  # needs "Show Status" enabled in its Crafty settings, or it never shows
-  # up in the status response at all.
+  # Fully auto-discovering: any server with "Show Status" enabled in its
+  # own Crafty settings gets picked up and watched automatically, no
+  # per-server config here. Its game port is looked up via Crafty's own
+  # authenticated API (crafty_api_token) rather than hand-maintained, so a
+  # new server just needs that one checkbox, nothing to edit in this repo.
   # ---------------------------------------------------------------------
   minecraft-server-watcher:
     logging: *logging
@@ -1688,9 +1696,9 @@ services:
     environment:
       - TZ=${COMMON_TZ}
       - PYTHONUNBUFFERED=1
-      - SERVER_PORT_MAP=${MINECRAFT_SERVER_PORT_MAP:-}
     secrets:
       - minecraft_relay_token
+      - crafty_api_token
     volumes:
       - ./minecraft-server-watcher:/app:ro
     networks:
