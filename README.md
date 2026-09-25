@@ -4393,3 +4393,56 @@ list (`grafana`, `sonarr`, `browse` and so on) -- have client secrets
 too, but nothing outside Authentik ever holds a copy. The outpost does
 the exchange, so those rotate in Authentik alone with nothing to keep in
 step.
+
+## Troubleshooting scripts
+
+None of these run on a schedule. They exist because something already
+went wrong once, took an evening to work out, and turned out to have a
+one-line diagnosis in hindsight -- so the next time it (or something
+shaped like it) happens, the diagnosis is a command instead of a
+rediscovery.
+
+**`scripts/arr/test-all-indexers.sh`** force-tests every indexer in
+Prowlarr, Radarr, Sonarr and Lidarr and prints each app's own indexer
+health afterward. The reason it needs to exist at all: these apps don't
+share one opinion about whether an indexer is working. Each one tracks
+its own failures independently, so fixing whatever actually broke
+(a proxy, DNS, the VPN, anything upstream of "can this app reach the
+internet") only clears the app you happened to be looking at -- the
+others keep quietly refusing every search with "unavailable due to
+failures for more than 6 hours" until each of *them* sees a fresh
+success too. Found out about this the hard way when fixing Prowlarr's
+proxy credentials did nothing for Sonarr or Radarr, both of which had
+been independently sulking for the same reason the whole time. Run this
+after fixing anything that could have interrupted indexer reachability,
+not just the one app you were staring at. LazyLibrarian and Mylar3 are
+Prowlarr-synced too but built on entirely different codebases, so they
+don't speak this API and aren't included.
+
+**`scripts/check-shared-secrets.sh`** checksums (never prints) the pairs
+of credentials in this stack that are supposed to hold the same value
+but come from two genuinely independent places, and says so if they've
+quietly drifted apart. Right now there's exactly one such pair:
+`vpn-client`'s proxy password lives in a plain file
+(`docker-compose.download.yml` isn't a Swarm deployment, so it can't use
+a real Swarm secret), while everything else that needs the same value
+holds a Swarm secret instead. Nothing keeps these in sync automatically
+-- they agree only because someone made them agree, once. They stopped
+agreeing at some point with zero warning, and every symptom pointed at
+almost anything *except* two credentials no longer matching. If this
+stack ever grows another case of "one value, kept in two unrelated
+systems by convention," add it to the list in this script rather than
+trusting the convention to hold.
+
+**`scripts/check-swarm-zombies.sh`** compares, across every node, how
+many containers are actually running for a Swarm service against how
+many the service's own replica count says there should be. Docker Swarm
+can apparently lose track of a container without actually stopping it:
+found a Prowlarr instance that `docker ps` still showed as happily
+running for hours after `docker service ps` had already declared that
+exact task dead and started a replacement -- two live copies of the same
+app, sharing the same config database, and Swarm only aware of one of
+them. `docker service update --force` looks like the likely trigger.
+Worth running any time an app's behavior doesn't match what its config
+says it should be doing, and worth making a habit of after any
+`--force` update specifically.
