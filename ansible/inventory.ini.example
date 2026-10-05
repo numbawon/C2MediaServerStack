@@ -16,8 +16,8 @@
 YOUR_MANAGER_HOSTNAME ansible_host=192.168.1.10
 
 [workers]
-YOUR_WORKER_1_HOSTNAME ansible_host=192.168.1.11
-YOUR_WORKER_2_HOSTNAME ansible_host=192.168.1.12
+YOUR_WORKER_1_HOSTNAME ansible_host=192.168.1.11 node_postboot_containers="standalone-container-1 standalone-container-2" node_nfs_mount=/mnt/media-nfs node_backup_paths="youruser/some-app-dir"
+YOUR_WORKER_2_HOSTNAME ansible_host=192.168.1.12 node_postboot_containers="standalone-container" node_backup_paths="youruser/game-server" node_backup_excludes="youruser/game-server/logs"
 
 [cluster:children]
 manager
@@ -25,3 +25,17 @@ workers
 
 [cluster:vars]
 ansible_user=youruser
+
+# Where the repo lives on the manager. node-maintenance.yml authorizes each
+# worker's backup key there, locked to scripts/node-backup-receive.sh.
+[manager:vars]
+repo_dir=/home/youruser/C2MediaServerStack
+
+# Per-worker variables used by playbooks/node-maintenance.yml (all optional):
+#   node_postboot_containers  standalone (non-swarm) containers the post-boot
+#                             check must see running
+#   node_nfs_mount            NFS mount the post-boot check must see live
+#   node_backup_paths         paths under /home to back up nightly, e.g.
+#                             "youruser/game-server"; empty disables backup
+#   node_backup_excludes      extra tar excludes
+#   node_reboot_at            HH:MM for the post-update reboot (default 03:30)

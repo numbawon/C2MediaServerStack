@@ -1,0 +1,6 @@
+[Unit]
+Description=mediastack NVMe SMART health to Prometheus
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mediastack-node-smart.py

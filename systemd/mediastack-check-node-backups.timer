@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily check of the worker nodes' backup tars
+
+[Timer]
+# 04:00: well after the nodes push at about 01:15, and before the 04:30
+# off-site run, so a bad tar is flagged before it is shipped as the newest
+# copy. Daily, not weekly: a node tar that quietly stops updating should
+# be noticed within a day, not a week.
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

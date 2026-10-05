@@ -1,0 +1,11 @@
+[Unit]
+Description=mediastack monthly btrfs scrub (read and compare both mirror copies)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mediastack-node-btrfs.sh scrub
+# Idle IO class: a scrub reads the whole filesystem, and it should lose to
+# anything real the node is doing.
+Nice=19
+IOSchedulingClass=idle
+TimeoutStartSec=6h

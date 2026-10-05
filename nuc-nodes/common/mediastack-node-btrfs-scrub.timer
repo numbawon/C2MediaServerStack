@@ -1,0 +1,12 @@
+# First of the month, 04:30: clear of the Sunday 02:00 update, the 03:00
+# router reboot and the 03:30 reboot window.
+[Unit]
+Description=Monthly btrfs scrub
+
+[Timer]
+OnCalendar=*-*-01 04:30:00
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

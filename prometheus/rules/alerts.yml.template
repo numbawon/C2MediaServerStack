@@ -758,3 +758,265 @@ groups:
             {{ $value }} root-owned path(s) under {{ $labels.tree }}. Some app
             is running as uid 0 and writing into a media tree; find it
             before the count grows.
+
+  - name: worker-node-maintenance
+    rules:
+      # These come from nuc-nodes/common/mediastack-node-*.sh via each
+      # worker's node-exporter textfile collector. The jobs are systemd
+      # timers on machines nobody logs into, so "stopped running" has to be
+      # an explicit staleness check or it looks exactly like "all fine".
+      - alert: NodeUpdateStale
+        # Weekly. 10 days allows one missed run plus slack.
+        expr: time() - mediastack_node_update_last_run_timestamp_seconds > 864000
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} has not run its weekly update in over 10 days"
+          description: >-
+            The unattended update timer is not firing on this node. Check
+            `systemctl status mediastack-node-update.timer` there.
+
+      - alert: NodeUpdateFailed
+        expr: mediastack_node_update_success == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Unattended update failed on {{ $labels.instance }}"
+          description: >-
+            `journalctl -u mediastack-node-update` on the node. A
+            pre-update btrfs snapshot is in /.snapshots.
+
+      - alert: NodeRebootOverdue
+        # The update books a reboot for 03:30 the same night. Still
+        # pending a day later means the reboot never happened.
+        expr: mediastack_node_update_reboot_pending == 1
+        for: 24h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} is still waiting on a reboot a day after its update"
+          description: >-
+            The kernel or another reboot-bound package was upgraded and the
+            booked reboot did not happen. The node is running old code.
+
+      - alert: NodeDidNotRejoinAfterReboot
+        expr: mediastack_node_postboot_healthy == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }} rebooted but did not fully recover"
+          description: >-
+            The post-boot check gave up after 15 minutes: NFS, swarm
+            membership or a standalone container is not back. A lost swarm
+            membership needs a fresh join token from the manager.
+
+      - alert: NodeBackupStale
+        expr: time() - mediastack_node_backup_last_run_timestamp_seconds > 172800
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} node-local backup is over 2 days old"
+          description: >-
+            The nightly copy of this node's local state to the manager is
+            not completing. See `journalctl -u mediastack-node-backup`.
+
+      - alert: NodeBackupFailed
+        expr: mediastack_node_backup_success == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Node-local backup failed on {{ $labels.instance }}"
+
+      - alert: NodeBtrfsDeviceErrors
+        # The node's two disks are a RAID1 mirror. These counters climb when
+        # one disk starts failing reads/writes or returning corrupt data,
+        # usually well before it dies outright.
+        expr: mediastack_node_btrfs_device_errors_total > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }}: btrfs {{ $labels.type }} on {{ $labels.device }}"
+          description: >-
+            `btrfs device stats /` on the node. A non-zero counter means
+            that disk has misbehaved. The mirror still holds a good copy;
+            run a scrub and check SMART before it gets worse.
+
+      - alert: NodeBtrfsNotRaid1
+        expr: mediastack_node_btrfs_raid1 == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }}: btrfs is no longer all RAID1"
+          description: >-
+            Data, metadata or system fell back to a profile with no second
+            copy (a disk dropped out, or a balance was interrupted). Some
+            data may exist on one disk only. `btrfs filesystem usage /`.
+
+      - alert: NodeBtrfsScrubErrors
+        expr: mediastack_node_btrfs_scrub_success == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }}: btrfs scrub found unrecoverable errors"
+          description: >-
+            The monthly scrub found blocks it could not repair from the
+            other copy. `btrfs scrub status -R /` and `dmesg`.
+
+      - alert: NodeBtrfsScrubStale
+        # Monthly. 40 days allows one missed run plus slack.
+        expr: time() - mediastack_node_btrfs_scrub_last_run_timestamp_seconds > 3456000
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} has not scrubbed its mirror in over 40 days"
+          description: >-
+            Check `systemctl status mediastack-node-btrfs-scrub.timer`.
+
+      - alert: NodeBtrfsStatsStale
+        # Hourly. If these stop, the error alerts above go blind.
+        expr: time() - mediastack_node_btrfs_stats_last_run_timestamp_seconds > 14400
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} stopped reporting btrfs health"
+          description: >-
+            The hourly check is not running, so disk-error alerts for this
+            node cannot fire. Check `mediastack-node-btrfs-stats.timer`.
+
+      - alert: NodePacmanCacheLarge
+        # The weekly update trims this to two versions per package. Well
+        # past that means the trim is not running or not working.
+        expr: mediastack_node_pacman_cache_bytes > 6e9
+        for: 1d
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $labels.instance }} pacman cache is {{ $value | humanize1024 }}B"
+          description: >-
+            The weekly update keeps two versions per package. Check the
+            last `journalctl -u mediastack-node-update` for the paccache
+            lines.
+
+      - alert: NodeNvmeSmartFailed
+        expr: mediastack_node_nvme_smart_passed == 0 or mediastack_node_nvme_critical_warning != 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }}: {{ $labels.model }} ({{ $labels.device }}) reports a SMART failure"
+          description: >-
+            The drive's own self-assessment failed or it raised a critical
+            warning (low spare, over temperature, reliability degraded or
+            read-only). The RAID1 mirror still has the other disk: replace
+            this one before the second ever has a problem.
+
+      - alert: NodeNvmeWearHigh
+        expr: mediastack_node_nvme_percentage_used > 80
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.model }} ({{ $labels.device }}) on {{ $labels.instance }} has used {{ $value }}% of its rated endurance"
+          description: >-
+            Not a failure yet, but plan a replacement. Worth checking what
+            is writing heavily to this node.
+
+      - alert: NodeNvmeSpareLow
+        expr: mediastack_node_nvme_available_spare_percent <= mediastack_node_nvme_available_spare_threshold_percent + 10
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.model }} ({{ $labels.device }}) on {{ $labels.instance }} is running out of spare capacity"
+          description: >-
+            Spare blocks replace worn-out ones. Near the drive's own
+            threshold means it is wearing out faster than it can hide.
+
+      - alert: NodeNvmeMediaErrors
+        # media_errors only ever counts up; a rise, not the absolute value,
+        # is the signal. Old drives can carry a stable non-zero count.
+        expr: increase(mediastack_node_nvme_media_errors_total[1d]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.model }} ({{ $labels.device }}) on {{ $labels.instance }} logged new media errors"
+          description: >-
+            Unrecoverable data errors on the drive itself. Run a btrfs
+            scrub and watch `btrfs device stats /`.
+
+      - alert: NodeNvmeHot
+        expr: mediastack_node_nvme_temperature_celsius > 75
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.model }} ({{ $labels.device }}) on {{ $labels.instance }} is at {{ $value }}C"
+          description: >-
+            Sustained high drive temperature. Check the node's airflow and
+            whether a long scrub or transcode is running.
+
+      - alert: NodeNvmeHealthStale
+        # Daily. Needs smartmontools, which arrives with the first full
+        # upgrade after this was added, so it only fires after a metric
+        # has existed and then stopped.
+        expr: time() - mediastack_node_nvme_last_run_timestamp_seconds > 172800
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} stopped reporting NVMe health"
+          description: >-
+            `systemctl status mediastack-node-smart.timer` on the node.
+
+      - alert: NodeBackupInvalid
+        # From scripts/check-node-backups-are-real.sh on the manager: the
+        # tar is stale, will not open, or has shrunk to under half its
+        # last good size. The node-side job can report success while this
+        # is true, which is the whole point of checking from this end.
+        expr: mediastack_node_backup_check_ok == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "The {{ $labels.node }} backup on the manager is not a usable backup"
+          description: >-
+            Stale, unreadable or hollow. Run
+            scripts/check-node-backups-are-real.sh to see which, then check
+            `journalctl -u mediastack-node-backup` on the node.
+
+      - alert: NodeBackupCheckStale
+        expr: time() - mediastack_node_backup_check_last_run_timestamp_seconds > 172800
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "The node backup check has not run in over 2 days"
+          description: >-
+            Nothing is verifying the worker backups. Check
+            `systemctl status mediastack-check-node-backups.timer` on the
+            manager.
+
+      - alert: NodePacnewPending
+        # Config files an upgrade could not merge for you. Not urgent, but
+        # unmerged defaults accumulate, and one of them (an SSH or
+        # bootloader setting) eventually matters.
+        expr: mediastack_node_pacnew_files > 0
+        for: 7d
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $labels.instance }} has {{ $value }} unmerged .pacnew/.pacsave file(s)"
+          description: >-
+            Listed in `journalctl -u mediastack-node-update`. Review with
+            `sudo pacdiff` (from pacman-contrib), keeping your own edits
+            where they matter. The update never merges these itself.

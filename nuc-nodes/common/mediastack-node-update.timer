@@ -1,0 +1,13 @@
+# Weekly, early Sunday, ahead of the router's 03:00 reboot so the package
+# downloads have a network for their whole run. If the update needs a reboot,
+# the script books it for REBOOT_AT (default 03:30, after the router is back).
+[Unit]
+Description=Weekly unattended node update
+
+[Timer]
+OnCalendar=Sun *-*-* 02:00:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=mediastack post-boot check (NFS, swarm rejoin, standalone containers)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mediastack-node-postboot.sh
+TimeoutStartSec=20min
+
+[Install]
+WantedBy=multi-user.target

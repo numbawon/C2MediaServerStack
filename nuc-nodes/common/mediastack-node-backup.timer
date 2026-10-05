@@ -1,0 +1,13 @@
+# Nightly at 01:15: after the manager's 01:xx quiet, before the manager's own
+# 02:00 local snapshot and 04:30 off-site run, so the freshest node copy is
+# what both of those collect.
+[Unit]
+Description=Nightly node-local state backup
+
+[Timer]
+OnCalendar=*-*-* 01:15:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

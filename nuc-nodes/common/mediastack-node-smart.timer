@@ -1,0 +1,13 @@
+# Daily. Wear and spare capacity move over weeks, not minutes, so hourly
+# would only be noise; daily still catches a drive that starts degrading
+# fast well inside a day.
+[Unit]
+Description=Daily NVMe SMART health check
+
+[Timer]
+OnCalendar=*-*-* 06:15:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

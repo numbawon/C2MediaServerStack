@@ -1,0 +1,11 @@
+[Unit]
+Description=mediastack unattended node update (snapshot, pacman -Syu, book reboot if needed)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mediastack-node-update.sh
+# A big update on a slow mirror is slow, not hung. Killing pacman halfway
+# leaves a half-upgraded system, which is worse than a long run.
+TimeoutStartSec=2h

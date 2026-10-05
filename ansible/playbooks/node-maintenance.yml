@@ -1,0 +1,163 @@
+# Installs the unattended-maintenance kit on the worker nodes:
+#
+#   - weekly update   mediastack-node-update.timer   snapshot, pacman -Syu,
+#                     books a reboot for REBOOT_AT only when something that
+#                     needs one was upgraded
+#   - post-boot check mediastack-node-postboot.service   proves NFS, swarm
+#                     membership and standalone containers came back, and
+#                     reports it to Prometheus either way
+#   - btrfs health    mediastack-node-btrfs-*.timer   hourly per-disk error
+#                     counters + RAID1 check, monthly scrub, as metrics
+#   - NVMe health     mediastack-node-smart.timer   daily SMART wear, spare
+#                     capacity and media errors as metrics
+#   - nightly backup  mediastack-node-backup.timer   node-local state to the
+#                     manager (forced-command key, see
+#                     scripts/node-backup-receive.sh), where the manager's
+#                     existing local + off-site jobs collect it
+#
+# Everything is idempotent: a second run should report 0 changed.
+#
+#   cd ansible
+#   ansible-playbook playbooks/node-maintenance.yml --ask-become-pass
+#
+# Per-host settings live in inventory.ini (git-ignored); see
+# inventory.ini.example for the variables. Nothing here hardcodes a host.
+---
+- name: Install unattended maintenance on the worker nodes
+  hosts: workers
+  become: true
+  vars:
+    kit_dir: "{{ playbook_dir }}/../../nuc-nodes/common"
+    manager_host: "{{ groups['manager'][0] }}"
+    manager_ip: "{{ hostvars[groups['manager'][0]].ansible_host }}"
+    backup_key: /etc/mediastack/node-backup-key
+    # Safe defaults; override per host in inventory.ini.
+    reboot_at: "{{ node_reboot_at | default('03:30') }}"
+    backup_paths: "{{ node_backup_paths | default('') }}"
+
+  tasks:
+    - name: Check the tools the scripts rely on exist
+      ansible.builtin.command: "which {{ item }}"
+      loop: [btrfs, pacman, flock, docker]
+      changed_when: false
+
+    - name: Install the scripts
+      ansible.builtin.copy:
+        src: "{{ kit_dir }}/{{ item }}"
+        dest: "/usr/local/bin/{{ item }}"
+        mode: "0755"
+      loop:
+        - mediastack-node-update.sh
+        - mediastack-node-postboot.sh
+        - mediastack-node-backup.sh
+        - mediastack-node-btrfs.sh
+        - mediastack-node-smart.py
+
+    - name: Install the systemd units
+      ansible.builtin.copy:
+        src: "{{ kit_dir }}/{{ item }}"
+        dest: "/etc/systemd/system/{{ item }}"
+        mode: "0644"
+      loop:
+        - mediastack-node-update.service
+        - mediastack-node-update.timer
+        - mediastack-node-postboot.service
+        - mediastack-node-btrfs-stats.timer
+        - mediastack-node-btrfs-scrub.timer
+        - mediastack-node-backup.service
+        - mediastack-node-backup.timer
+        - mediastack-node-btrfs-stats.service
+        - mediastack-node-btrfs-stats.timer
+        - mediastack-node-btrfs-scrub.service
+        - mediastack-node-smart.service
+        - mediastack-node-smart.timer
+        - mediastack-node-btrfs-scrub.timer
+      notify: Reload systemd
+
+    - name: Write /etc/mediastack-node.conf
+      ansible.builtin.copy:
+        dest: /etc/mediastack-node.conf
+        mode: "0644"
+        content: |
+          # Managed by ansible/playbooks/node-maintenance.yml
+          REBOOT_AT={{ reboot_at }}
+          MIRROR_COUNTRY={{ node_mirror_country | default('US') }}
+          DOCKER_PRUNE={{ node_docker_prune | default(1) }}
+          POSTBOOT_CONTAINERS="{{ node_postboot_containers | default('') }}"
+          NFS_MOUNT="{{ node_nfs_mount | default('') }}"
+          BACKUP_PATHS="{{ backup_paths }}"
+          BACKUP_EXCLUDES="{{ node_backup_excludes | default('') }}"
+          BACKUP_DEST="{{ ansible_user }}@{{ manager_ip }}"
+          BACKUP_SSH_KEY={{ backup_key }}
+
+    # --- backup transport: a dedicated key, locked to one command ---------
+    - name: Create /etc/mediastack
+      ansible.builtin.file: {path: /etc/mediastack, state: directory, mode: "0700"}
+      when: backup_paths | length > 0
+
+    - name: Generate this node's dedicated backup key
+      ansible.builtin.command:
+        cmd: ssh-keygen -q -t ed25519 -N "" -C "mediastack-node-backup-{{ inventory_hostname }}" -f {{ backup_key }}
+        creates: "{{ backup_key }}"
+      when: backup_paths | length > 0
+
+    - name: Read the public key
+      ansible.builtin.slurp: {src: "{{ backup_key }}.pub"}
+      register: backup_pub
+      when: backup_paths | length > 0
+
+    - name: Authorize it on the manager, locked to the receiver for THIS node only
+      ansible.builtin.lineinfile:
+        path: "~/.ssh/authorized_keys"
+        regexp: "mediastack-node-backup-{{ inventory_hostname }}$"
+        line: >-
+          restrict,command="{{ hostvars[manager_host].repo_dir }}/scripts/node-backup-receive.sh {{ inventory_hostname }}"
+          {{ (backup_pub.content | b64decode).strip() }}
+      delegate_to: localhost
+      become: false
+      # Both workers edit this one file on the manager. Run in parallel, one
+      # write silently overwrites the other (seen: only one node's key landed).
+      throttle: 1
+      when: backup_paths | length > 0
+
+    - name: Read the manager's SSH host key
+      ansible.builtin.slurp: {src: /etc/ssh/ssh_host_ed25519_key.pub}
+      delegate_to: localhost
+      register: manager_hostkey
+      when: backup_paths | length > 0
+
+    - name: Trust the manager's host key (strict checking stays on)
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/ssh_known_hosts
+        regexp: "^{{ manager_ip | regex_escape }} "
+        line: "{{ manager_ip }} {{ (manager_hostkey.content | b64decode).split()[0] }} {{ (manager_hostkey.content | b64decode).split()[1] }}"
+        create: true
+        mode: "0644"
+      when: backup_paths | length > 0
+
+    - name: Enable the timers and the post-boot check
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: "{{ 'started' if item.endswith('.timer') else omit }}"
+        daemon_reload: true
+      loop:
+        - mediastack-node-update.timer
+        - mediastack-node-postboot.service
+        - mediastack-node-btrfs-stats.timer
+        - mediastack-node-btrfs-scrub.timer
+        - mediastack-node-smart.timer
+      # Not `started` for the service: running it now would only prove
+      # the node is already up. It is for the next boot.
+
+    - name: Enable the backup timer
+      ansible.builtin.systemd:
+        name: mediastack-node-backup.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: backup_paths | length > 0
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd: {daemon_reload: true}

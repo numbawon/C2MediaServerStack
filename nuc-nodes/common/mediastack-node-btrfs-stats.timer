@@ -1,0 +1,12 @@
+# Hourly: cheap (two btrfs queries, no disk reads), and an error counter
+# that climbs is only useful if it is noticed while it is still climbing.
+[Unit]
+Description=Hourly btrfs mirror health check
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

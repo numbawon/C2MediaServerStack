@@ -1,0 +1,8 @@
+[Unit]
+Description=mediastack node-local state backup to the manager
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mediastack-node-backup.sh

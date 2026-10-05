@@ -1,0 +1,6 @@
+[Unit]
+Description=mediastack btrfs mirror health (per-disk errors, RAID1 profile)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mediastack-node-btrfs.sh stats
