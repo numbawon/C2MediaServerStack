@@ -9,8 +9,9 @@
 # needs the tunnel: it announces itself to trackers and connects to peers.
 # Everything that merely *searches* -- Prowlarr, Sonarr, Radarr,
 # LazyLibrarian -- is a swarm service in docker-stack.yml and reaches
-# indexers through gluetun's HTTP proxy on ${COMMON_LAN_IP}:8888 instead,
-# so a VPN reconnect no longer takes the whole *arr stack down with it.
+# indexers through gluetun's HTTP proxy instead (via the `vpn-proxy` service
+# below, which holds the proxy password so the apps do not have to), so a
+# VPN reconnect no longer takes the whole *arr stack down with it.
 #
 # Traefik labels are NOT used here -- Traefik's docker provider is running in
 # swarmMode and only watches swarm services, so it would never see this
@@ -142,6 +143,54 @@ services:
       edge:
         aliases:
           - qbittorrent
+    restart: unless-stopped
+
+  # The apps' way out. See vpn-proxy/squid.conf for the whole reason; short
+  # version: Prowlarr/Sonarr/Radarr/Lidarr/LazyLibrarian used to carry the
+  # VPN proxy's password in their own settings, in plain text, visible to
+  # anyone who can open their UI. They point here instead, with no password,
+  # and this container (the only holder) adds it on the way to vpn-client.
+  # Reachable from `edge` only, not published on the LAN.
+  #
+  # Squid looks vpn-client's address up once, at start. `restart: true`
+  # restarts this whenever compose recreates vpn-client, so it never keeps
+  # dialing a dead address.
+  vpn-proxy:
+    logging: *logging
+    image: ubuntu/squid:latest
+    container_name: vpn-proxy
+    depends_on:
+      vpn-client:
+        condition: service_healthy
+        restart: true
+    environment:
+      - EDGE_SUBNET=${COMMON_EDGE_SUBNET}
+    secrets:
+      - httpproxy_user
+      - httpproxy_password
+    volumes:
+      # A directory, never a single file (a file replaced on the host leaves
+      # a running container reading the old one).
+      - ./vpn-proxy:/etc/squid-template:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sed "s#__EDGE_SUBNET__#$$EDGE_SUBNET#g" /etc/squid-template/squid.conf > /tmp/squid.conf
+        printf 'cache_peer vpn-client parent 8888 0 no-query no-digest name=vpn login=%s:%s connect-timeout=10\n' \
+          "$$(cat /run/secrets/httpproxy_user)" "$$(cat /run/secrets/httpproxy_password)" > /tmp/squid-peer.conf
+        chmod 600 /tmp/squid-peer.conf
+        exec /usr/sbin/squid -f /tmp/squid.conf -NYC
+    healthcheck:
+      # A TCP connect: this image ships no squidclient. bash's /dev/tcp is
+      # enough to tell that the listener is up.
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/3128"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      edge:
+        aliases:
+          - vpn-proxy
     restart: unless-stopped
 
   qbittorrent:
