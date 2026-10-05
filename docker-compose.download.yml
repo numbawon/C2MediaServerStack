@@ -101,14 +101,20 @@ services:
       # gluetun defaults to DNS-over-TLS, but NordVPN's network blocks
       # outbound 853, so every lookup timed out and the healthcheck put the
       # tunnel in a restart loop -- while plain HTTP to 1.1.1.1 worked fine,
-      # which is what pinned the fault on DNS rather than the tunnel. These
-      # are NordVPN's own resolvers, which are only reachable from inside
-      # the tunnel, so "plain" here still means the query never leaves the
-      # VPN. (gluetun warns about this setting in general; that warning is
-      # about pointing it at a public resolver reachable outside the tunnel,
-      # which these are not.)
+      # which is what pinned the fault on DNS rather than the tunnel. So the
+      # upstream is plain DNS on port 53 instead.
+      #
+      # Cloudflare, not NordVPN's own resolvers (103.86.96.100/103.86.99.100,
+      # used until 2026-10-04): those hand back non-public answers for some
+      # big names (google.com -> 192.0.0.88, amazon.com -> 198.18.2.14),
+      # which gluetun's rebinding protection correctly refuses, so those
+      # sites simply would not load through the proxy. Plain DNS to 1.1.1.1
+      # still never leaves the VPN: it is not in FIREWALL_OUTBOUND_SUBNETS
+      # above, so the query is routed into the tunnel like everything else.
+      # (gluetun warns about this setting in general; that warning is about a
+      # public resolver reachable OUTSIDE the tunnel, which this is not.)
       - DNS_UPSTREAM_RESOLVER_TYPE=plain
-      - DNS_UPSTREAM_PLAIN_ADDRESSES=103.86.96.100:53,103.86.99.100:53
+      - DNS_UPSTREAM_PLAIN_ADDRESSES=1.1.1.1:53,1.0.0.1:53
 
       - HTTPPROXY=on
       - HTTPPROXY_LISTENING_ADDRESS=:8888
