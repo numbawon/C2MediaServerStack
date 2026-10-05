@@ -60,6 +60,16 @@ case "$1" in
     ;;
   download)
     docker compose -f docker-compose.download.yml up -d
+    # The private browsers' Squid (sync-private-browsers.py) looked up
+    # vpn-client's address once, when it started. A recreated vpn-client has
+    # a new address and Squid keeps dialing the old one for up to an hour, so
+    # every browser would stay broken. Restart it so they recover now.
+    # Best-effort: no node configured, or unreachable, is not a deploy failure.
+    if [ -n "${BROWSER_NODE_SSH:-}" ]; then
+      ssh -o BatchMode=yes -o ConnectTimeout=5 "$BROWSER_NODE_SSH" \
+        'docker restart browser-egress' >/dev/null 2>&1 \
+        && echo "restarted browser-egress so it re-resolves vpn-client" || true
+    fi
     ;;
   plex)
     docker compose -f docker-compose.plex.yml up -d

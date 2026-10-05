@@ -1,0 +1,32 @@
+{
+  "policies": {
+    "Proxy": {
+      "Mode": "manual",
+      "Locked": true,
+      "HTTPProxy": "browser-egress:3128",
+      "UseHTTPProxyForAllProtocols": true,
+      "Passthrough": ""
+    },
+    "DNSOverHTTPS": {
+      "Enabled": false,
+      "Locked": true
+    },
+    "BlockAboutConfig": true,
+    "DisableTelemetry": true,
+    "DisableFirefoxStudies": true,
+    "DisableAppUpdate": true,
+    "DontCheckDefaultBrowser": true,
+    "Preferences": {
+      "media.peerconnection.enabled": {
+        "Value": false,
+        "Status": "locked"
+      },
+      "network.proxy.allow_hijacking_localhost": {
+        "Value": false,
+        "Status": "locked"
+      }
+    },
+    "HttpsOnlyMode": "force_enabled",
+    "CaptivePortal": false
+  }
+}

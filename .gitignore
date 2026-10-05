@@ -52,3 +52,6 @@ __pycache__/
 .copilot/
 # traefik-manager owns this file; dynamic.yml beside it stays tracked.
 traefik/dynamic/managed.yml
+
+# Rendered per-user browser config: usernames and the VPN proxy password
+.generated/

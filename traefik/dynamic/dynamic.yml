@@ -398,6 +398,20 @@ http:
         - authentik
       service: tdarr
 
+    # Private per-user browsers (nuc-nodes/C2-Swarm-01/browser). Deliberately
+    # NO `authentik` middleware here, unlike every route above: the gate
+    # container runs Authentik's single-application forward auth itself
+    # (nginx auth_request) and picks the user's browser from Authentik's
+    # answer, so no header from the client or from Traefik is ever trusted.
+    # Adding the middleware as well would only send the login redirect through
+    # two auth layers.
+    browser:
+      rule: 'Host(`browser.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+        - websecure
+      service: browser
+
     # AudioMuse-AI's web UI (docker-compose.audiomuse.yml). Admin tier via
     # the `audiomuse` Authentik application; AudioMuse then asks for its
     # own login too, since it has no SSO. The Navidrome plugin never comes
@@ -548,6 +562,13 @@ http:
       loadBalancer:
         servers:
           - url: "http://tdarr:8265"
+
+    # The browser gate joins `edge` as a plain container (it runs on
+    # C2-Swarm-01 beside the browsers, outside the Swarm stack).
+    browser:
+      loadBalancer:
+        servers:
+          - url: "http://browser-gate:8080"
 
     audiomuse:
       loadBalancer:

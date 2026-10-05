@@ -166,6 +166,11 @@ services:
         url: "https://qbittorrent.example.com"
         target: "_blank"
         subtitle: "Routed through NordVPN"
+      - name: "Private Browser"
+        icon: "fas fa-user-secret"
+        url: "https://browser.example.com"
+        target: "_blank"
+        subtitle: "Your own browser, everything exits through the VPN"
 
   - name: "Infrastructure"
     icon: "fas fa-server"
