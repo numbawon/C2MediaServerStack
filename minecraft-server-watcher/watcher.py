@@ -23,8 +23,14 @@ was the actual ask. Two Crafty API calls per known server:
     watcher-side list to hand-maintain.
   - GET /api/v2/servers/{id}/stats (authenticated, needs CRAFTY_API_TOKEN)
     includes the server's real configured port (ServerStats.server_port
-    in Crafty's own model). Fetched once per server and cached -- server
-    ports don't change often, and this is a low-server-count setup.
+    in Crafty's own model). Re-read on every poll while the server is
+    running, and cached for the time it is stopped (so a close still goes to
+    the port that was opened). It used to be fetched once and cached for
+    good, which meant correcting a server's port in Crafty after the watcher
+    had seen it left the router rule on the OLD port until the watcher was
+    restarted: the new port stayed closed and nobody could connect. If the
+    port changes while a server runs, the rule on the old port is closed
+    first, then the new one is opened.
 Protocol isn't exposed by either call, so it's derived from the port
 itself against the same three-entry allow-list minecraft-router-relay and
 router/minecraft-port-toggle.sh both enforce. Keep all three in sync by
@@ -92,8 +98,9 @@ def _protocol_for_port(port: int) -> str | None:
     return None
 
 
-port_cache: dict[str, int] = {}          # server_id -> port, filled once
+port_cache: dict[str, int] = {}          # server_id -> last good port
 last_known_running: dict[str, bool] = {}  # server_id -> last state pushed
+warned_ports: set[tuple[str, int]] = set()  # (server_id, port) already reported
 
 
 def _crafty_get(path: str, authed: bool) -> dict:
@@ -152,19 +159,40 @@ def poll_once():
         return
 
     for server_id, running in status.items():
-        if server_id not in port_cache:
+        cached = port_cache.get(server_id)
+
+        # Nothing cached yet, or the server is running: (re-)read its port.
+        # A stopped server keeps its cached port: no rule is open for it, and
+        # a close, if one is still owed, must go to the port that was opened.
+        if cached is None or running:
             port = fetch_port(server_id)
             if port is None:
-                continue  # try again next poll
+                if cached is None:
+                    continue  # try again next poll
+                port = cached  # lookup failed; keep what we know
             protocol = _protocol_for_port(port)
             if protocol is None:
-                print(f"[{server_id}] port {port} matches no known game type, "
-                      f"skipping -- add it to the allow-list in relay.py, "
-                      f"minecraft-port-toggle.sh, and watcher.py if this is "
-                      f"real", file=sys.stderr)
-                continue
-            port_cache[server_id] = port
-            print(f"[{server_id}] discovered {protocol}/{port}")
+                if (server_id, port) not in warned_ports:
+                    warned_ports.add((server_id, port))
+                    print(f"[{server_id}] port {port} matches no known game type, "
+                          f"skipping -- add it to the allow-list in relay.py, "
+                          f"minecraft-port-toggle.sh, and watcher.py if this is "
+                          f"real", file=sys.stderr)
+                if cached is None:
+                    continue
+                port = cached  # keep the last good port rather than guess
+            elif port != cached:
+                if cached is not None:
+                    print(f"[{server_id}] port changed {cached} -> {port}")
+                    # A rule may be open on the OLD port: close that first. If
+                    # the close fails, leave everything as it is and retry on
+                    # the next poll rather than leaving it open and forgotten.
+                    if last_known_running.get(server_id):
+                        if not push_toggle(server_id, False, cached, _protocol_for_port(cached)):
+                            continue
+                        last_known_running[server_id] = False
+                port_cache[server_id] = port
+                print(f"[{server_id}] discovered {protocol}/{port}")
 
         port = port_cache[server_id]
         protocol = _protocol_for_port(port)
