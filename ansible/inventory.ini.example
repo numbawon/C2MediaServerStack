@@ -37,5 +37,7 @@ repo_dir=/home/youruser/C2MediaServerStack
 #   node_nfs_mount            NFS mount the post-boot check must see live
 #   node_backup_paths         paths under /home to back up nightly, e.g.
 #                             "youruser/game-server"; empty disables backup
-#   node_backup_excludes      extra tar excludes
+#   node_backup_excludes      extra tar excludes; wildcards allowed, e.g.
+#                             "youruser/game-server/servers/*/mods" to skip
+#                             rebuildable modpack files and keep the worlds
 #   node_reboot_at            HH:MM for the post-update reboot (default 03:30)

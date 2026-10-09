@@ -13,7 +13,8 @@
 #
 # Config from /etc/mediastack-node.conf:
 #   BACKUP_PATHS   space-separated paths relative to /home (e.g. "user/crafty")
-#   BACKUP_EXCLUDES  extra tar --exclude patterns
+#   BACKUP_EXCLUDES  extra tar --exclude patterns, space-separated; wildcards
+#                  are passed to tar as written (e.g. "user/app/*/cache")
 #   BACKUP_DEST    user@manager. The key is locked on the manager to
 #                  scripts/node-backup-receive.sh, which only ever writes
 #                  <hostname>.tar under its own fixed directory.
@@ -47,7 +48,12 @@ cleanup
 btrfs subvolume snapshot -r /home "$snap" >/dev/null
 
 args=()
+# Patterns can hold wildcards ("crafty/servers/*/mods"); without noglob the
+# shell would try to expand them against the current directory here instead
+# of handing them to tar untouched.
+set -f
 for e in $BACKUP_EXCLUDES; do args+=(--exclude="$e"); done
+set +f
 ssh_opts=(-i "$BACKUP_SSH_KEY" -o BatchMode=yes -o UserKnownHostsFile="${BACKUP_KNOWN_HOSTS:-/etc/ssh/ssh_known_hosts}" -o StrictHostKeyChecking=yes)
 
 # Uncompressed on purpose: restic on the manager dedupes an uncompressed tar
