@@ -95,7 +95,14 @@ services:
       # bypasses Pi-hole entirely -- no blocklists, no query log, nothing.
       # It happens to return NXDOMAIN upstream today, but relying on that
       # means DoH silently re-enables if that ever changes.
-      - FTLCONF_misc_dnsmasq_lines=filter-AAAA;server=/use-application-dns.net/
+      #
+      # filter-rr=HTTPS drops the HTTPS (type 65) record. Cloudflare publishes
+      # one for proxied names with ech= and alpn=h3. Our split-horizon A
+      # records point LAN clients at Traefik, but a browser that also sees
+      # that record sends an Encrypted Client Hello sealed for Cloudflare and
+      # tries HTTP/3: Traefik cannot read the hostname, answers with its
+      # default certificate, and Edge reports ERR_QUIC_PROTOCOL_ERROR.
+      - FTLCONF_misc_dnsmasq_lines=filter-AAAA;server=/use-application-dns.net/;filter-rr=HTTPS
     volumes:
       # Same named volumes the Swarm service used. Blocklists, settings
       # and query history carry over untouched.
