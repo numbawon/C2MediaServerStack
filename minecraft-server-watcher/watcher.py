@@ -52,6 +52,7 @@ Config, all via env:
   RELAY_URL           minecraft-router-relay's /toggle URL (default http://minecraft-router-relay:8080/toggle)
   RELAY_TOKEN_FILE    path to the relay's bearer token     (default /run/secrets/minecraft_relay_token)
   POLL_INTERVAL       seconds between polls                (default 15)
+  REASSERT_SECONDS    re-send "open" for every running server this often   (default 300)
 
 The Crafty API token needs to belong to a user with access to every
 server that should drive the lever (create a dedicated low-privilege
@@ -71,6 +72,12 @@ CRAFTY_API_TOKEN_FILE = os.environ.get("CRAFTY_API_TOKEN_FILE", "/run/secrets/cr
 RELAY_URL = os.environ.get("RELAY_URL", "http://minecraft-router-relay:8080/toggle")
 RELAY_TOKEN_FILE = os.environ.get("RELAY_TOKEN_FILE", "/run/secrets/minecraft_relay_token")
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "15"))
+# The router keeps these forwards in memory and loses them on every reboot
+# (nightly, 03:00). A change-only watcher never notices: the server stayed up,
+# so nothing "changed" and the forward stayed gone until the server next
+# restarted. Re-asserting "open" periodically heals that. It is cheap and safe
+# because minecraft-port-toggle.sh treats an already-open forward as a no-op.
+REASSERT_SECONDS = int(os.environ.get("REASSERT_SECONDS", "300"))
 
 
 def _read(path: str) -> str:
@@ -101,6 +108,7 @@ def _protocol_for_port(port: int) -> str | None:
 port_cache: dict[str, int] = {}          # server_id -> last good port
 last_known_running: dict[str, bool] = {}  # server_id -> last state pushed
 warned_ports: set[tuple[str, int]] = set()  # (server_id, port) already reported
+last_pushed_at: dict[str, float] = {}      # server_id -> monotonic time of the last successful push
 
 
 def _crafty_get(path: str, authed: bool) -> dict:
@@ -126,7 +134,7 @@ def fetch_port(server_id: str) -> int | None:
     return int(port) if port else None
 
 
-def push_toggle(server_id: str, running: bool, port: int, protocol: str) -> bool:
+def push_toggle(server_id: str, running: bool, port: int, protocol: str, quiet: bool = False) -> bool:
     action = "open" if running else "close"
     payload = json.dumps({"action": action, "port": port, "protocol": protocol}).encode("utf-8")
     req = urllib.request.Request(
@@ -145,7 +153,8 @@ def push_toggle(server_id: str, running: bool, port: int, protocol: str) -> bool
         print(f"[{server_id}] relay call failed ({action}, {protocol}/{port}): {e}", file=sys.stderr)
         return False
     if ok:
-        print(f"[{server_id}] {protocol}/{port} -> {action}")
+        if not quiet:
+            print(f"[{server_id}] {protocol}/{port} -> {action}")
     else:
         print(f"[{server_id}] relay rejected {action} for {protocol}/{port}", file=sys.stderr)
     return ok
@@ -196,9 +205,16 @@ def poll_once():
 
         port = port_cache[server_id]
         protocol = _protocol_for_port(port)
+        now = time.monotonic()
         if running != last_known_running.get(server_id):
             if push_toggle(server_id, running, port, protocol):
                 last_known_running[server_id] = running
+                last_pushed_at[server_id] = now
+        elif running and now - last_pushed_at.get(server_id, 0.0) >= REASSERT_SECONDS:
+            # Still running, nothing changed: say "open" again in case the
+            # router rebooted and forgot. A failure is retried next poll.
+            if push_toggle(server_id, True, port, protocol, quiet=True):
+                last_pushed_at[server_id] = now
 
 
 if __name__ == "__main__":
