@@ -1079,6 +1079,22 @@ services:
         # sent; otherwise Navidrome takes it as a password-free login. See
         # strip-authentik-identity in traefik/dynamic/dynamic.yml.
         - "traefik.http.routers.navidrome-api.middlewares=strip-authentik-identity@file"
+        # Public share links (Navidrome's Share button): /share/<id> is the page,
+        # /share/s/<token> the audio, /share/img/<token> the cover, /share/assets
+        # the page's own JS and CSS. Without this route the catch-all router
+        # above sends every visitor to the Authentik login, which defeats a
+        # link meant for someone without an account. Each link is protected by
+        # its unguessable id/token and the expiry set when it was created; the
+        # identity headers are stripped, as on /rest, so a client cannot
+        # forge a login through this path. Only /share is public: the app
+        # (/app, /api, /) stays behind Authentik.
+        # priority: the catch-all rule is longer, and Traefik ranks routers
+        # by rule length, so without an explicit priority it wins for /share.
+        - "traefik.http.routers.navidrome-share.rule=Host(`navidrome.${COMMON_DOMAIN}`) && PathPrefix(`/share`)"
+        - "traefik.http.routers.navidrome-share.entrypoints=web,websecure"
+        - "traefik.http.routers.navidrome-share.middlewares=strip-authentik-identity@file"
+        - "traefik.http.routers.navidrome-share.priority=1000"
+        - "traefik.http.routers.navidrome-share.service=navidrome"
         - "traefik.http.services.navidrome.loadbalancer.server.port=4533"
 
   # ---------------------------------------------------------------------
