@@ -1,0 +1,21 @@
+# The router reboots every night at 03:00. tdarr-node's own reconnect
+# logic claims it retries indefinitely after losing the server ("switching
+# to startup-style reconnect loop and retrying indefinitely"), but in
+# practice it dies silently after exactly one failed attempt: one more
+# "EngineIO Error" and then nothing, forever, until something restarts the
+# container. Confirmed happening two nights running, both times within
+# seconds of the router's own reboot window.
+#
+# Rather than chase the router (the reboot is intentional) or trust a
+# reconnect loop that's proven not to work, this just restarts the node
+# itself shortly after the router's known reboot time, every night,
+# unconditionally -- a clean restart is cheap and idempotent even on a
+# night the blip doesn't happen to bite.
+[Unit]
+Description=Rise again, tdarr-node, after the router's 3am reboot takes you down
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker restart tdarr-node

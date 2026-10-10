@@ -1,0 +1,12 @@
+# Fires at 03:10, ten minutes after the router's own nightly 03:00 reboot --
+# enough margin for it to fully come back up (boot, WAN reconnect, LAN
+# stabilize) before tdarr-node tries to reconnect through it.
+[Unit]
+Description=Nightly tdarr-node restart, 10 minutes after the router's reboot
+
+[Timer]
+OnCalendar=*-*-* 03:10:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
