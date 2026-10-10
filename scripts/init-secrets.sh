@@ -59,6 +59,12 @@ create_swarm_secret postgres_password        "$(random_password)"
 create_swarm_secret redis_password           "$(random_password)"
 create_swarm_secret grafana_admin_password   "$(random_password)"
 create_swarm_secret authentik_secret_key     "$(random_password 60)"
+create_swarm_secret vaultwarden_admin_token  "$(random_password)"
+# Yuvomi's own docs specifically call for hex (openssl rand -hex 32), not
+# the base64 random_password() uses elsewhere -- matching their documented
+# format rather than assuming it's interchangeable.
+create_swarm_secret yuvomi_session_secret    "$(openssl rand -hex 32)"
+create_swarm_secret yuvomi_db_encryption_key "$(openssl rand -hex 32)"
 
 echo
 echo "== Secrets that need a real value from you =="

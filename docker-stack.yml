@@ -240,6 +240,33 @@ secrets:
     external: true
   httpproxy_password_v2:
     external: true
+  # _v2 because Swarm secrets are immutable and can't be swapped in place
+  # while a service references them (same reason httpproxy_password_v2
+  # exists) -- this holds an Argon2id PHC hash of the token, not the raw
+  # value, generated with `vaultwarden hash` per its own admin-page wiki.
+  vaultwarden_admin_token_v2:
+    external: true
+  # Client secret for the dedicated `Vaultwarden OIDC` Authentik
+  # application (its own OAuth2/OpenID provider, separate from the
+  # authentik@file forward-auth apps that gate vault.<domain> and
+  # vault-admin.<domain>). Created out of band once that app exists:
+  #   printf %s '<client secret>' | docker secret create vaultwarden_sso_client_secret -
+  vaultwarden_sso_client_secret:
+    external: true
+  yuvomi_session_secret:
+    external: true
+  # Encrypts the whole Yuvomi database at rest (AES-256) -- worth it since
+  # its chores/budget modules mean real household financial data lives
+  # there. Losing this value makes the database permanently unreadable,
+  # recoverable only from a pre-loss backup, never from the secret itself.
+  yuvomi_db_encryption_key:
+    external: true
+  # Client secret for the dedicated `Yuvomi OIDC` Authentik application.
+  # _v2 because Swarm secrets are immutable and the first copy-paste of
+  # this one was truncated (15 chars stored vs. Authentik's real 128).
+  #   printf %s '<client secret>' | docker secret create yuvomi_oidc_client_secret_v2 -
+  yuvomi_oidc_client_secret_v2:
+    external: true
 
 # CAPABILITY DROPPING
 #
@@ -748,6 +775,116 @@ services:
         - "traefik.http.routers.portainer.middlewares=authentik@file"
         - "traefik.http.services.portainer.loadbalancer.server.port=9000"
 
+  # ---------------------------------------------------------------------
+  # Two hostnames, deliberately: Authentik's forward-auth here is
+  # host-scoped (one ProxyProvider/Application = one hostname's group
+  # binding, see scripts/authentik-proxy-app.sh), so the Admin-only admin
+  # panel needs its own hostname to get a stricter tier than the rest of
+  # the app. vault.${COMMON_DOMAIN} itself is split by PATH, not tier: the
+  # api/identity/sync surface bypasses authentik@file entirely because the
+  # browser extension, mobile app and CLI make direct API calls and cannot
+  # complete an interactive SSO redirect -- only the human-facing web vault
+  # (the catch-all router) is gated, to the `Family` household tier.
+  #
+  # Vaultwarden's OWN login is separately wired to a dedicated `Vaultwarden
+  # OIDC` Authentik application (SSO_ENABLED/SSO_ONLY below) -- same shape
+  # as Portainer's own OAuth login above, a plain OIDC app authentik-proxy-
+  # app.sh doesn't build, set up by hand in Authentik's UI. SSO_ONLY drops
+  # the master-password-only login form; the master password itself is
+  # still required afterward to derive the vault's own encryption key
+  # (Bitwarden's zero-knowledge design), so this only replaces the login
+  # identity check, not vault decryption. ADMIN_TOKEN is unrelated to any
+  # of this (confirmed against Vaultwarden's own SSO wiki page).
+  #
+  # No SMTP relay exists anywhere in this stack, so invites (SIGNUPS_
+  # ALLOWED=false, only an admin can create an account) use Vaultwarden's
+  # no-SMTP fallback: the admin panel shows the raw invite link to copy
+  # and send by hand instead of emailing it.
+  # ---------------------------------------------------------------------
+
+  vaultwarden:
+    logging: *logging
+    image: vaultwarden/server:latest
+    # Official image, not a LinuxServer one -- ignores PUID/PGID entirely;
+    # wants the container's actual user set instead, like navidrome.
+    cap_drop: [ALL]
+    user: "${COMMON_PUID}:${COMMON_PGID}"
+    environment:
+      - DOMAIN=https://vault.${COMMON_DOMAIN}
+      - SIGNUPS_ALLOWED=false
+      - WEBSOCKET_ENABLED=true
+      - SSO_ENABLED=true
+      - SSO_ONLY=true
+      # Issuer URL of the dedicated `Vaultwarden OIDC` Authentik
+      # application (Authentik's per-application issuer, not its bare
+      # root). Public hostname, not authentik-server:9000 -- confirmed the
+      # hard way: Authentik echoes whatever host the discovery request
+      # arrived on back into the discovery document's own endpoint URLs
+      # (authorization_endpoint etc.), so using the internal Docker
+      # hostname here sent the BROWSER's authorize redirect to
+      # authentik-server:9000 too, which it can't resolve. Same pattern
+      # Open WebUI already uses (OPENID_PROVIDER_URL in
+      # docker-compose.ai.yml), and the hairpin back out through the
+      # tunnel is fine: it's an outbound Cloudflare Tunnel connection, not
+      # a router port-forward, so there's no NAT-loopback problem.
+      - SSO_AUTHORITY=https://auth.${COMMON_DOMAIN}/application/o/vaultwarden-oidc/
+      # offline_access so Authentik actually issues a refresh token --
+      # without it, Vaultwarden's client hits "Access token is close to
+      # expiration but we have no refresh token" the moment the (default
+      # 5-minute) access token nears expiry. Also raised the provider's
+      # own access_token_validity to 1h in Authentik itself, matching the
+      # WARN Vaultwarden logs ("Raise access_token lifetime to more than
+      # 5min").
+      - SSO_SCOPES=email profile offline_access
+      - SSO_CLIENT_ID=${VAULTWARDEN_SSO_CLIENT_ID}
+      - SSO_CLIENT_SECRET_FILE=/run/secrets/vaultwarden_sso_client_secret
+      - ADMIN_TOKEN_FILE=/run/secrets/vaultwarden_admin_token_v2
+    volumes:
+      - ${COMMON_CONFIG}/vaultwarden:/data
+    networks:
+      - edge
+      - internal
+    secrets:
+      - vaultwarden_admin_token_v2
+      - vaultwarden_sso_client_secret
+    deploy:
+      placement:
+        constraints: [node.labels.role == core]
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.services.vaultwarden.loadbalancer.server.port=80"
+        # Sync/API surface: native clients and the web vault's own JS
+        # both hit these paths. No authentik@file here -- see header.
+        - "traefik.http.routers.vaultwarden-api.rule=Host(`vault.${COMMON_DOMAIN}`) && (PathPrefix(`/api`) || PathPrefix(`/identity`) || PathPrefix(`/notifications`) || PathPrefix(`/icons`) || PathPrefix(`/attachments`) || PathPrefix(`/events`) || PathPrefix(`/webauthn`))"
+        - "traefik.http.routers.vaultwarden-api.entrypoints=web,websecure"
+        - "traefik.http.routers.vaultwarden-api.service=vaultwarden"
+        - "traefik.http.routers.vaultwarden-api.priority=100"
+        # Web vault UI: gated to the `Family` household tier.
+        - "traefik.http.routers.vaultwarden-web.rule=Host(`vault.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.vaultwarden-web.entrypoints=web,websecure"
+        - "traefik.http.routers.vaultwarden-web.middlewares=authentik@file"
+        - "traefik.http.routers.vaultwarden-web.service=vaultwarden"
+        - "traefik.http.routers.vaultwarden-web.priority=1"
+        # Admin panel: its own hostname so it can be gated Admin-only.
+        # NOT an addprefix rewrite -- Vaultwarden's own admin.js derives its
+        # base URL by finding "/admin" literally in window.location.pathname
+        # (confirmed by reading /vw_static/admin.js's getBaseUrl()), so a
+        # server-side-only rewrite leaves the browser's visible path as "/",
+        # admin.js miscomputes its base, and every asset/AJAX call it then
+        # makes 404s (confirmed: the page loaded but rendered unstyled,
+        # because /vw_static/admin.css also got the prefix and 404'd).
+        # A visible redirect on the bare root to .../admin fixes both: the
+        # browser's address bar genuinely contains "/admin" afterward, and
+        # every other request (assets, the admin app's own API calls, which
+        # already target /admin/* and /vw_static/* to match Vaultwarden's
+        # real path layout) passes straight through unmodified.
+        - "traefik.http.middlewares.vaultwarden-admin-redirect-root.redirectregex.regex=^(https?://[^/]+)/?$$"
+        - "traefik.http.middlewares.vaultwarden-admin-redirect-root.redirectregex.replacement=$${1}/admin"
+        - "traefik.http.routers.vaultwarden-admin.rule=Host(`vault-admin.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.vaultwarden-admin.entrypoints=web,websecure"
+        - "traefik.http.routers.vaultwarden-admin.middlewares=authentik@file,vaultwarden-admin-redirect-root"
+        - "traefik.http.routers.vaultwarden-admin.service=vaultwarden"
+
   lidarr:
     logging: *logging
     image: linuxserver/lidarr:latest
@@ -845,6 +982,77 @@ services:
         - "traefik.http.routers.seerr.entrypoints=web,websecure"
         - "traefik.http.routers.seerr.middlewares=authentik@file"
         - "traefik.http.services.seerr.loadbalancer.server.port=5055"
+
+  # ---------------------------------------------------------------------
+  # Yuvomi -- self-hosted family planner (calendar/CalDAV, chores, meals,
+  # shopping, budget), replacing the Apolosign touchscreen appliance so
+  # the household's own data stays on its own server instead of a vendor
+  # cloud. Household tier like Seerr/Navidrome/Homer: any Family member
+  # reaches the login page, then Yuvomi's own per-person accounts take
+  # over from there (chore assignment etc. needs individual identity,
+  # which the forward-auth gate alone doesn't give it).
+  # ---------------------------------------------------------------------
+
+  yuvomi:
+    logging: *logging
+    image: ghcr.io/ulsklyc/yuvomi:latest
+    cap_drop: [ALL]
+    user: "${COMMON_PUID}:${COMMON_PGID}"
+    # The image's own /entrypoint.sh only fixes volume ownership when
+    # started as root, then execs "$@" -- no _FILE-suffix secret support
+    # (checked its actual source, unlike the FILE_ pattern Vaultwarden and
+    # Postgres understand natively). Same shape as redis's command below:
+    # read the Swarm secrets into the real env vars the app expects, then
+    # exec the image's real CMD ourselves.
+    command: >
+      sh -c '
+      export SESSION_SECRET="$$(cat /run/secrets/yuvomi_session_secret)";
+      export DB_ENCRYPTION_KEY="$$(cat /run/secrets/yuvomi_db_encryption_key)";
+      export OIDC_CLIENT_SECRET="$$(cat /run/secrets/yuvomi_oidc_client_secret_v2)";
+      exec node server/index.js
+      '
+    environment:
+      - TZ=${COMMON_TZ}
+      - NODE_ENV=production
+      - DB_PATH=/data/yuvomi.db
+      - BACKUP_DIR=/backups
+      - SESSION_SECURE=true
+      # Dedicated `Yuvomi OIDC` Authentik application (its own OAuth2/OpenID
+      # provider, separate from the authentik@file forward-auth app that
+      # gates planner.<domain>). Public hostname, not authentik-server:9000
+      # -- confirmed the hard way with Vaultwarden that Authentik echoes
+      # whatever host the discovery request arrived on back into the
+      # discovery document's own endpoint URLs, so the internal Docker
+      # hostname here would leak into the browser's own authorize redirect.
+      - OIDC_ISSUER=https://auth.${COMMON_DOMAIN}/application/o/yuvomi-oidc/
+      - OIDC_CLIENT_ID=HCK6ydjU2y4KEOU5CDrgoOMvfStHh8tSsyPaGm2Q
+      - OIDC_REDIRECT_URI=https://planner.${COMMON_DOMAIN}/api/v1/auth/oidc/callback
+      # Auto-provision on first SSO login, same model as Vaultwarden --
+      # anyone in the Family Authentik group just logs in, no admin step
+      # per person. Relies on the "Household apps: verified email claim"
+      # scope mapping being attached to the Yuvomi OIDC provider, not on
+      # OIDC_TRUST_EMAIL_WITHOUT_VERIFIED_CLAIM (left at its secure
+      # default/unset) -- the real claim is fixed at the source, not
+      # bypassed.
+      - OIDC_ALLOW_SIGNUP=true
+    volumes:
+      - ${COMMON_CONFIG}/yuvomi/data:/data
+      - ${COMMON_CONFIG}/yuvomi/backups:/backups
+    networks:
+      - edge
+    secrets:
+      - yuvomi_session_secret
+      - yuvomi_db_encryption_key
+      - yuvomi_oidc_client_secret_v2
+    deploy:
+      placement:
+        constraints: [node.labels.role == core]
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.yuvomi.rule=Host(`planner.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.yuvomi.entrypoints=web,websecure"
+        - "traefik.http.routers.yuvomi.middlewares=authentik@file"
+        - "traefik.http.services.yuvomi.loadbalancer.server.port=3000"
 
   # ---------------------------------------------------------------------
   # Ombi -- MUSIC requests only, with approval, until Seerr ships Lidarr

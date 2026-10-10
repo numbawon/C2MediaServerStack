@@ -115,10 +115,21 @@ exclusions_for() {
     tautulli_config|tautulli)
       printf '%s\n' --exclude=./logs --exclude=./cache
       ;;
+    yuvomi)
+      # backups/ is Yuvomi's own scheduled-backup output living right next
+      # to the live data/ this same outer tar already captures -- keep the
+      # live source, skip the redundant copy.
+      printf '%s\n' --exclude=./backups
+      ;;
     tdarr)
       # JobReports is one log file per job, growing with every file a flow
       # touches. Like every log here, it loses its context in a restore.
       printf '%s\n' --exclude=./server/Tdarr/DB2/JobReports --exclude=./server/Tdarr/Logs
+      ;;
+    vaultwarden)
+      # Re-fetched site favicons, not user data. db.sqlite3 (accounts,
+      # ciphers, orgs) and attachments/ are the irreplaceable payload.
+      printf '%s\n' --exclude=./icon_cache
       ;;
     *) : ;;
   esac
