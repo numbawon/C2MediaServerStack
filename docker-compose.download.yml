@@ -179,6 +179,9 @@ services:
         printf 'cache_peer vpn-client parent 8888 0 no-query no-digest name=vpn login=%s:%s connect-timeout=10\n' \
           "$$(cat /run/secrets/httpproxy_user)" "$$(cat /run/secrets/httpproxy_password)" > /tmp/squid-peer.conf
         chmod 600 /tmp/squid-peer.conf
+        # A container restarted at boot keeps its old /run, and Squid refuses
+        # to start over the stale PID file.
+        rm -f /run/squid.pid
         exec /usr/sbin/squid -f /tmp/squid.conf -NYC
     healthcheck:
       # A TCP connect: this image ships no squidclient. bash's /dev/tcp is
