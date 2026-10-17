@@ -18,6 +18,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+UP_FLAGS=""
 set -a
 source .env
 set +a
@@ -59,7 +60,7 @@ case "$1" in
       || echo "WARNING: could not push zork to the registry, nodes without a local copy cannot run it yet" >&2
     ;;
   download)
-    docker compose -f docker-compose.download.yml up -d
+    docker compose -f docker-compose.download.yml up -d $UP_FLAGS
     # The private browsers' Squid (sync-private-browsers.py) looked up
     # vpn-client's address once, when it started. A recreated vpn-client has
     # a new address and Squid keeps dialing the old one for up to an hour, so
@@ -72,32 +73,32 @@ case "$1" in
     fi
     ;;
   plex)
-    docker compose -f docker-compose.plex.yml up -d
+    docker compose -f docker-compose.plex.yml up -d $UP_FLAGS
     ;;
   dns)
-    docker compose -f docker-compose.dns.yml up -d
+    docker compose -f docker-compose.dns.yml up -d $UP_FLAGS
     ;;
   ai)
-    docker compose -f docker-compose.ai.yml up -d
+    docker compose -f docker-compose.ai.yml up -d $UP_FLAGS
     ;;
   tdarr)
-    docker compose -f docker-compose.tdarr.yml up -d
+    docker compose -f docker-compose.tdarr.yml up -d $UP_FLAGS
     ;;
   audiomuse)
-    docker compose -f docker-compose.audiomuse.yml up -d
+    docker compose -f docker-compose.audiomuse.yml up -d $UP_FLAGS
     ;;
   hermes)
-    docker compose -f docker-compose.hermes.yml up -d
+    docker compose -f docker-compose.hermes.yml up -d $UP_FLAGS
     ;;
   ids)
-    docker compose -f docker-compose.ids.yml up -d
+    docker compose -f docker-compose.ids.yml up -d $UP_FLAGS
     ;;
   i2p)
-    docker compose -f docker-compose.i2p.yml up -d
+    docker compose -f docker-compose.i2p.yml up -d $UP_FLAGS
     ;;
   home)
     python3 scripts/render-config.py
-    docker compose -f docker-compose.home.yml up -d
+    docker compose -f docker-compose.home.yml up -d $UP_FLAGS
     ;;
   *)
     echo "Unknown deployment component: $1" >&2
@@ -121,6 +122,13 @@ case "${1:-}" in
     # running. Still exits non-zero if anything failed, so the systemd unit
     # shows failed and `systemctl status mediastack-recovery.service` says
     # which component, but every component gets a chance regardless.
+    #
+    # --no-recreate: this only brings back what is down after a reboot. Without
+    # it, a newer :latest image made compose recreate a running container, and
+    # a leftover <id>_name container from an interrupted recreate turned that
+    # into a name conflict that failed the whole unit (scrutiny, 2026-10-17).
+    # Pulling and swapping images is the job of an explicit deploy.
+    UP_FLAGS="--no-recreate"
     failed=()
     for component in ${COMMON_RECOVERY_COMPONENTS-dns download plex ids}; do
       echo "== recovery: $component =="
