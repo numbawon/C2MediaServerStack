@@ -43,7 +43,7 @@ and actually understand what they're running, not just copy-paste it.
 | **Immich** | Photos and video. Household tier, native OIDC, deliberately not forward-auth gated. Runs its own Postgres and Redis. |
 | **Sonarr, Radarr, Lidarr, LazyLibrarian, Mylar3** | Library management for TV, movies, music, ebooks and comics -- find, grab, rename, organize. |
 | **Komga** | Comics and manga server, reading `Comics/`. Mylar3 fills that tree; Komga mounts it read-only so two managers never fight over the same filenames. Its client paths are not forward-auth gated (see below), and `/api/v1/claim` is gated separately because it can hand over admin on an empty database. |
-| **Suwayomi** | Manga downloader and reader. Saves chapters as CBZ into `Manga/` from online sources via extensions (none preconfigured), and Komga reads that tree as a second library. Mylar3 follows ComicVine's western catalog and never found manga. Household tier. |
+| **Suwayomi** | Manga downloader and reader. Saves chapters as CBZ into `Manga/` from online sources via extensions (none preconfigured). Komga does not read that folder. Mylar3 follows ComicVine's western catalog and never found manga. Household tier. |
 | **Bazarr** | Subtitle management for Sonarr/Radarr's libraries. |
 | **traefik-manager** | Web UI for Traefik's dynamic configuration. The highest-privilege app here: the file it writes defines routers and middlewares, so it can take `authentik@file` off any service. Admins-only, and it never touches the templated `dynamic.yml`. |
 | **Prowlarr** | Centralized indexer management -- add an indexer once, it syncs to every `*arr` app instead of configuring each separately. |
@@ -1347,6 +1347,52 @@ Mylar3's API has to be on for Prowlarr and Organizarr to talk to it
 string rather than an empty value, which is its own trap: read back
 naively that looks like a key.
 
+### Comics through Mylar3: the finish line
+
+Komga reads `Comics/`, so a grab only shows up there once Mylar3 has filed
+it. With qBittorrent, Mylar3 has no way to be told a torrent finished
+(auto-snatch is rTorrent and Deluge only), so its **folder monitor** is the
+only thing that notices: it scans `check_folder` every
+`download_scan_interval` minutes, matches files to Snatched issues and moves
+them into `/comics`. Three things must agree, and any one missing leaves
+issues stuck at Snatched with the file sitting in Downloads:
+
+- qBittorrent's `comics` category saves to `/downloads/comics`.
+- Mylar3 has `enable_check_folder = True`, `check_folder` and
+  `qbittorrent_folder` both `/downloads/comics`.
+- The **Folder Monitor** job is not paused. Mylar3 keeps that state in its
+  database (`jobhistory`), and a paused job wins over the config file, so
+  `enable_check_folder = True` alone does nothing. Resume it under Manage ->
+  Job Manager, or with
+  `curl "http://mylar3:8090/jobmanage?job=Folder%20Monitor&mode=resume"`
+  from a container on `edge`.
+
+Series added from foreign editions (Carlsen, Norma, Pika, JBC) will not
+match English releases; track the English edition.
+
+### Manga: picked by hand in Prowlarr
+
+Mylar3 follows ComicVine's western catalog, so manga sat "Wanted" with
+nothing ever grabbed. Manga goes the other way round: nothing is automatic,
+and you choose each release.
+
+1. In Prowlarr, search by hand (Nyaa.si, Tokyo Toshokan and ACG.RIP are
+   the indexers that carry it) and pick the release.
+2. In the grab dialog, choose the download client **qBittorrent (manga)**.
+   It is a second client at priority 25, pointing at the same qBittorrent
+   with category `manga`; the default `qBittorrent` client (category
+   `prowlarr`) keeps priority 1 for everything else.
+3. qBittorrent's `manga` category saves to `/comics/Manga`, which is
+   `${COMMON_MEDIA}/Comics/Manga`, and the torrent keeps seeding from
+   there. Komga already has a library on `Comics/`, so it appears on the
+   next scan with no extra setup.
+
+Torrent folder names become Komga series names, so expect `[Group] Title
+v01-v10` style titles; rename in Komga's metadata, not on disk, or the
+torrent stops seeding. The `comics` and `manga` categories are runtime state
+in qBittorrent's config and the second client is runtime state in Prowlarr's
+database, so a rebuilt `.appdata` needs them recreated by hand.
+
 ## Authentik first boot
 
 Can't be scripted via env vars -- Authentik configures this through its
@@ -1440,7 +1486,7 @@ TV/              -> Sonarr, Plex, Bazarr
 Music/           -> Lidarr, Plex, Navidrome
 EBooks/          -> LazyLibrarian, Plex
 Comics/          -> Mylar3 (writes), Komga (reads, mounted read-only)
-Manga/           -> Suwayomi (writes), Komga (reads, second library at /manga/mangas)
+Manga/           -> Suwayomi (writes); Komga does not read this tree
 Pictures/        -> Immich, as a read-only External Library
 (anything else)  -> Plex only, via its full data mount
 ```

@@ -1350,10 +1350,6 @@ services:
       # Komga's database and thumbnails still live in /config, so ordinary
       # scanning and metadata work touches nothing here.
       - ${COMMON_MEDIA}/Comics:/data
-      # Suwayomi's download tree. A second Komga library points at
-      # /manga/mangas (<source>/<title>/<chapter>.cbz), added once in the
-      # Komga UI. Writable for the same reasons as /data above.
-      - ${COMMON_MEDIA}/Manga:/manga
     networks:
       - edge
     deploy:

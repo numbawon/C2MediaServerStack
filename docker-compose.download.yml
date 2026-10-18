@@ -212,6 +212,11 @@ services:
       - ${COMMON_CONFIG}/qbittorrent:/config
       - ${COMMON_DOWNLOADS}:/downloads
       - ${COMMON_COMPLETED}:/completed
+      # The "manga" category saves into Comics/Manga, inside the tree Komga
+      # already reads, so a torrent picked by hand in Prowlarr shows up in
+      # Komga with no extra library and keeps seeding from there. See the
+      # manga section of the README.
+      - ${COMMON_MEDIA}/Comics:/comics
     restart: unless-stopped
 
 networks:
