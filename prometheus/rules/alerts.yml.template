@@ -765,6 +765,20 @@ groups:
       # worker's node-exporter textfile collector. The jobs are systemd
       # timers on machines nobody logs into, so "stopped running" has to be
       # an explicit staleness check or it looks exactly like "all fine".
+      - alert: SystemdUnitFailed
+        # mediastack-recovery.service sat failed for 35 minutes after a
+        # reboot with nothing to say so. node-exporter's systemd collector
+        # is scoped to this stack's units, docker and mounts.
+        expr: node_systemd_unit_state{state="failed"} == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.name }} has failed on {{ $labels.instance }}"
+          description: >-
+            `systemctl status {{ $labels.name }}` and `journalctl -u
+            {{ $labels.name }}` on the node.
+
       - alert: NodeUpdateStale
         # Weekly. 10 days allows one missed run plus slack.
         expr: time() - mediastack_node_update_last_run_timestamp_seconds > 864000

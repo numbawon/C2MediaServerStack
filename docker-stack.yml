@@ -1646,6 +1646,9 @@ services:
       - /sys:/host/sys:ro
       - /:/rootfs:ro
       - node_exporter_textfile:/textfile:ro
+      # The systemd collector asks systemd over D-Bus. The directory, never
+      # the socket file alone, so a restarted dbus cannot leave a stale mount.
+      - /run/dbus:/var/run/dbus:ro
     command:
       - --path.procfs=/host/proc
       - --path.sysfs=/host/sys
@@ -1660,6 +1663,11 @@ services:
       # bind mount would need a root-created directory outside the repo,
       # and everything else here stays inside Docker's world.
       - --collector.textfile.directory=/textfile
+      # Failed-unit visibility (SystemdUnitFailed in prometheus/rules). Scoped
+      # to this stack's own units, the container runtime and mounts: the full
+      # unit list is slow to enumerate and the rest is noise.
+      - --collector.systemd
+      - --collector.systemd.unit-include=^(mediastack-.*|docker|containerd)\.(service|timer)$$|.*\.mount$$
     networks:
       - internal
     deploy:
