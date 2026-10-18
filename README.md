@@ -1314,9 +1314,19 @@ Three Cleanuparr traps, all confirmed in its source
 Four hops, and each one is configured somewhere different:
 
 1. **Prowlarr -> Mylar3.** Mylar3 is registered in Prowlarr as an
-   application (implementation `Mylar`, `fullSync`, categories `[7030]
-   Books/Comics`). Prowlarr pushes its indexers in; do not add indexers
-   inside Mylar3 by hand or the next sync will fight you.
+   application (implementation `Mylar`, `fullSync`, categories
+   `[7000, 7030]` Books and Books/Comics). Prowlarr pushes its indexers in;
+   do not add indexers inside Mylar3 by hand or the next sync will fight
+   you. 7000 matters: trackers file most comics and manga under Books (or
+   Other), almost never under Comics, so with 7030 alone every search
+   returned nothing and Nyaa.si never reached Mylar at all.
+
+   Even with the right categories, Mylar3 searches one issue at a time
+   (`Series 001`). Torrent releases of manga arrive as whole-volume packs
+   (`Title v01-21`) and many western ones as ranges (`Saga (001 - 023)`),
+   which that matching does not accept, so expect Mylar3 to find little on
+   torrent indexers. Manga is picked by hand in Prowlarr instead (see
+   "Manga: picked by hand in Prowlarr" below).
 2. **Mylar3 -> qBittorrent.** `torrent_downloader = 5` (qbittorrent) with
    `qbittorrent_host = http://qbittorrent:8080`. There is no
    `qbittorrent_port` setting -- the host field is a full URL, because
