@@ -220,6 +220,12 @@ secrets:
   #   printf %s '<token>' | docker secret create crafty_api_token -
   crafty_api_token:
     external: true
+  # Navidrome account `tidarr`, so Tidarr can ask for a library scan after
+  # each download. Navidrome only lets admins start a scan, so the account
+  # is an admin (`navidrome user create -u tidarr`, then `user edit
+  # --set-admin`); the password lives only in this secret.
+  navidrome_tidarr_password:
+    external: true
   crowdsec_bouncer_key_v3:
     external: true
   # Cloudflare API token for the ACME DNS-01 challenge. Zone:Read +
@@ -2395,16 +2401,31 @@ services:
     # Image's init starts as root and drops to PUID/PGID.
     cap_drop: [ALL]
     cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
+    # No _FILE support for NAVIDROME_PASSWORD, so read the secret into the
+    # environment, then run the image's own entrypoint.
+    entrypoint:
+      - sh
+      - -c
+      - 'NAVIDROME_PASSWORD="$$(cat /run/secrets/navidrome_tidarr_password)"; export NAVIDROME_PASSWORD; exec sh /tidarr/docker/entrypoint.sh'
+    secrets:
+      - navidrome_tidarr_password
     environment:
       - PUID=${COMMON_PUID}
       - PGID=${COMMON_PGID}
       - TZ=${COMMON_TZ}
       - UMASK=0002
+      # Scan after each download. Reached over `music`, the network shared
+      # with Navidrome that is not a trusted subnet: the `tidarr` account
+      # signs in with its password, never the Authentik header.
+      - NAVIDROME_URL=http://navidrome:4533
+      - NAVIDROME_PUBLIC_URL=https://navidrome.${COMMON_DOMAIN}
+      - NAVIDROME_USER=tidarr
     volumes:
       - ${COMMON_CONFIG}/tidarr:/shared
       - ${COMMON_MEDIA}/Music:/music
     networks:
       - edge
+      - music
     deploy:
       placement:
         constraints: [node.labels.role == core]
