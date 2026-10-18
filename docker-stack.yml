@@ -2336,12 +2336,13 @@ services:
   # catalog and searches torrent indexers, so manga series sat "Wanted"
   # with nothing ever grabbed.
   #
-  # Household tier: forward-auth with no group binding, so any
-  # authenticated user gets in, the same as Navidrome and Zork. Suwayomi
-  # has no OIDC and no group support of its own, and it is a per-title
-  # tool with no admin surface worth a narrower tier. One thing to know:
-  # installing an extension runs third-party code inside this container.
-  # No extension repository is preconfigured; add one in the UI
+  # Admin tier: forward-auth through its own Authentik application bound to
+  # Admin (scripts/authentik-proxy-app.sh). Suwayomi has no content filter
+  # and the usual extension catalog is full of adult sources, so it is not
+  # something to leave open to every authenticated household account. It
+  # has no OIDC or group support of its own, so the gate is Authentik's.
+  # Installing an extension also runs third-party code inside this
+  # container. No extension repository is preconfigured; add one in the UI
   # (Browse -> Extension repos) when you decide to trust it.
   #
   # Chapters land as <source>/<title>/<chapter>.cbz under mangas/. The

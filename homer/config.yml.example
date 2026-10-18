@@ -90,11 +90,6 @@ services:
         url: "https://komga.example.com"
         target: "_blank"
         subtitle: "Comics and manga"
-      - name: "Suwayomi"
-        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/suwayomi.svg"
-        url: "https://suwayomi.example.com"
-        target: "_blank"
-        subtitle: "Manga downloader"
 
   - name: "Library Management"
     icon: "fas fa-list"
@@ -151,6 +146,11 @@ services:
         url: "https://audiomuse.example.com"
         target: "_blank"
         subtitle: "Admins only -- sonic analysis behind Navidrome's Instant Mix"
+      - name: "Suwayomi"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/suwayomi.svg"
+        url: "https://suwayomi.example.com"
+        target: "_blank"
+        subtitle: "Manga downloader, admin only"
 
   - name: "Downloads"
     icon: "fas fa-download"
