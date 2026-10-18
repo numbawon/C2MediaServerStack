@@ -2381,6 +2381,41 @@ services:
         - "traefik.http.services.suwayomi.loadbalancer.server.port=4567"
 
   # ---------------------------------------------------------------------
+  # Tidarr -- Tidal downloader (Tiddl underneath), lossless FLAC into
+  # Music/ where Navidrome and Plex already read. Needs a Tidal account;
+  # authorize it once from the UI's token dialog. Admin tier: it spends
+  # one person's subscription and the Tidal terms are not friendly to
+  # sharing it, so it gets its own Authentik app instead of the
+  # domain-level gate (scripts/authentik-proxy-app.sh tidarr
+  # tidarr.<domain> Admin). No ADMIN_PASSWORD: Authentik is the login.
+  # ---------------------------------------------------------------------
+  tidarr:
+    logging: *logging
+    image: cstaelen/tidarr:latest
+    # Image's init starts as root and drops to PUID/PGID.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
+    environment:
+      - PUID=${COMMON_PUID}
+      - PGID=${COMMON_PGID}
+      - TZ=${COMMON_TZ}
+      - UMASK=0002
+    volumes:
+      - ${COMMON_CONFIG}/tidarr:/shared
+      - ${COMMON_MEDIA}/Music:/music
+    networks:
+      - edge
+    deploy:
+      placement:
+        constraints: [node.labels.role == core]
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.tidarr.rule=Host(`tidarr.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.tidarr.entrypoints=web,websecure"
+        - "traefik.http.routers.tidarr.middlewares=authentik@file"
+        - "traefik.http.services.tidarr.loadbalancer.server.port=8484"
+
+  # ---------------------------------------------------------------------
   # ntfy -- push notifications. The ONE internet-reachable service that
   # is deliberately NOT behind Authentik's forward-auth gate: the
   # Android app holds a persistent connection and cannot complete a

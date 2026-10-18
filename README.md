@@ -44,6 +44,7 @@ and actually understand what they're running, not just copy-paste it.
 | **Sonarr, Radarr, Lidarr, LazyLibrarian, Mylar3** | Library management for TV, movies, music, ebooks and comics -- find, grab, rename, organize. |
 | **Komga** | Comics and manga server, reading `Comics/`. Mylar3 fills that tree; Komga mounts it read-only so two managers never fight over the same filenames. Its client paths are not forward-auth gated (see below), and `/api/v1/claim` is gated separately because it can hand over admin on an empty database. |
 | **Suwayomi** | Manga downloader and reader. Saves chapters as CBZ into `Manga/` from online sources via extensions (none preconfigured). Komga does not read that folder. Mylar3 follows ComicVine's western catalog and never found manga. Admin tier: it has no content filter and its extension catalog includes adult sources, so it is bound to `Admin` through its own Authentik application (`scripts/authentik-proxy-app.sh suwayomi suwayomi.<domain> Admin`). |
+| **Tidarr** | Tidal downloader: search or paste a Tidal link and it saves lossless FLAC into `Music/` for Navidrome and Plex. Needs a Tidal subscription, authorized once from the UI. Admin tier, because it spends one person's account (`scripts/authentik-proxy-app.sh tidarr tidarr.<domain> Admin`). Lidarr also scans that tree, so check its tag-sync setting before trusting tag edits on files it maps. |
 | **Bazarr** | Subtitle management for Sonarr/Radarr's libraries. |
 | **traefik-manager** | Web UI for Traefik's dynamic configuration. The highest-privilege app here: the file it writes defines routers and middlewares, so it can take `authentik@file` off any service. Admins-only, and it never touches the templated `dynamic.yml`. |
 | **Prowlarr** | Centralized indexer management -- add an indexer once, it syncs to every `*arr` app instead of configuring each separately. |
@@ -119,7 +120,7 @@ never needs membership in the narrower groups.
 
 | Tier | Group(s) bound | Apps |
 | --- | --- | --- |
-| Infrastructure | `Admin` | Portainer, Traefik dashboard, web terminal, Pi-hole, Organizarr, Hermes dashboard, Syncthing GUI, Cleanuparr*, Suwayomi |
+| Infrastructure | `Admin` | Portainer, Traefik dashboard, web terminal, Pi-hole, Organizarr, Hermes dashboard, Syncthing GUI, Cleanuparr*, Suwayomi, Tidarr |
 | Media management | `Admin`, `Contributor` | Prowlarr, Sonarr, Radarr, Lidarr, LazyLibrarian, Bazarr, qBittorrent |
 | Monitoring | `Admin`, `Metrics` | Grafana, Prometheus, Tautulli, Scrutiny |
 | Household | none (domain-level) | Seerr, Navidrome, Homer, files, browse, Zork |
@@ -710,7 +711,7 @@ cloudflared tunnel create mediastack
 # cleanuparr, files, flood, grafana, i2p, immich, komga, lazylibrarian,
 # home, lidarr, mylar3, navidrome, ntfy, ombi, organizarr, overseerr, pihole, plex,
 # podcasts, portainer, prometheus, prowlarr, qbittorrent, radarr, seerr,
-# scrutiny, suwayomi, traefik-manager,
+# scrutiny, suwayomi, tidarr, traefik-manager,
 # sonarr, tautulli, tdarr, terminal, traefik, zork, and the bare domain for homer:
 cloudflared tunnel route dns mediastack <sub>.yourdomain.com
 # Grab the tunnel token for init-secrets.sh next: Cloudflare Zero Trust

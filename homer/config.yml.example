@@ -151,6 +151,11 @@ services:
         url: "https://suwayomi.example.com"
         target: "_blank"
         subtitle: "Manga downloader, admin only"
+      - name: "Tidarr"
+        logo: "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/tidal.svg"
+        url: "https://tidarr.example.com"
+        target: "_blank"
+        subtitle: "Tidal downloader, admin only"
 
   - name: "Downloads"
     icon: "fas fa-download"
