@@ -43,6 +43,7 @@ and actually understand what they're running, not just copy-paste it.
 | **Immich** | Photos and video. Household tier, native OIDC, deliberately not forward-auth gated. Runs its own Postgres and Redis. |
 | **Sonarr, Radarr, Lidarr, LazyLibrarian, Mylar3** | Library management for TV, movies, music, ebooks and comics -- find, grab, rename, organize. |
 | **Komga** | Comics and manga server, reading `Comics/`. Mylar3 fills that tree; Komga mounts it read-only so two managers never fight over the same filenames. Its client paths are not forward-auth gated (see below), and `/api/v1/claim` is gated separately because it can hand over admin on an empty database. |
+| **Suwayomi** | Manga downloader and reader. Saves chapters as CBZ into `Manga/` from online sources via extensions (none preconfigured), and Komga reads that tree as a second library. Mylar3 follows ComicVine's western catalog and never found manga. Household tier. |
 | **Bazarr** | Subtitle management for Sonarr/Radarr's libraries. |
 | **traefik-manager** | Web UI for Traefik's dynamic configuration. The highest-privilege app here: the file it writes defines routers and middlewares, so it can take `authentik@file` off any service. Admins-only, and it never touches the templated `dynamic.yml`. |
 | **Prowlarr** | Centralized indexer management -- add an indexer once, it syncs to every `*arr` app instead of configuring each separately. |
@@ -121,7 +122,7 @@ never needs membership in the narrower groups.
 | Infrastructure | `Admin` | Portainer, Traefik dashboard, web terminal, Pi-hole, Organizarr, Hermes dashboard, Syncthing GUI, Cleanuparr* |
 | Media management | `Admin`, `Contributor` | Prowlarr, Sonarr, Radarr, Lidarr, LazyLibrarian, Bazarr, qBittorrent |
 | Monitoring | `Admin`, `Metrics` | Grafana, Prometheus, Tautulli, Scrutiny |
-| Household | none (domain-level) | Seerr, Navidrome, Homer, files, browse, Zork |
+| Household | none (domain-level) | Seerr, Navidrome, Homer, files, browse, Zork, Suwayomi |
 | Family requests | `Admin`, `Contributor`, `Family` | Ombi (music requests) |
 | Not forward-auth gated | see below | Plex, Audiobookshelf, Immich, PinePods, Open WebUI, Cleanuparr, ntfy |
 
@@ -709,7 +710,7 @@ cloudflared tunnel create mediastack
 # cleanuparr, files, flood, grafana, i2p, immich, komga, lazylibrarian,
 # home, lidarr, mylar3, navidrome, ntfy, ombi, organizarr, overseerr, pihole, plex,
 # podcasts, portainer, prometheus, prowlarr, qbittorrent, radarr, seerr,
-# scrutiny, traefik-manager,
+# scrutiny, suwayomi, traefik-manager,
 # sonarr, tautulli, tdarr, terminal, traefik, zork, and the bare domain for homer:
 cloudflared tunnel route dns mediastack <sub>.yourdomain.com
 # Grab the tunnel token for init-secrets.sh next: Cloudflare Zero Trust
@@ -1439,6 +1440,7 @@ TV/              -> Sonarr, Plex, Bazarr
 Music/           -> Lidarr, Plex, Navidrome
 EBooks/          -> LazyLibrarian, Plex
 Comics/          -> Mylar3 (writes), Komga (reads, mounted read-only)
+Manga/           -> Suwayomi (writes), Komga (reads, second library at /manga/mangas)
 Pictures/        -> Immich, as a read-only External Library
 (anything else)  -> Plex only, via its full data mount
 ```

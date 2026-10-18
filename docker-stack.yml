@@ -1350,6 +1350,10 @@ services:
       # Komga's database and thumbnails still live in /config, so ordinary
       # scanning and metadata work touches nothing here.
       - ${COMMON_MEDIA}/Comics:/data
+      # Suwayomi's download tree. A second Komga library points at
+      # /manga/mangas (<source>/<title>/<chapter>.cbz), added once in the
+      # Komga UI. Writable for the same reasons as /data above.
+      - ${COMMON_MEDIA}/Manga:/manga
     networks:
       - edge
     deploy:
@@ -2327,6 +2331,57 @@ services:
         - "traefik.http.routers.mylar3.entrypoints=web,websecure"
         - "traefik.http.routers.mylar3.middlewares=authentik@file"
         - "traefik.http.services.mylar3.loadbalancer.server.port=8090"
+
+  # ---------------------------------------------------------------------
+  # Suwayomi -- manga downloader and reader. Pulls chapters from online
+  # sources through installable extensions and saves them as CBZ into
+  # ${COMMON_MEDIA}/Manga, which Komga reads as its own library. This is
+  # what Mylar3 cannot do for manga: Mylar3 follows ComicVine's western
+  # catalog and searches torrent indexers, so manga series sat "Wanted"
+  # with nothing ever grabbed.
+  #
+  # Household tier: forward-auth with no group binding, so any
+  # authenticated user gets in, the same as Navidrome and Zork. Suwayomi
+  # has no OIDC and no group support of its own, and it is a per-title
+  # tool with no admin surface worth a narrower tier. One thing to know:
+  # installing an extension runs third-party code inside this container.
+  # No extension repository is preconfigured; add one in the UI
+  # (Browse -> Extension repos) when you decide to trust it.
+  #
+  # Chapters land as <source>/<title>/<chapter>.cbz under mangas/. The
+  # container runs as the stack's own user so Komga (same user) and the
+  # file browsers can read and remove what it writes.
+  # ---------------------------------------------------------------------
+  suwayomi:
+    logging: *logging
+    image: ghcr.io/suwayomi/tachidesk:stable
+    cap_drop: [ALL]
+    user: "${COMMON_PUID}:${COMMON_PGID}"
+    environment:
+      - TZ=${COMMON_TZ}
+      - DOWNLOAD_AS_CBZ=true
+      # Chapters download only when asked for. Finished ones live
+      # as CBZ in the library.
+      - AUTO_DOWNLOAD_CHAPTERS=false
+    volumes:
+      - ${COMMON_CONFIG}/suwayomi:/home/suwayomi/.local/share/Tachidesk
+      - ${COMMON_MEDIA}/Manga:/home/suwayomi/.local/share/Tachidesk/downloads
+    networks:
+      - edge
+    deploy:
+      placement:
+        constraints: [node.labels.role == core]
+      resources:
+        limits:
+          # A JVM with a headless browser stack for some sources; unbounded,
+          # it takes whatever the node has.
+          memory: 2G
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.suwayomi.rule=Host(`suwayomi.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.suwayomi.entrypoints=web,websecure"
+        - "traefik.http.routers.suwayomi.middlewares=authentik@file"
+        - "traefik.http.services.suwayomi.loadbalancer.server.port=4567"
 
   # ---------------------------------------------------------------------
   # ntfy -- push notifications. The ONE internet-reachable service that
