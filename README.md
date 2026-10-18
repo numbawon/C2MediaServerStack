@@ -1357,7 +1357,13 @@ only thing that notices: it scans `check_folder` every
 them into `/comics`. Three things must agree, and any one missing leaves
 issues stuck at Snatched with the file sitting in Downloads:
 
-- qBittorrent's `comics` category saves to `/downloads/comics`.
+- qBittorrent's `comics` category saves to `/downloads/comics`, and
+  qBittorrent's default torrent management mode is **Automatic**
+  (`auto_tmm_enabled`). A category's save path only applies to torrents in
+  automatic mode, and Prowlarr and Mylar3 both add torrents in manual mode,
+  so with the default left on Manual every torrent lands in `/downloads`
+  no matter what its category says. Check this first if a download is in
+  the wrong place.
 - Mylar3 has `enable_check_folder = True`, `check_folder` and
   `qbittorrent_folder` both `/downloads/comics`.
 - The **Folder Monitor** job is not paused. Mylar3 keeps that state in its
