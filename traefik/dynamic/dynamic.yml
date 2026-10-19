@@ -386,6 +386,19 @@ http:
         - authentik
       service: crafty
 
+    # FluxCP, the Ragnarok server's web panel (the container lives in
+    # ~/GameServers/hercules on C2-Swarm-01, joined to the `edge` overlay like
+    # Crafty). Admin tier only: it has game-account registration and an
+    # admin section, and it has no SSO of its own to put behind Authentik.
+    fluxcp:
+      rule: 'Host(`fluxcp.{{ env "COMMON_DOMAIN" }}`)'
+      entryPoints:
+        - web
+        - websecure
+      middlewares:
+        - authentik
+      service: fluxcp
+
     # Tdarr rewrites files in the library, so it sits behind authentik with
     # no exception. It has no SSO of its own -- its only built-in gate is a
     # paid feature -- which means forward-auth is the whole of its security.
@@ -555,6 +568,11 @@ http:
         servers:
           - url: "https://crafty:8443"
         serversTransport: crafty-insecure
+
+    fluxcp:
+      loadBalancer:
+        servers:
+          - url: "http://fluxcp:80"
 
     # 8265 is the web UI. 8266 is the server API the node talks to; it stays
     # on the overlay and is deliberately not routed.
