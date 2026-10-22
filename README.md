@@ -4121,6 +4121,7 @@ grep -hE "^      - alert:|severity:|summary:" prometheus/rules/*.yml
 | **Host and containers** | | |
 | `BtrfsDeviceErrors` | critical | btrfs <label> errors on <label> |
 | `ContainerRestartLoop` | warning | <label> is restarting repeatedly |
+| `SwarmServiceNoContainers` | critical | <service> has no running container |
 | `HostMemoryPressure` | warning | Less than 10 percent memory available |
 | `PrometheusNotConnectedToAlertmanager` | critical | Prometheus cannot reach Alertmanager |
 | `SystemDiskCritical` | critical | System disk below configured critical threshold |

@@ -64,6 +64,35 @@ groups:
             {{ $labels.name }} restarted more than 3 times in 15 minutes.
             Check `docker service logs` or `docker logs` for it.
 
+      - alert: SwarmServiceNoContainers
+        # A service that had a container half an hour ago and has none now.
+        # Found 2026-10-21: redis, immich-redis and pinepods-valkey sat in
+        # `Preparing` for three days after a registry pull failed during a
+        # network blip. Swarm does not retry that, so nothing restarted and
+        # nothing alerted. cadvisor labels every task container with its
+        # service name, so the series vanishes the moment the last one goes.
+        # The 30m offset plus `for: 15m` rides out a normal redeploy and the
+        # 03:30 worker reboots. A service never seen running is not covered,
+        # and one deliberately scaled to 0 will fire (scale it back or
+        # remove it from the stack).
+        expr: >-
+          (count by (container_label_com_docker_swarm_service_name)
+            (container_last_seen{container_label_com_docker_swarm_service_name!=""} offset 30m))
+          unless
+          (count by (container_label_com_docker_swarm_service_name)
+            (container_last_seen{container_label_com_docker_swarm_service_name!=""}))
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.container_label_com_docker_swarm_service_name }} has no running container"
+          description: >-
+            Swarm service {{ $labels.container_label_com_docker_swarm_service_name }}
+            had a container 30 minutes ago and now has none. Check
+            `docker service ps --no-trunc <service>` for a stuck pull
+            (`Preparing`) or a failed task, and `docker service update
+            --force <service>` to retry.
+
   - name: host
     rules:
       # Disk thresholds are absolute, not percentages: required write
