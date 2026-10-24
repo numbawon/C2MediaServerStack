@@ -1409,8 +1409,9 @@ services:
   # git and carries {{ env "COMMON_DOMAIN" }} templating, which Traefik
   # expands and a YAML round-trip through this UI would silently destroy,
   # taking out every hostname rule in one save. CONFIG_PATH points at its
-  # own file in traefik_managed instead; Traefik's file provider recurses,
-  # so both load and neither can overwrite the other.
+  # own managed.yml next to dynamic.yml in that directory instead; Traefik's
+  # file provider loads every file there, so both load and the manager never
+  # writes dynamic.yml.
   # ---------------------------------------------------------------------
   traefik-manager:
     logging: *logging
