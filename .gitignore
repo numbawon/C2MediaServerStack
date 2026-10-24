@@ -37,6 +37,7 @@ prometheus/targets/*.json
 # Generated from tracked templates by scripts/render-config.py. These contain
 # deployment-specific addresses and paths; edit the template or .env instead.
 crowdsec/whitelist.yaml
+diun/diun.yml
 prometheus/rules/alerts.yml
 router/syslog-ng-remote.conf
 docker-compose.home.yml

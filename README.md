@@ -725,7 +725,7 @@ cloudflared tunnel route dns mediastack <sub>.yourdomain.com
 ```
 
 `scripts/render-config.py` creates ignored deployment-local files from
-tracked templates for Prometheus host-storage alerts, CrowdSec's LAN
+tracked templates for Prometheus host-storage alerts, Diun's local-registry setting, CrowdSec's LAN
 allowlist, router syslog forwarding, and Scrutiny device mappings. Edit
 `.env` or a `.template`,
 never the generated file. The Cloudflare Access SSH CA is also

@@ -12,6 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 OUTPUTS = {
     ROOT / "docker-compose.home.yml.template": ROOT / "docker-compose.home.yml",
+    ROOT / "diun/diun.yml.template": ROOT / "diun/diun.yml",
     ROOT / "crowdsec/whitelist.yaml.template": ROOT / "crowdsec/whitelist.yaml",
     ROOT / "prometheus/rules/alerts.yml.template": ROOT / "prometheus/rules/alerts.yml",
     ROOT / "router/syslog-ng-remote.conf.template": ROOT / "router/syslog-ng-remote.conf",

@@ -50,13 +50,13 @@ defaults:
   notifyOn:
     - update
 
-# The local registry (192.168.50.10:5000) speaks plain HTTP, listed under
+# The local registry (${COMMON_LAN_IP}:5000) speaks plain HTTP, listed under
 # insecure-registries in /etc/docker/daemon.json. Diun defaults to HTTPS and
 # fails every lookup against it ("server gave HTTP response to HTTPS
 # client"), so pinepods and zork were never checked. The image selector
 # applies this automatically, no per-service label needed.
 regopts:
-  - name: "192.168.50.10:5000"
+  - name: "${COMMON_LAN_IP}:5000"
     selector: image
     insecureTLS: true
 
