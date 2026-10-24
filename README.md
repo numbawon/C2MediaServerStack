@@ -4092,6 +4092,9 @@ grep -hE "^      - alert:|severity:|summary:" prometheus/rules/*.yml
 | `RouterBackhaulWeak` | warning | Weak mesh backhaul: <label> at <label> dBm |
 | `RouterConntrackFilling` | warning | <label> connection table over 80% full |
 | `RouterExporterStale` | warning | Router metrics have not updated in 15 minutes |
+| `RouterNtpServerSuspicious` | critical | Router <ip> has a non-hostname NTP server setting |
+| `RouterSshKeysChanged` | critical | SSH keys changed on router <ip> |
+| `RouterTelnetRunning` | critical | A telnet daemon is running on router <ip> |
 | **Accounts** | | |
 | `AuthentikNewAccount` | info | New Authentik account: <label> |
 | `AuthentikWatchdogStale` | warning | Authentik account watch has not run in over an hour |

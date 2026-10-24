@@ -27,6 +27,7 @@ the docker group, so writing the metrics still works.
 
 Run by systemd/mediastack-router-exporter.timer.
 """
+import hashlib
 import os
 import re
 import subprocess
@@ -41,6 +42,10 @@ SSH = ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
 # Interfaces worth charting. The rest are tunnels and loopbacks that are
 # always zero, and every one of them would be a permanent Prometheus series.
 IFACE_RE = re.compile(r"^(br\d+|eth\d+|wds\d+\.\d+\.\d+|vlan\d+)$")
+
+# A real NTP server setting is a hostname or address. Anything else, and
+# above all a shell metacharacter, is how the NTP injection is delivered.
+NTP_RE = re.compile(r"^[A-Za-z0-9.:-]*$")
 
 # One round trip per device. Each section is prefixed so the parser does not
 # depend on ordering or on which sections a given model supports.
@@ -82,6 +87,14 @@ done
 echo "CONNTRACK $(cat /proc/sys/net/netfilter/nf_conntrack_count 2>/dev/null) $(cat /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null)"
 awk 'NR>2{gsub(":","",$1); print "IFACE "$1" "$2" "$10}' /proc/net/dev
 echo "WAN $(nvram get wan0_state_t 2>/dev/null)"
+# Tamper signals for the ASUS httpd token-forging + NTP command-injection
+# chain (mrbruh.com/asusrouter, 2026-10): the injected command lives in
+# ntp_server0, and the way in is a new SSH key or a telnet shell.
+echo "NTP0 $(nvram get ntp_server0 2>/dev/null)"
+echo "NTP1 $(nvram get ntp_server1 2>/dev/null)"
+{ nvram get sshd_authkeys 2>/dev/null; cat /jffs/.ssh/authorized_keys /root/.ssh/authorized_keys 2>/dev/null; } \
+  | awk 'NF>=2 {print "KEY "$1" "$2}'
+echo "TELNETD $(ps | grep -c '[t]elnetd')"
 """
 
 
@@ -136,13 +149,21 @@ def main_fn():
 
         model = "unknown"
         vals = {}
+        ntp = []
+        keys = set()
         for line in out.splitlines():
             p = line.split()
             if not p:
                 continue
             k = p[0]
             try:
-                if k == "MODEL" and len(p) > 1:
+                if k in ("NTP0", "NTP1"):
+                    ntp.append(line[len(k):].strip())
+                elif k == "KEY" and len(p) >= 3:
+                    keys.add("%s %s" % (p[1], p[2]))
+                elif k == "TELNETD":
+                    vals["telnetd"] = 1 if int(p[1]) > 0 else 0
+                elif k == "MODEL" and len(p) > 1:
                     model = p[1]
                 elif k == "UPTIME":
                     vals["uptime"] = int(p[1])
@@ -204,6 +225,17 @@ def main_fn():
                             ("cores", "cores")):
             if key in vals:
                 lines.append('mediastack_router_%s{router="%s"} %s' % (metric, esc(host), vals[key]))
+        if ntp:
+            ok = all(NTP_RE.match(v) for v in ntp)
+            lines.append('mediastack_router_ntp_server_valid{router="%s"} %d' % (esc(host), 1 if ok else 0))
+        # The key set as one number: any added, removed or swapped key changes
+        # it, and 48 bits is exact in a Prometheus float. Count rides along so
+        # the alert can say whether a key was added or removed.
+        lines.append('mediastack_router_ssh_authorized_keys{router="%s"} %d' % (esc(host), len(keys)))
+        digest = hashlib.sha256("\n".join(sorted(keys)).encode()).hexdigest()[:12]
+        lines.append('mediastack_router_ssh_authorized_keys_digest{router="%s"} %d' % (esc(host), int(digest, 16)))
+        if "telnetd" in vals:
+            lines.append('mediastack_router_telnetd_running{router="%s"} %d' % (esc(host), vals["telnetd"]))
         for key, metric in (("MemTotal", "memory_total_bytes"),
                             ("MemAvailable", "memory_available_bytes"),
                             ("MemFree", "memory_free_bytes")):
@@ -257,6 +289,14 @@ def main_fn():
         "# TYPE mediastack_router_uptime_seconds gauge",
         "# HELP mediastack_router_wan_connected Whether the main router's WAN is up.",
         "# TYPE mediastack_router_wan_connected gauge",
+        "# HELP mediastack_router_ntp_server_valid 1 when ntp_server0/1 are plain hostnames or addresses, 0 when they hold anything else.",
+        "# TYPE mediastack_router_ntp_server_valid gauge",
+        "# HELP mediastack_router_ssh_authorized_keys SSH public keys authorised on the router (nvram plus both key files).",
+        "# TYPE mediastack_router_ssh_authorized_keys gauge",
+        "# HELP mediastack_router_ssh_authorized_keys_digest First 48 bits of a hash of the key set; changes when any key does.",
+        "# TYPE mediastack_router_ssh_authorized_keys_digest gauge",
+        "# HELP mediastack_router_telnetd_running 1 when a telnet daemon is running on the router.",
+        "# TYPE mediastack_router_telnetd_running gauge",
         "# HELP mediastack_router_exporter_reachable Routers that answered this run.",
         "# TYPE mediastack_router_exporter_reachable gauge",
         "# HELP mediastack_router_exporter_last_run_timestamp_seconds Unix time of the last run.",

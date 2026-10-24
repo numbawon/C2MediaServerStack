@@ -611,6 +611,49 @@ groups:
             The collector runs every 2 minutes. Nothing is watching the
             routers while this is firing.
 
+      # The ASUS httpd chain published 2026-10-23 (mrbruh.com/asusrouter,
+      # CVE-2026-93489, -75779, -75775): a forged admin token, then a shell
+      # command planted in ntp_server0, or an SSH key added. No fixed firmware
+      # existed when this was written. These three watch for the traces.
+      - alert: RouterNtpServerSuspicious
+        expr: mediastack_router_ntp_server_valid == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Router {{ $labels.router }} has a non-hostname NTP server setting"
+          description: >-
+            ntp_server0 or ntp_server1 on {{ $labels.router }} holds
+            characters a hostname never has. That is how the NTP command
+            injection is delivered. Check `nvram get ntp_server0`, look for
+            unknown SSH keys and telnetd, and treat the router as compromised
+            until proven otherwise.
+
+      - alert: RouterSshKeysChanged
+        # changes() looks back 15m, so this stays up for a quarter of an hour
+        # after the exporter sees a different key set. A key you added or
+        # removed yourself fires it once; that is the intended price.
+        expr: changes(mediastack_router_ssh_authorized_keys_digest[15m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "SSH keys changed on router {{ $labels.router }}"
+          description: >-
+            The set of authorised SSH keys on {{ $labels.router }} is not what
+            it was. If you did not add or remove one, check
+            /jffs/.ssh/authorized_keys and `nvram get sshd_authkeys`.
+
+      - alert: RouterTelnetRunning
+        expr: mediastack_router_telnetd_running == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "A telnet daemon is running on router {{ $labels.router }}"
+          description: >-
+            Nothing here uses telnet. A shell started that way is the
+            demonstrated payload for the ASUS NTP injection.
+
       # -----------------------------------------------------------------
       # Authentik accounts (scripts/authentik-watchdog.py)
       # -----------------------------------------------------------------
